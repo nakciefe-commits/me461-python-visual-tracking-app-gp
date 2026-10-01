@@ -7,15 +7,24 @@ inside the same program) reads frames all the time and keeps the newest one.
 The game just takes whatever frame is newest.
 """
 
+import sys
 import threading
 import time
 
 import cv2
 
+from settings import WINDOWS_DIRECTSHOW
+
 
 class Camera:
     def __init__(self, index):
-        self.capture = cv2.VideoCapture(index)
+        if sys.platform == "win32" and WINDOWS_DIRECTSHOW:
+            # On Windows the default camera system (Media Foundation) can take
+            # 10+ seconds to open a webcam; DirectShow opens it much faster.
+            # If a webcam doesn't work with it, set WINDOWS_DIRECTSHOW = False.
+            self.capture = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+        else:
+            self.capture = cv2.VideoCapture(index)
         self.frame = None                       # the newest frame
         self.running = self.capture.isOpened()  # False = no webcam, or it stopped
         if self.running:

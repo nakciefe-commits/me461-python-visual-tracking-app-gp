@@ -1,0 +1,5 @@
+# Windows batch files need Windows line endings (CRLF) to work reliably;
+# shell scripts need Linux line endings (LF). Git keeps them that way on
+# every computer, whatever the editor does.
+*.bat text eol=crlf
+*.sh  text eol=lf

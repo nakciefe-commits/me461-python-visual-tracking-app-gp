@@ -13,26 +13,41 @@ steps.
 
 ## Requirements
 
-- Linux with Python 3 (developed on Ubuntu 26.04, Python 3.14)
+- **Linux** (developed on Ubuntu 26.04, Python 3.14) or **Windows 10/11**
+  (64-bit Python 3.10 or newer)
 - A webcam
 
-## Setup
+## Setup and run
+
+The start script creates the `.venv` environment and installs the libraries
+from `requirements.txt` the first time it runs, and again whenever
+`requirements.txt` changes (for example after a `git pull`). After that it
+starts the game right away. The first start needs internet and takes a few
+minutes.
+
+### Linux
 
 ```
 git clone https://github.com/nakciefe-commits/me461-python-visual-tracking-app-gp.git
 cd me461-python-visual-tracking-app-gp
-sudo apt install -y python3-venv
-```
-
-That's all: `run.sh` creates the `.venv` environment and installs the
-libraries from `requirements.txt` the first time it runs, and again whenever
-`requirements.txt` changes (for example after a `git pull`).
-
-## Run
-
-```
+sudo apt install -y python3-venv     # once per computer
 ./run.sh
 ```
+
+### Windows
+
+1. Install **Python 3** (64-bit) from <https://www.python.org/downloads/>.
+   In the installer, tick **"Add python.exe to PATH"**.
+2. Get the code: `git clone` as above (or GitHub → Code → Download ZIP, and
+   unzip it).
+3. Double-click **`run.bat`** in the project folder.
+
+Run the game natively on Windows, not in WSL or a Linux virtual machine:
+the webcam does not work there without extra setup.
+
+**Webcam not working?** See "If the webcam doesn't work" in `NOTES.md`.
+
+## Playing
 
 Sit at the desk with the webcam on top of the monitor. The start screen shows
 the webcam with the tracking drawn on your face. Sit normally, look at the
@@ -82,7 +97,7 @@ with pygame (`render.py`). `main.py` runs the loop.
 | `sounds.py` | Sound effects (generated in code for now). |
 | `settings.py` | Every tuning number in one place. |
 | `tests/` | Unit tests for the rules and the tracker. |
-| `run.sh` | Launcher. |
+| `run.sh` / `run.bat` | Launcher for Linux / Windows. |
 | `face_landmarker.task` | Pre-trained MediaPipe face model. |
 | `tracker.py` | The first body tracker, kept for reference. |
 | `pose_landmarker.task` | Pre-trained MediaPipe pose model, used by `tracker.py`. |

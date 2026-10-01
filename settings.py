@@ -7,6 +7,7 @@ change. Each value says its unit (seconds, degrees, pixels).
 
 # --- Webcam ---
 CAMERA_INDEX = 0            # 0 = first webcam; try 1 if the wrong one opens
+WINDOWS_DIRECTSHOW = True   # Windows only: False = use Windows' default camera system instead
 FACE_MODEL_FILE = "face_landmarker.task"
 
 # --- Face finding ---

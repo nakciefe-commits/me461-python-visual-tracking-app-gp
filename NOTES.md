@@ -19,6 +19,40 @@ sudo apt install -y python3-venv            # once per computer, Ubuntu
 Quit with `q`, Esc, or the window's X button. The video window must be selected
 for the keys to work.
 
+
+## If the webcam doesn't work
+
+Go through these in order. After each change, start the game again.
+
+1. **Another program is using the webcam.** Only one program can use it at a
+   time. Close Zoom, Teams, Discord, OBS, the Camera app, and browser tabs with
+   video calls.
+2. **Windows blocks camera access.** Settings → Privacy & security → Camera:
+   turn on **Camera access** and **Let desktop apps access your camera**.
+3. **The camera is switched off or covered.** Many laptops have a sliding
+   cover, a privacy switch, or a camera key (often one of F1–F12 with a
+   camera icon).
+4. **The wrong camera opens** (e.g. a laptop's infrared camera, a virtual
+   camera from OBS, or a phone used as a webcam). In `settings.py` change
+   `CAMERA_INDEX = 0` to `1`, then `2`. To see which numbers work, run this in
+   the project folder; it prints `True` for each camera that opens:
+   - Windows: `.venv\Scripts\python -c "import cv2; [print(i, cv2.VideoCapture(i, cv2.CAP_DSHOW).isOpened()) for i in range(4)]"`
+   - Linux: `.venv/bin/python -c "import cv2; [print(i, cv2.VideoCapture(i).isOpened()) for i in range(4)]"`
+5. **Windows only: the camera opens but the picture is black, frozen, or the
+   game says "Could not open the webcam".** In `settings.py` set
+   `WINDOWS_DIRECTSHOW = False`. The game then uses Windows' default camera
+   system (Media Foundation). It can take 10+ seconds to open, so wait a bit.
+6. **The picture works but the face is not found, or the game is slow.**
+   Turn on a light in front of you. A dark room makes webcams send fewer
+   frames per second and hides the face. Avoid a bright window behind you.
+7. **Linux only: no camera found.** Run `ls /dev/video*`. If nothing is
+   listed, the system doesn't see the webcam (check the cable / USB port). If
+   it is listed but won't open, add yourself to the `video` group:
+   `sudo usermod -aG video $USER`, then log out and in.
+
+If none of this helps, write down the exact error text from the terminal (on
+Windows the `run.bat` window stays open after a crash) and the steps you tried.
+
 ---
 
 ## Commit #1 — Added simple body tracker
@@ -298,3 +332,55 @@ the old `tracker.py`).
 | `tests/` | Updated for the new names (30 tests). |
 | `README.md` | Points to `LEARN.md`; `head_test.py` removed from the files table. |
 | `STEPS.md` | "Shared interfaces" matches the new code; Step 4 now says to add `lose_reason` and the `teacher` parameter. |
+
+---
+
+## Commit #7 — Windows support
+
+- **Date:** 1 Oct 2026
+- **Branch:** `windows-support` (made from `dont-get-caught`)
+
+### Summary
+
+The game can now be set up and started on Windows by double-clicking
+`run.bat`. All the libraries (OpenCV, MediaPipe, pygame-ce) have 64-bit
+Windows versions, so the Python code needed only two small changes.
+**`run.bat` has not been tested on a real Windows computer yet.**
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `run.bat` | Windows version of `run.sh`: creates `.venv`, installs `requirements.txt` when it changed, starts the game. |
+| `.gitattributes` | Makes git keep `run.bat` with Windows line endings (CRLF) and `run.sh` with Linux ones (LF) on every computer. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `camera.py` | On Windows, opens the webcam with DirectShow (`cv2.CAP_DSHOW`). |
+| `settings.py` | `WINDOWS_DIRECTSHOW`: set to `False` if a Windows webcam doesn't work with DirectShow. |
+| `head_tracker.py` | Reads the model file itself and gives MediaPipe the bytes (`model_asset_buffer`) instead of the file name. |
+| `README.md` | Setup and run for Linux and for Windows. |
+| `NOTES.md` | New "If the webcam doesn't work" section near the top. |
+| `STEPS.md` | Rules: both systems are supported; keep `run.sh` and `run.bat` in step. |
+
+### Details worth knowing
+
+- **`run.bat`** finds Python with the `py` launcher (installed with Python from
+  python.org), or `python` if there is no launcher. It refuses 32-bit Python,
+  because MediaPipe exists only for 64-bit. If the game crashes, the window
+  stays open (`pause`) so the error can be read.
+- It compares `requirements.txt` with `.venv\installed-requirements.txt` using
+  `fc`, the same way `run.sh` uses `cmp`.
+- **Why DirectShow:** Windows' default camera system (Media Foundation) can take
+  10+ seconds to open a webcam. If a Windows webcam does not work with
+  DirectShow, set `WINDOWS_DIRECTSHOW = False` in `settings.py` (new setting).
+  See "If the webcam doesn't work" at the top of this file.
+- **Why the model bytes:** MediaPipe on Windows can fail to open a file whose
+  path contains non-English letters (ç, ş, ı, ğ, ö, ü), e.g. a user folder
+  named "Çağrı". Reading the file with Python avoids that.
+- **Do not use WSL or a Linux virtual machine** on Windows: webcams don't work
+  there without extra USB setup.
+- `.venv` made on Linux does not work on Windows and the other way round. It
+  isn't in git (`.gitignore`), so each computer makes its own.

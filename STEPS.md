@@ -18,8 +18,13 @@ done and tested by a person. Steps marked 👤 are done by the team, not the age
 
 ### Project facts (do not break these)
 
-- **Linux, Python 3.14**, virtual environment in `.venv/`. Run things with
-  `.venv/bin/python …` and install with `.venv/bin/pip install …`.
+- **Linux and Windows** are both supported. Virtual environment in `.venv/`.
+  On Linux run things with `.venv/bin/python …`; on Windows it is
+  `.venv\Scripts\python …`. Launchers: `run.sh` (Linux) and `run.bat`
+  (Windows); a change to one usually needs the same change in the other.
+- No Linux-only or Windows-only code without a check like
+  `sys.platform == "win32"` (see `camera.py`). Build file paths with
+  `os.path.join`, never with `/` or `\` by hand.
 - Libraries: `opencv-contrib-python`, `mediapipe`, `pygame-ce`, `numpy`
   (numpy comes with mediapipe).
   - **Never** add `opencv-python` (it conflicts with `opencv-contrib-python`,
