@@ -78,6 +78,7 @@ be built on.
 ## Commit #2 — Added update notes and README
 
 - **Date:** 30 Sep 2026
+- **Hash:** `604ed6f`
 
 ### Summary
 
@@ -89,3 +90,51 @@ Added the project's documentation. No code changed.
 |---|---|
 | `NOTES.md` | Update log with one entry per commit, plus setup and run instructions. |
 | `README.md` | The repository's front page: what the project is, who made it, how to set it up and run it. |
+
+---
+
+## Commit #3 — Fixed OpenCV package conflict
+
+- **Date:** 1 Oct 2026
+
+### Summary
+
+The project installed two OpenCV packages that overwrite each other. It now
+installs only one. No code changed.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `requirements.txt` | `opencv-python` replaced with `opencv-contrib-python`. |
+
+### The problem
+
+`requirements.txt` asked for `opencv-python`, but `mediapipe` needs
+`opencv-contrib-python`, so pip installed both. The two are the same OpenCV
+library: `opencv-contrib-python` is the main package plus extra modules. Both
+install into the same `cv2/` folder and share 41 files there, so whichever was
+installed last overwrote the other's files. Pip does not warn about this
+because the packages have different names.
+
+It worked only because both were the same version. It breaks when:
+
+- one of them is upgraded and the other is not, leaving a `cv2/` folder with
+  files from two versions;
+- one of them is uninstalled, which deletes the shared files and breaks `cv2`
+  for the other one too.
+
+### Details worth knowing
+
+- `opencv-contrib-python` includes everything in `opencv-python`, so the code
+  did not need to change.
+- Do not add `opencv-python` (or any other OpenCV package) to
+  `requirements.txt` again.
+- **If you set up `.venv` before this commit**, uninstall both packages, then
+  reinstall. Uninstalling only one breaks the other:
+
+  ```
+  .venv/bin/pip uninstall -y opencv-python opencv-contrib-python
+  .venv/bin/pip install -r requirements.txt
+  .venv/bin/python -c "import cv2; print(cv2.__version__)"   # should print a version
+  ```
