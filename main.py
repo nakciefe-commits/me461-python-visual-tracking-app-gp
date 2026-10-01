@@ -1,14 +1,15 @@
 """
-The game (demo version): head direction, copy bar, suspicion bar, warnings.
+The game: the classroom, the teacher, the copy bar, the suspicion bar.
 
 Run it with:   ./run.sh      (or  .venv/bin/python main.py)
 Keys:          Space = calibrate (start screen), q / Esc = quit,
-               r = restart, c = recalibrate
+               r = restart, c = recalibrate,
+               d = always show the classroom and the teacher's state (for testing)
 
 The program is one loop that repeats about 30 times a second:
     1. handle key presses and clicks
     2. take the newest webcam frame and find the head direction
-    3. move the game rules forward (unless paused or over)
+    3. move the teacher and the game rules forward (unless paused or over)
     4. play sounds for what happened, draw the screen
 """
 
@@ -20,8 +21,9 @@ from camera import Camera
 from game import Game, PLAYING
 from head_tracker import HeadTracker, Calibration, DOWN, SCREEN, LEFT, RIGHT
 from render import Renderer, camera_to_surface, BIG_PREVIEW_SIZE
-from settings import CAMERA_INDEX, CALIBRATION_TIME, WINDOW_WIDTH, WINDOW_HEIGHT, FPS
+from settings import CAMERA_INDEX, CALIBRATION_TIME, WINDOW_WIDTH, WINDOW_HEIGHT, FPS, FADE_TIME
 from sounds import Sounds
+from teacher import Teacher
 
 MAX_DT = 0.1   # seconds; a slow frame must not fill a whole bar at once
 
@@ -46,6 +48,19 @@ def show_error(renderer, message):
     time.sleep(3)
 
 
+def classroom_view(direction, look_time, show_always):
+    """
+    How visible the classroom is: 0 = black, 1 = fully shown. It is black
+    while looking away, and fades in over FADE_TIME after looking at the
+    screen (like eyes refocusing).
+    """
+    if show_always:
+        return 1.0
+    if direction != SCREEN:
+        return 0.0
+    return min(1.0, look_time / FADE_TIME)
+
+
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -63,8 +78,11 @@ def main():
     tracker = HeadTracker()
     calibration = Calibration(tracker, CALIBRATION_TIME)
     game = Game()
+    teacher = Teacher()
     screen_name = START
     direction = SCREEN   # last known direction, kept while paused
+    look_time = 0.0      # seconds the player has been looking at the screen in one go
+    show_always = False  # d key: always show the classroom (for testing)
     previous_time = time.time()
     running = True
 
@@ -84,7 +102,10 @@ def main():
                     screen_name = CALIBRATING
                 elif event.key == pygame.K_r:        # new game, back to the start screen
                     game.reset()
+                    teacher.reset()
                     screen_name = START
+                elif event.key == pygame.K_d:
+                    show_always = not show_always
             elif (event.type == pygame.MOUSEBUTTONDOWN and screen_name == START
                   and renderer.button_rect.collidepoint(event.pos)):
                 calibration.restart()
@@ -120,12 +141,17 @@ def main():
             paused = new_direction is None   # None = the player is gone
             if not paused:
                 direction = new_direction
-                for name in game.update(direction, dt):
-                    sounds.play(name)        # event names match sound names
+                look_time = look_time + dt if direction == SCREEN else 0.0
+                # Event names match sound names.
+                # Looking down at the paper you hear nothing from the teacher.
+                heard = teacher.sounds(teacher.update(dt), can_hear=direction != DOWN)
+                for name in heard + game.update(direction, dt, teacher):
+                    sounds.play(name)
 
             tracker.draw_face(frame, FACE_COLOURS[direction])
-            renderer.draw_game(game, direction, camera_to_surface(frame), yaw, pitch,
-                               clock.get_fps(), tracker.status)
+            view = classroom_view(direction, look_time, show_always)
+            renderer.draw_game(game, teacher, direction, view, camera_to_surface(frame),
+                               yaw, pitch, clock.get_fps(), tracker.status, show_always)
             if paused:
                 renderer.draw_paused()       # nothing was updated: the game is frozen
             elif game.popup_text:
@@ -135,8 +161,10 @@ def main():
 
         else:  # END
             tracker.draw_face(frame, FACE_COLOURS[direction])
-            renderer.draw_game(game, direction, camera_to_surface(frame), yaw, pitch,
-                               clock.get_fps(), "")
+            # The classroom is shown at the end: if you were caught, you see
+            # the teacher looking at you.
+            renderer.draw_game(game, teacher, direction, 1.0, camera_to_surface(frame),
+                               yaw, pitch, clock.get_fps(), "", show_always)
             renderer.draw_end(game)
 
         pygame.display.flip()

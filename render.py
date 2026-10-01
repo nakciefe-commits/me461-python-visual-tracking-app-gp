@@ -1,19 +1,30 @@
 """
-Drawing: everything the player sees, made from shapes and text (no art yet).
+Drawing: everything the player sees.
+
+The game screen is the classroom picture (assets/images/classroom_*.jpeg),
+with see-through strips on top: answers, warnings and the exam clock at the
+top, the two bars at the bottom, the webcam preview on the right.
+
+The classroom is only shown while the player looks at the screen. Looking
+away turns the screen black, so the teacher can only be checked by really
+looking (and heard, through the sounds).
 
 Each draw_... function paints one whole screen onto the pygame window. They
 only read the game's state; they never change it.
 """
 
+import os
+
 import cv2
 import pygame
 
 from head_tracker import DOWN, SCREEN, LEFT, RIGHT
-from game import WON, WARNING_TIME
-from settings import CALIBRATION_TIME, ANSWERS_NEEDED, MAX_WARNINGS, COPY_TIME, STARE_GRACE_TIME
+from game import WON, GRACE_PART
+from settings import CALIBRATION_TIME, ANSWERS_NEEDED, MAX_WARNINGS, COPY_TIME, CLASSROOM_TOP
 
 # Colours are (Red, Green, Blue) in pygame, not (Blue, Green, Red) as in OpenCV!
 BACKGROUND = (25, 28, 35)
+BLACK = (0, 0, 0)
 WHITE = (240, 240, 240)
 GREY = (110, 115, 125)
 DARK_GREY = (55, 60, 70)
@@ -22,21 +33,28 @@ YELLOW = (240, 200, 60)
 RED = (220, 60, 60)
 BLUE = (80, 150, 240)
 
-PREVIEW_SIZE = (320, 240)   # webcam preview in the game, pixels
+PREVIEW_SIZE = (240, 180)      # webcam preview in the game, pixels
 BIG_PREVIEW_SIZE = (480, 360)  # webcam preview on the start screen, pixels
+TOP_BAR = 56                   # height of the strip at the top, pixels
+BOTTOM_BAR = 80                # height of the strip at the bottom, pixels
+CLOCK_RED_BELOW = 15           # seconds; the exam clock turns red under this
 
-# The big title for each head direction
-TITLES = {
-    DOWN: "1 - Looking at the paper",
-    SCREEN: "2 - Looking at the teacher",
-    LEFT: "3 - Copying (left)",
-    RIGHT: "3 - Copying (right)",
+IMAGE_FOLDER = os.path.join("assets", "images")
+CLASSROOM_IMAGES = ["classroom_board_busy", "classroom_board_watching",
+                    "classroom_desk_busy", "classroom_desk_watching"]
+
+# What the black screen says when the player looks away
+LOOK_AWAY = {
+    DOWN: "Looking at your paper",
+    SCREEN: "",
+    LEFT: "Copying from the left",
+    RIGHT: "Copying from the right",
 }
-OPTION_BOXES = [  # (label, directions that light it up, colour)
-    ("1  PAPER", (DOWN,), BLUE),
-    ("2  SCREEN", (SCREEN,), YELLOW),
-    ("3  NEIGHBOUR", (LEFT, RIGHT), GREEN),
-]
+END_TEXTS = {   # lose_reason -> big text on the end screen
+    "caught": "Caught copying!",
+    "warnings": "Too many warnings",
+    "time": "Time's up",
+}
 
 
 def camera_to_surface(frame, size=PREVIEW_SIZE):
@@ -44,6 +62,18 @@ def camera_to_surface(frame, size=PREVIEW_SIZE):
     small = cv2.resize(cv2.flip(frame, 1), size)
     rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
     return pygame.image.frombuffer(rgb.tobytes(), size, "RGB")
+
+
+def load_classroom(name, width, height):
+    """
+    Load one classroom picture and fit it to the window: scale it to the
+    window's width, then cut CLASSROOM_TOP pixels off the top (mostly ceiling)
+    and whatever doesn't fit off the bottom.
+    """
+    image = pygame.image.load(os.path.join(IMAGE_FOLDER, name + ".jpeg")).convert()
+    scaled_height = image.get_height() * width // image.get_width()
+    image = pygame.transform.smoothscale(image, (width, scaled_height))
+    return image.subsurface((0, CLASSROOM_TOP, width, height)).copy()
 
 
 class Renderer:
@@ -58,6 +88,9 @@ class Renderer:
         # The "Calibrate" button on the start screen. main.py checks clicks on it.
         self.button_rect = pygame.Rect(0, 0, 300, 60)
         self.button_rect.center = (self.width // 2, 500)
+        # Loaded once at the start, not every frame: loading and scaling are slow.
+        self.classroom = {name: load_classroom(name, self.width, self.height)
+                          for name in CLASSROOM_IMAGES}
 
     # ------------------------------------------------------------------
     # Small helpers
@@ -68,11 +101,16 @@ class Renderer:
         self.screen.blit(image, rect)
         return rect
 
-    def darken(self, alpha=170):
-        """Lay a see-through black sheet over whatever is already drawn."""
-        sheet = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+    def darken(self, alpha=170, rect=None):
+        """
+        Lay a see-through black sheet over whatever is already drawn: over
+        the whole window, or only over `rect` (x, y, width, height).
+        alpha: 0 = invisible, 255 = fully black.
+        """
+        x, y, width, height = rect or (0, 0, self.width, self.height)
+        sheet = pygame.Surface((width, height), pygame.SRCALPHA)
         sheet.fill((0, 0, 0, alpha))
-        self.screen.blit(sheet, (0, 0))
+        self.screen.blit(sheet, (x, y))
 
     def bar(self, x, y, width, height, fraction, colour):
         pygame.draw.rect(self.screen, DARK_GREY, (x, y, width, height), border_radius=6)
@@ -119,67 +157,82 @@ class Renderer:
             r = self.button_rect
             self.bar(r.x, r.y + 15, r.width, 30, done, YELLOW)
 
-        self.text("Q = quit", self.small, GREY, (cx, 575), center=True)
+        self.text("In the game:  Q = quit    R = restart    C = recalibrate    "
+                  "D = always show the teacher (testing)",
+                  self.small, GREY, (cx, 575), center=True)
 
-    def draw_game(self, game, direction, camera_surface, yaw, pitch, fps, tracking_note):
-        self.screen.fill(BACKGROUND)
+    def draw_game(self, game, teacher, direction, view, camera_surface, yaw, pitch, fps,
+                  tracking_note, show_teacher_state):
+        """
+        view: how visible the classroom is, 0 = black (looking away) to
+        1 = fully shown. main.py raises it over FADE_TIME after the player
+        looks at the screen.
+        """
+        cx, cy = self.width // 2, self.height // 2
 
-        # Top left: current option, answers and warnings.
-        self.text(TITLES[direction], self.big, WHITE, (30, 30))
+        # The classroom, or black while looking away.
+        if view > 0:
+            self.screen.blit(self.classroom[teacher.image_name()], (0, 0))
+            if view < 1:
+                self.darken(int(255 * (1 - view)))   # fading in from black
+        else:
+            self.screen.fill(BLACK)
+            self.text(LOOK_AWAY[direction], self.big, GREY, (cx, cy - 20), center=True)
+            self.text("You can't see the teacher - listen!", self.medium, DARK_GREY,
+                      (cx, cy + 30), center=True)
 
-        self.text("Answers", self.medium, WHITE, (30, 112))
+        # Top strip: answers, warnings, exam clock, tracking numbers.
+        self.darken(170, (0, 0, self.width, TOP_BAR))
+        self.text("Answers", self.small, WHITE, (16, 20))
         for i in range(ANSWERS_NEEDED):
-            box = (160 + i * 40, 108, 28, 28)
+            box = (96 + i * 30, 16, 22, 22)
             if i < game.answers:
                 pygame.draw.rect(self.screen, GREEN, box, border_radius=4)
             else:
                 pygame.draw.rect(self.screen, GREY, box, 2, border_radius=4)
-        self.text(f"{game.answers}/{ANSWERS_NEEDED}", self.medium, WHITE,
-                  (170 + ANSWERS_NEEDED * 40, 112))
 
-        self.text("Warnings", self.medium, WHITE, (30, 162))
+        self.text("Warnings", self.small, WHITE, (270, 20))
         for i in range(MAX_WARNINGS):
-            centre = (174 + i * 40, 172)
+            centre = (365 + i * 30, 27)
             if i < game.warnings:
-                pygame.draw.circle(self.screen, RED, centre, 14)
+                pygame.draw.circle(self.screen, RED, centre, 10)
             else:
-                pygame.draw.circle(self.screen, GREY, centre, 14, 2)
-        self.text(f"{game.warnings}/{MAX_WARNINGS}", self.medium, WHITE,
-                  (170 + ANSWERS_NEEDED * 40, 162))
+                pygame.draw.circle(self.screen, GREY, centre, 10, 2)
 
-        # Top right: webcam preview and the angles (for tuning settings.py).
-        px = self.width - PREVIEW_SIZE[0] - 20
-        self.preview(camera_surface, px, 20)
-        self.text(f"yaw {yaw:+.0f}   pitch {pitch:+.0f}   {fps:.0f} fps", self.small, GREY,
-                  (px, 266))
+        seconds = int(game.time_left + 0.999)   # round up: "0:00" only when time is up
+        clock_colour = RED if game.time_left < CLOCK_RED_BELOW else WHITE
+        self.text(f"{seconds // 60}:{seconds % 60:02d}", self.big, clock_colour,
+                  (cx + 60, TOP_BAR // 2), center=True)
+
+        self.text(f"yaw {yaw:+.0f}  pitch {pitch:+.0f}  {fps:.0f} fps", self.small, GREY,
+                  (self.width - 250, 12))
         # e.g. "face lost..." or "head down": the face is not tracked right
         # now, and the game is guessing the direction.
-        self.text(tracking_note, self.small, YELLOW, (px + 230, 266))
+        self.text(tracking_note, self.small, YELLOW, (self.width - 250, 32))
 
-        # Middle: the three options, the active one lit up.
-        for i, (label, directions, colour) in enumerate(OPTION_BOXES):
-            box = pygame.Rect(30 + i * 310, 300, 280, 90)
-            if direction in directions:
-                pygame.draw.rect(self.screen, colour, box, border_radius=10)
-                self.text(label, self.medium, BACKGROUND, box.center, center=True)
-            else:
-                pygame.draw.rect(self.screen, GREY, box, 2, border_radius=10)
-                self.text(label, self.medium, GREY, box.center, center=True)
+        # Right: webcam preview, under the top strip.
+        self.preview(camera_surface, self.width - PREVIEW_SIZE[0] - 12, TOP_BAR + 8)
 
-        # Bottom: the two bars.
-        bar_x, bar_width = 190, self.width - 190 - 30
-        self.text("Copying", self.medium, WHITE, (30, 436))
-        self.bar(bar_x, 430, bar_width, 34, game.copy_time / COPY_TIME, GREEN)
+        # Testing aid (D key): name the teacher's state.
+        if show_teacher_state:
+            self.text(f"teacher: {teacher.state} at the {teacher.place}", self.medium,
+                      YELLOW, (16, TOP_BAR + 12))
 
-        # Suspicion: yellow during the free grace time, red after it. The white
-        # line marks where the grace time ends; reaching the end = warning.
-        self.text("Suspicion", self.medium, WHITE, (30, 496))
-        colour = YELLOW if game.stare_time < STARE_GRACE_TIME else RED
-        self.bar(bar_x, 490, bar_width, 34, game.stare_time / WARNING_TIME, colour)
-        marker_x = bar_x + bar_width * STARE_GRACE_TIME / WARNING_TIME
-        pygame.draw.line(self.screen, WHITE, (marker_x, 484), (marker_x, 529), 3)
+        # Bottom strip: the two bars.
+        top = self.height - BOTTOM_BAR
+        self.darken(170, (0, top, self.width, BOTTOM_BAR))
+        bar_x, bar_width = 120, self.width - 120 - 20
+        self.text("Copying", self.small, WHITE, (16, top + 14))
+        self.bar(bar_x, top + 10, bar_width, 24, game.copy_time / COPY_TIME, GREEN)
 
-        self.text("Q = quit    R = restart    C = recalibrate", self.small, GREY, (30, 568))
+        # Suspicion: yellow during the free staring time, red after it, and red
+        # once the teacher has seen you copying (then it fills fast). The white
+        # line marks where the free staring time ends.
+        self.text("Suspicion", self.small, WHITE, (16, top + 50))
+        danger = game.suspicion() >= GRACE_PART or game.seen_copying
+        self.bar(bar_x, top + 46, bar_width, 24, game.suspicion(), RED if danger else YELLOW)
+        marker_x = bar_x + bar_width * GRACE_PART
+        pygame.draw.line(self.screen, WHITE, (marker_x, top + 42), (marker_x, top + 74), 3)
 
     def draw_popup(self, message):
         """A red box with a message, drawn on top of the game screen."""
@@ -205,6 +258,6 @@ class Renderer:
             self.text("All answers filled!", self.huge, GREEN, (cx, cy - 50), center=True)
             self.text("You win", self.big, WHITE, (cx, cy + 10), center=True)
         else:
-            self.text("Too many warnings", self.huge, RED, (cx, cy - 50), center=True)
+            self.text(END_TEXTS[game.lose_reason], self.huge, RED, (cx, cy - 50), center=True)
             self.text("Game over", self.big, WHITE, (cx, cy + 10), center=True)
         self.text("R = play again    Q = quit", self.medium, GREY, (cx, cy + 80), center=True)

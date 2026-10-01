@@ -298,3 +298,142 @@ the old `tracker.py`).
 | `tests/` | Updated for the new names (30 tests). |
 | `README.md` | Points to `LEARN.md`; `head_test.py` removed from the files table. |
 | `STEPS.md` | "Shared interfaces" matches the new code; Step 4 now says to add `lose_reason` and the `teacher` parameter. |
+
+---
+
+## Commit #7 — The teacher, classroom art, sounds and a docs clean-up
+
+- **Date:** 2 Oct 2026
+
+### Summary
+
+The demo became a real game. A **teacher** now erases the board or plays on
+the phone, then turns and watches the class. The game can be lost in three
+ways: being **caught** copying, **3 warnings** for staring, or the **exam
+clock** (60 s) running out. The teacher is drawn with our own **classroom
+pictures**, and the classroom is only visible while the player looks at the
+screen. While copying, the player can only *hear* the teacher: Luigi's "hmm"
+means the teacher is about to look up. While looking at the paper they hear
+nothing at all.
+
+Most of the rules were changed several times while playtesting during the
+session; the final rules and the reasons are below. The docs were also
+cleaned up: `STEPS.md` is gone, `CLAUDE.md` is new, `PLAN.md` was rewritten.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `teacher.py` | The teacher's state machine: `BUSY → TURNING → WATCHING → BUSY`, each lasting a random time from `TEACHER_DURATIONS`. Two places, `BOARD` and `DESK`; after watching, the teacher moves to the other place with chance `MOVE_CHANCE`. `is_watching()`, `is_facing_class()`, `image_name()`, and `sounds(events, can_hear)`, which decides what the player hears. |
+| `assets/images/classroom_*.jpeg` | Four classroom pictures, the same room from the same seat: the teacher erasing the board / on the phone at the desk, each also looking at the player. Made with Gemini, then sharpened 4× with Real-ESRGAN and saved at 2048 px wide. |
+| `assets/images/original/` | The pictures as Gemini made them (1024 px, blurry), kept in case the sharpening needs redoing. |
+| `assets/sounds/luigi-hmm.mp3` | The teacher's turning sound. |
+| `assets/sounds/mgs-alert-sound.mp3` | Game over by being caught or by warnings. |
+| `assets/sounds/Erasing Chalk On Chalkboard Sound Effect.mp3` | Not used yet; meant as a loop while the teacher erases the board. |
+| `tests/test_teacher.py` | 14 tests: state order, durations, places, the caught grace, picture names, the picture files exist, and what the player hears. |
+| `CLAUDE.md` | The "rules for every step" from `STEPS.md` (project facts, code style, tests, what to update after a change), now in the file Claude Code reads automatically. |
+
+### Removed
+
+| File | Why |
+|---|---|
+| `STEPS.md` | 707 lines of instructions for an AI agent. Steps 0–4 are done (and recorded here in `NOTES.md`), steps 5–9 repeated the roadmap in `PLAN.md`, and the rules moved to `CLAUDE.md`. Five docs had grown to ~1,900 lines with a lot of repetition. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `game.py` | `update(direction, dt, teacher=None)`. New `time_left` (exam clock) and `lose_reason` (`"warnings"`, `"caught"`, `"time"`). Losing emits `"lost"` plus `"lost_<reason>"`, so each way of losing can have its own sound. `stare_time` is replaced by one **`suspicion_level`** (0..1, read with `suspicion()`), see "The suspicion bar" below. The copy bar now keeps its progress when you look away, and does not move while the teacher sees you. A `"spotted"` event (alarm) starts each seen glance. Without a teacher it works as before. |
+| `render.py` | The game screen is the classroom picture (scaled and cropped by `load_classroom()`) with see-through strips: answers, warnings and the exam clock (red under 15 s) at the top, the copy and suspicion bars at the bottom, a smaller webcam preview on the right. Black screen with "You can't see the teacher - listen!" while looking away. End screen text depends on `lose_reason`. The three option boxes and the big title are gone. |
+| `main.py` | Updates the teacher every frame (frozen with the game while paused), passes its events through `teacher.sounds()`. `classroom_view()` gives the fade-in from black. `d` key: always show the classroom and write the teacher's state (for testing). The end screen always shows the classroom, so a caught player sees the teacher looking at them. |
+| `sounds.py` | `SOUND_FILES` table: a sound name → a file in `assets/sounds/`, replacing the generated beep of that name (kept as a fallback if the file is missing). New beeps: `spotted` (rising alarm). `lost` split into `lost_time` (falling notes); `lost_caught` and `lost_warnings` use the MGS file. Removed: the `caught` buzz (it played on top of the game-over sound) and a "teacher is busy again" beep (it gave away when it was safe). |
+| `settings.py` | New: `EXAM_TIME`, `TEACHER_DURATIONS`, `MOVE_CHANCE`, `CAUGHT_GRACE`, `CAUGHT_TIME`, `STARE_ONLY_WHEN_FACING`, `SUSPICION_DRAIN_TIME`, `FADE_TIME`, `CLASSROOM_TOP`. Tuned values in the table below. |
+| `tests/test_game.py` | Tests with a `FakeTeacher`: caught, escaping in time, glances adding up, no copying while seen, the shared suspicion bar, slow draining, the staring rule, exam clock, pause, copying in pieces, lose events. Times are read from `settings.py` and the helpers run *at least* the given time, so tuning a number no longer breaks the tests. |
+| `tests/test_head_tracker.py` | The thresholds and hold time come from `settings.py` instead of being written in the tests. |
+| `PLAN.md` | Rewritten to match the game as it is now (rules, teacher, sounds, art, code structure), with the open questions updated (Q2, Q4, Q5 decided), a "Done and next" list that replaces `STEPS.md` steps 5–9, and future ideas. The finished demo section was removed. |
+| `LEARN.md` | New `teacher.py` section; `game.py`, `sounds.py`, `render.py`, `main.py` and "Follow one frame" describe the new code; numbers updated; an exercise that pointed at removed code replaced. |
+| `README.md` | How to play with the teacher and sounds, the files table (assets, `CLAUDE.md`, no `STEPS.md`). |
+
+### Tuned settings
+
+| Setting | Was | Now | Why |
+|---|---|---|---|
+| `SMOOTHING` | 0.4 | 0.8 | Faster reaction to head turns. |
+| `HOLD_TIME` | 0.2 s | 0.1 s | Faster reaction; 0.2 s felt laggy. |
+| `PITCH_DOWN_THRESHOLD` | 20° | 28° | Tuned by the team at the desk. |
+| `YAW_THRESHOLD` | 25° | 18° | You had to turn too far to copy. |
+| `COPY_TIME` | 2.5 s | 3.0 s | The game was too easy. |
+| `EXAM_TIME` | (new) | 60 s | 90 s was too easy. |
+| Teacher `BUSY` | (new) | 3.5–6.5 s | 4–8 s was too easy, 2.5–5 s changed too often. |
+| Teacher `TURNING` | (new) | 0.2 s | Started at 1 s; the "hmm" felt too far ahead of the danger. |
+| Teacher `WATCHING` | (new) | 4–7 s | Longer so the teacher changes less often. |
+| `CAUGHT_GRACE` | (new) | 0.1 s | 0.3 s left too long a gap after the "hmm". |
+| `CAUGHT_TIME` | (new) | 0.9 s | Time to react to the alarm; 0.7 s was a bit too harsh. |
+| `SUSPICION_DRAIN_TIME` | (new) | 8 s | Slow enough that the bar doesn't give the teacher away. |
+| `FADE_TIME` | (new) | 0.15 s | Started at 0.3 s; shorter so looking up feels instant. |
+
+### How the rules got here, and why
+
+- **The classroom is only visible while looking at the screen.** Turning the
+  head 18° still lets you see the monitor from the corner of your eye, so
+  without this you could copy and watch the teacher at once. We tried a blur
+  and a grey screen; black is the only one that gives nothing away. Looking
+  back fades the classroom in (like eyes refocusing); looking away is black
+  at once, so there is no last glimpse.
+- **Sound tells you about the teacher, but only when your head is up.**
+  Looking at the paper is safe, so it must cost something: you see and hear
+  nothing there. If you look up while the teacher is still turning, you hear
+  the "hmm" late (once per turn), so looking up is never punished.
+- **No sound when the teacher is busy again.** A "safe" sound made it too easy:
+  you could copy without ever looking. Now you have to look.
+- **Being seen is not instant game over.** While copying you are looking
+  away, and you may miss the "hmm". So being seen starts an alarm and fills
+  the suspicion bar fast (0.9 s); look away in time and you escape.
+- **No copying while seen.** Otherwise you could "look, look away, look
+  again" while the teacher watches and still fill answers, always just
+  before the bar was full. Now glancing while watched is all risk, no gain.
+- **One suspicion bar.** It used to be two counters (staring, being seen)
+  and the bar showed the bigger one, so staring after being seen made the bar
+  stop. Now both add to the same bar.
+- **The bar drains slowly instead of resetting.** A bar that jumps to empty
+  tells the player exactly when the teacher looked away.
+- **Copying in pieces (PLAN Q2).** Losing all progress when you looked away
+  felt unfair once the teacher could interrupt you; now the copy bar keeps
+  its progress.
+- **Different game-over sounds.** The MGS alert fits being caught and being
+  warned out; running out of time is a different kind of failure.
+
+### Details worth knowing
+
+- **Why `TURNING` has no picture:** the teacher has not looked up yet, so the
+  busy picture stays. The warning is the sound, because the player who needs
+  it is looking away from the screen.
+- **The pictures are cropped to fit the window:** scaled to 960 px wide, then
+  `CLASSROOM_TOP` px cut off the top (ceiling) and the rest off the bottom.
+- **Sharpening the pictures** was done once by hand with
+  `realesrgan-ncnn-vulkan -n realesrgan-x4plus` (downloaded separately, not
+  part of the project), then shrunk to 2048 px and saved as JPEG quality 95.
+  A 4× PNG was 27 MB; the JPEG is ~0.9 MB.
+- **The teacher can change place while you look:** after watching, a move
+  to the other place is an instant picture swap. Usually you are looking away
+  then.
+- **The suspicion bar can still hint a little:** it stops rising when the
+  teacher stops watching, and you can see the bar on the black screen.
+- **`d` key** keeps the classroom visible and writes the teacher's state on
+  screen: the quickest way to test the timings.
+- **Sound files are clips from Nintendo (Luigi) and Konami (Metal Gear).**
+  Fine for a class project; check the licences before publishing the game
+  anywhere else.
+- 62 tests, all passing. Not tested by the agent: the webcam, the feel of the
+  timings, and the sounds on real speakers.
+
+### Next
+
+1. Playtest with the whole team and tune `settings.py` (teacher durations,
+   `COPY_TIME`, `EXAM_TIME`, `CAUGHT_TIME`). If it feels easy, try
+   `COPY_TIME` 3.5.
+2. Use the chalk sound as a loop while the teacher erases the board (needs
+   `loop()`/`stop()` in `sounds.py`).
+3. Pictures for looking down (your paper) and sideways (the neighbour's
+   paper) instead of the black screen.
+4. Menus, difficulty and score: see `PLAN.md` section 8.

@@ -1,10 +1,11 @@
 # How the code works
 
-A guide for learning the "Don't Get Caught" demo, from the big picture down to
-each file. Read it with the code open next to it.
+A guide for learning the "Don't Get Caught" code, from the big picture down
+to each file. Read it with the code open next to it.
 
-Other docs: `PLAN.md` (what the game should become), `STEPS.md` (how to build
-it), `NOTES.md` (what changed in each commit).
+Other docs: `README.md` (how to run and play), `PLAN.md` (the design and what
+is next), `NOTES.md` (what changed in each commit, and why), `CLAUDE.md`
+(rules for anyone, person or AI, changing the code).
 
 ---
 
@@ -20,7 +21,7 @@ Each time round the loop ("one frame"):
                          head_tracker.py ──► direction: DOWN / SCREEN / LEFT / RIGHT
                                                  │        (or None = player gone)
                                                  ▼
-                                             game.py ──► events: "tick", "answer", "warning"...
+                       teacher.py + game.py ──► events: "tick", "spotted", "state:TURNING"...
                                                  │                 │
                                                  ▼                 ▼
                                             render.py          sounds.py
@@ -34,14 +35,15 @@ Every file has **one job**:
 | `settings.py` | Holds every tuning number | nothing |
 | `camera.py` | Gets pictures from the webcam | OpenCV |
 | `head_tracker.py` | Picture → which way the head points | MediaPipe, OpenCV |
-| `game.py` | The rules (bars, answers, warnings, win/lose) | nothing! |
-| `sounds.py` | Makes and plays the beeps | pygame, NumPy |
+| `teacher.py` | The teacher: busy, turning, watching; board or desk | nothing! |
+| `game.py` | The rules (bars, answers, warnings, clock, win/lose) | nothing! |
+| `sounds.py` | Makes the beeps, loads the sound files, plays them | pygame, NumPy |
 | `render.py` | Draws everything on the window | pygame, OpenCV |
 | `main.py` | Runs the loop and connects the others | all of the above |
 
-`game.py` uses **no** camera or graphics library. That is on purpose: the
-rules can be tested on their own (`tests/test_game.py`), and the art can change
-later without touching the rules.
+`game.py` and `teacher.py` use **no** camera or graphics library. That is on
+purpose: the rules can be tested on their own (`tests/`), and the art can
+change without touching the rules.
 
 ---
 
@@ -67,14 +69,15 @@ real, unflipped picture.
 ### dt: time since the last frame
 The loop does not run at exactly 30 fps. So instead of "add 1 every frame", the
 game adds **real time**: `dt` is the seconds since the last frame (about
-0.033). A bar that needs 2.5 s fills correctly whether the game runs at 20 or
+0.033). A bar that needs 3 s fills correctly whether the game runs at 20 or
 30 fps. `main.py` caps `dt` at 0.1 s, so one frozen frame can't fill a bar at
 once.
 
 ### Events
-`game.update()` doesn't play sounds itself. It **returns a list of words**
-like `["tick", "answer"]`, and `main.py` plays the sound with that name. The
-rules say *what happened*; someone else decides *how to show it*.
+`game.update()` and `teacher.update()` don't play sounds themselves. They
+**return a list of words** like `["tick", "answer"]` or `["state:TURNING"]`,
+and `main.py` plays the sound with that name. The rules say *what happened*;
+someone else decides *how to show it*.
 
 ### Screens (a "state machine")
 The game is always on one screen, stored in the variable `screen_name` in
@@ -95,8 +98,9 @@ are not updated (paused).
 
 ### `settings.py` — the numbers
 Only constants, in UPPER_CASE, each with its unit. **Want to change how the game
-feels? Change a number here**, save, restart. Examples: `COPY_TIME = 2.5` (how
-long to copy an answer), `YAW_THRESHOLD = 25` (how far to turn for "side").
+feels? Change a number here**, save, restart. Examples: `COPY_TIME = 3.0` (how
+long to copy an answer), `YAW_THRESHOLD = 18` (how far to turn for "side"),
+`TEACHER_DURATIONS` (how long the teacher stays busy or watching).
 
 ### `camera.py` — the webcam
 Reading a frame makes the program wait ~20 ms for the camera. To avoid waiting,
@@ -122,7 +126,7 @@ The hardest file. Three parts:
    - **yaw** (left/right) = `atan2(x, z)`; 0° = facing the camera
    - **pitch** (up/down) = `asin(y)`; 0° = facing the camera
 4. **Smoothing**: `self.yaw += SMOOTHING * (raw_yaw - self.yaw)` moves the
-   angle only 40% of the way to the new value each frame. One shaky frame can't
+   angle only part of the way (`SMOOTHING`, 80%) to the new value each frame. One shaky frame can't
    make it jump.
 
 **b) angles → direction**
@@ -130,10 +134,10 @@ The hardest file. Three parts:
   (*neutral*). Everyone sits differently, so all angles are measured from
   *your* neutral (`relative_angles()`).
 - `raw_direction()` compares the angles with the limits:
-  more than 20° down → `DOWN`, more than 25° left/right → `LEFT`/`RIGHT`,
-  otherwise `SCREEN`.
+  more than `PITCH_DOWN_THRESHOLD` (28°) down → `DOWN`, more than
+  `YAW_THRESHOLD` (18°) left/right → `LEFT`/`RIGHT`, otherwise `SCREEN`.
 - `update_direction(now)` adds a **hold time**: a new direction must last
-  0.2 s before it's believed. While a new direction is waiting it's called the
+  `HOLD_TIME` (0.1 s) before it's believed. While a new direction is waiting it's called the
   `candidate`.
 
 **c) `current_direction(now, face_found)`: what if the face disappears?**
@@ -154,32 +158,66 @@ frame, so you can see what the tracker sees.
 
 ### `game.py` — the rules
 `Game` holds the game's state: `answers`, `warnings`, `copy_time`,
-`stare_time`, `state` (`PLAYING` / `WON` / `LOST`) and the popup.
-`update(direction, dt)` runs once per frame and has two parts:
+`suspicion_level`, `time_left`, `state` (`PLAYING` / `WON` / `LOST`) and the
+popup. `update(direction, dt, teacher)` runs once per frame and has three
+parts: the suspicion bar, copying, and the exam clock.
 
 **Copying (LEFT or RIGHT):**
 - `copy_time` grows by `dt`. A `"tick"` event every `TICK_INTERVAL` (0.3 s).
-- At `COPY_TIME` (2.5 s): one more answer, `"answer"` event, and
+- No progress while the teacher sees you copying (no gain, only risk).
+- At `COPY_TIME` (3 s): one more answer, `"answer"` event, and
   `copy_locked = True`, so you must look away before the next answer starts
   (otherwise one long look would fill everything).
 - 5 answers → `WON`.
-- Looking anywhere else resets `copy_time` to 0.
+- Looking anywhere else keeps `copy_time`, so an answer can be copied in pieces.
 
-**Staring (SCREEN):**
-- `stare_time` grows by `dt`.
-- At `WARNING_TIME` (3 s grace + 2 s = 5 s): one more warning, `"warning"`
-  event, a popup for 2 s, and `stare_time` starts again from 0.
-- 3 warnings → `LOST`.
-- Looking anywhere else resets `stare_time` to 0.
+**The suspicion bar (`suspicion_level`, 0 to 1):**
+- **Seen copying** (sideways while `teacher.is_watching()`): grows by
+  `dt / CAUGHT_TIME`, full in 0.9 s → `"caught"`, `LOST`. A `"spotted"` alarm
+  plays each time a glance starts.
+- **Staring** (SCREEN while the teacher looks at the class): grows by
+  `dt / WARNING_TIME`, full after 5 s → one more warning, `"warning"` event,
+  a popup for 2 s, and the bar starts again from 0. 3 warnings → `LOST`.
+- Both add to the **same** bar: after being seen, staring carries on from
+  there.
+- Otherwise it **drains slowly** (`SUSPICION_DRAIN_TIME`, 8 s for a full bar).
+  It never jumps to empty, because that would tell you the teacher looked away.
 
-**Looking DOWN** does nothing, so it resets both. That's the safe place.
+**The exam clock:** `time_left` counts down from `EXAM_TIME` (60 s); at 0 →
+`LOST`.
 
-### `sounds.py` — beeps without sound files
+**Losing** emits `"lost"` and `"lost_<reason>"` (`lost_caught`,
+`lost_warnings`, `lost_time`), so each way of losing can have its own sound.
+
+**Looking DOWN** is the safe place: nothing fills, the bar drains.
+
+### `teacher.py` — the teacher
+A **state machine**: the teacher is always in one state, and after a random
+time (`TEACHER_DURATIONS`) moves to the next:
+
+```
+BUSY ──► TURNING ──► WATCHING ──► BUSY ...
+```
+
+- `place` is `BOARD` or `DESK`; after watching, it may switch (`MOVE_CHANCE`).
+- `update(dt)` returns `["state:TURNING"]` etc. when the state changes.
+- `is_watching()`: copying now fills the suspicion bar fast (after the first
+  `CAUGHT_GRACE` seconds of `WATCHING`). `is_facing_class()`: staring counts.
+- `image_name()` → e.g. `"classroom_board_busy"`: which picture to draw.
+- `sounds(events, can_hear)` decides which teacher sounds the player hears:
+  none while looking at the paper; the turning "hmm" once per turn, even if
+  you look up late.
+- It takes a `random.Random` so the tests can use a fixed seed and get the
+  same "random" teacher every run.
+
+### `sounds.py` — beeps and sound files
 A sound is a long list of numbers telling the speaker where to be, 44,100 times
 a second. `tone(freq, seconds)` makes a sine wave with NumPy, which sounds like
-a beep. `make_waves()` builds the five sounds; their names match the game's
-events. If the computer has no sound device, `Sounds` stays empty and `play()`
-does nothing, so the game still runs.
+a beep. `make_waves()` builds the beeps; their names match the events.
+`SOUND_FILES` replaces some of them with files from `assets/sounds/` (the
+Luigi "hmm" for `state:TURNING`, the MGS alert for losing by being caught or
+by warnings). A missing file keeps the beep. If the computer has no sound
+device, `Sounds` stays empty and `play()` does nothing, so the game still runs.
 
 ### `render.py` — drawing
 pygame draws onto a "surface" (the window) and `pygame.display.flip()` (in
@@ -188,11 +226,16 @@ that's also how animation will work later.
 
 - `camera_to_surface()` turns an OpenCV frame into a pygame image (resize,
   mirror, BGR→RGB).
-- `Renderer` loads fonts once and has a draw function per screen:
-  `draw_start`, `draw_game`, `draw_popup`, `draw_paused`, `draw_end`.
+- `load_classroom()` loads a classroom picture once, scales it to the window's
+  width and cuts off the top (`CLASSROOM_TOP`) and bottom so it fits.
+- `Renderer` loads fonts and pictures once and has a draw function per
+  screen: `draw_start`, `draw_game`, `draw_popup`, `draw_paused`, `draw_end`.
+- `draw_game` draws the teacher's picture (or black while you look away,
+  fading in by `view`), then see-through strips: answers, warnings and the
+  clock at the top, the copy and suspicion bars at the bottom.
 - Helpers: `text()`, `bar()` (grey background + coloured part),
-  `darken()` (see-through black layer for pause/end screens).
-- `draw_game` only **reads** `game`; it never changes it.
+  `darken()` (see-through black layer, for the whole window or a strip).
+- The draw functions only **read** `game` and `teacher`; they never change them.
 
 ### `main.py` — the loop
 Setup: open the window, sounds, camera, tracker, calibration and game. Then
@@ -202,17 +245,22 @@ each frame:
 2. **Camera**: `camera.read()`, then `tracker.read(frame, now)`.
 3. **Per screen**:
    - START / CALIBRATING: big preview, feed `calibration.add()`.
-   - GAME: `direction = tracker.current_direction(...)`. If not `None`,
-     `game.update(direction, dt)` and play a sound per event. Draw; on top,
-     either the pause layer or the popup.
-   - END: draw the game and the end layer.
+   - GAME: `direction = tracker.current_direction(...)`. If not `None`:
+     `teacher.update(dt)`, filtered by `teacher.sounds()` (silence while
+     looking down), and `game.update(direction, dt, teacher)`; play a sound
+     per event. `classroom_view()` says how visible the classroom is (0 =
+     black, 1 = shown, fading in over `FADE_TIME`). Draw; on top, either the
+     pause layer or the popup. Paused = nothing is updated, so the teacher
+     and the clock freeze too.
+   - END: draw the game with the classroom always shown, and the end layer.
 4. `pygame.display.flip()` shows the frame; `clock.tick(FPS)` waits so we don't
    run faster than 30 fps.
 
 ### `tests/`
-`test_game.py` and `test_head_tracker.py` check the rules and the direction
-logic **without a camera**, by calling the functions with made-up angles and
-times. Run them:
+`test_game.py`, `test_teacher.py` and `test_head_tracker.py` check the rules,
+the teacher and the direction logic **without a camera**, by calling the
+functions with made-up angles and times. `test_game.py` uses a `FakeTeacher`
+whose watching/facing the test sets by hand. Run them:
 
 ```
 .venv/bin/python -m unittest discover -s tests -v
@@ -225,21 +273,29 @@ updating because you changed the rule on purpose).
 
 ## 4. Follow one frame
 
-You turn your head left for 3 seconds. One frame in the middle of that:
+You turn your head left to copy while the teacher erases the board. One
+frame in the middle of that:
 
 1. `camera.read()` returns the newest picture.
 2. `tracker.read()` → MediaPipe finds the face; the nose arrow points left;
-   yaw becomes, say, +31° relative to your neutral.
+   yaw becomes, say, +25° relative to your neutral.
 3. `tracker.current_direction()` → face found → `update_direction()` →
-   `raw_direction()` says `LEFT` (31 > 25), and it has been `LEFT` for more than
-   0.2 s → returns `LEFT`.
-4. `game.update(LEFT, 0.033)` → `copy_time` is 1.20 s, which has reached the
+   `raw_direction()` says `LEFT` (25 > 18), and it has been `LEFT` for more than
+   0.1 s → returns `LEFT`.
+4. `teacher.update(0.033)` → still `BUSY`, returns `[]`.
+5. `game.update(LEFT, 0.033, teacher)` → the teacher is not watching, so the
+   suspicion bar drains a little; `copy_time` is 1.20 s, which has reached the
    next tick time (ticks are at 0, 0.3, 0.6, 0.9, 1.2...) → a `"tick"` event;
    then `copy_time` grows to 1.233 s. Returns `["tick"]`.
-5. `main.py` calls `sounds.play("tick")`.
-6. `renderer.draw_game()` draws "3 - Copying (left)", lights the green
-   NEIGHBOUR box, and fills the copy bar to 1.233 / 2.5 ≈ 49%.
-7. `pygame.display.flip()`: you see it.
+6. `main.py` calls `sounds.play("tick")`.
+7. `classroom_view(LEFT, ...)` is 0, so `renderer.draw_game()` draws a black
+   screen with "Copying from the left" and fills the copy bar to
+   1.233 / 3.0 ≈ 41%.
+8. `pygame.display.flip()`: you see it.
+
+Had the teacher been `WATCHING`, step 5 would instead raise the suspicion bar
+by 0.033 / 0.9, not move the copy bar, and return `["spotted"]` on the first
+such frame: the alarm.
 
 ---
 
@@ -252,10 +308,8 @@ Small changes to learn by doing. Run `./run.sh` after each one.
    update by themselves (look at how `render.py` uses `ANSWERS_NEEDED`).
 3. **Medium:** in `sounds.py`, change the `"answer"` sound to two notes, like
    `"won"` is built.
-4. **Medium:** in `render.py`, change the colour of the NEIGHBOUR box in
-   `OPTION_BOXES`.
-5. **Harder:** in `game.py`, make looking DOWN slowly *reduce* `stare_time`
-   instead of resetting it to 0. Then fix the test in `tests/test_game.py`
-   that now fails (`test_looking_down_resets_staring`) and explain why it failed.
+4. **Medium:** in `render.py`, change the colour of the copy bar.
+5. **Harder:** in `game.py`, make looking DOWN drain the suspicion bar twice
+   as fast as other directions. Then add a test for it in `tests/test_game.py`.
 6. **Harder:** print the yaw and pitch to the terminal in `main.py` every
    frame, then look left, right and down and watch the numbers change.

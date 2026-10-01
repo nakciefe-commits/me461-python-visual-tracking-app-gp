@@ -7,6 +7,10 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from head_tracker import HeadTracker, Calibration, DOWN, SCREEN, LEFT, RIGHT
+from settings import PITCH_DOWN_THRESHOLD, YAW_THRESHOLD, HOLD_TIME
+
+# Clearly past the "down" threshold, whatever it is set to in settings.py.
+LOOKING_DOWN = -(PITCH_DOWN_THRESHOLD + 5)
 
 
 def tracker_at(yaw, pitch):
@@ -22,17 +26,17 @@ class RawDirectionTests(unittest.TestCase):
     def test_left_right_down(self):
         self.assertEqual(tracker_at(30, 0).raw_direction(), LEFT)
         self.assertEqual(tracker_at(-30, 0).raw_direction(), RIGHT)
-        self.assertEqual(tracker_at(0, -25).raw_direction(), DOWN)
+        self.assertEqual(tracker_at(0, LOOKING_DOWN).raw_direction(), DOWN)
 
     def test_down_wins_over_turn(self):
-        self.assertEqual(tracker_at(30, -25).raw_direction(), DOWN)
+        self.assertEqual(tracker_at(30, LOOKING_DOWN).raw_direction(), DOWN)
 
     def test_looking_up_is_screen(self):
         self.assertEqual(tracker_at(0, 25).raw_direction(), SCREEN)
 
     def test_uses_calibration(self):
         tracker = tracker_at(30, 0)
-        tracker.calibrate(10, 0)   # only 20 degrees away from neutral
+        tracker.calibrate(30 - (YAW_THRESHOLD - 5), 0)   # less than YAW_THRESHOLD from neutral
         self.assertEqual(tracker.raw_direction(), SCREEN)
 
 
@@ -40,8 +44,8 @@ class HoldTimeTests(unittest.TestCase):
     def test_new_direction_needs_hold_time(self):
         tracker = tracker_at(30, 0)
         self.assertEqual(tracker.update_direction(0.0), SCREEN)
-        self.assertEqual(tracker.update_direction(0.1), SCREEN)
-        self.assertEqual(tracker.update_direction(0.25), LEFT)
+        self.assertEqual(tracker.update_direction(HOLD_TIME / 2), SCREEN)
+        self.assertEqual(tracker.update_direction(HOLD_TIME + 0.05), LEFT)
 
     def test_one_frame_flicker_is_ignored(self):
         tracker = tracker_at(30, 0)
