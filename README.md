@@ -42,7 +42,7 @@ your "looking at the screen" position. Then:
 | Head | Option | What happens |
 |---|---|---|
 | Down | 1 - paper | Safe. |
-| At the screen | 2 - teacher | After 3 s the suspicion bar fills; when full you get a warning. 3 warnings = game over. |
+| At the screen | 2 - teacher | The suspicion bar fills; after 3 s it turns red, and when it is full you get a warning. 3 warnings = game over. |
 | Left / right | 3 - copy | Hold 2.5 s to fill one answer (ticking sound). Fill 5 to win. |
 
 Keys: Space calibrate, `q`/Esc quit, `r` restart, `c` recalibrate. If no face
@@ -52,8 +52,8 @@ the game carries on. You don't need to turn your head
 far: 25° counts as looking to the side, and a face turned too far away is hard
 to track.
 
-To tune the head tracking on its own, run `.venv/bin/python head_test.py` and
-change the numbers in `settings.py`.
+To tune the head tracking, watch the yaw/pitch numbers under the webcam
+preview and change the numbers in `settings.py`.
 
 The old body tracker still runs with `.venv/bin/python tracker.py`.
 
@@ -81,13 +81,13 @@ with pygame (`render.py`). `main.py` runs the loop.
 | `render.py` | All drawing. |
 | `sounds.py` | Sound effects (generated in code for now). |
 | `settings.py` | Every tuning number in one place. |
-| `head_test.py` | Test window for tuning the head tracking. |
 | `tests/` | Unit tests for the rules and the tracker. |
 | `run.sh` | Launcher. |
 | `face_landmarker.task` | Pre-trained MediaPipe face model. |
 | `tracker.py` | The first body tracker, kept for reference. |
 | `pose_landmarker.task` | Pre-trained MediaPipe pose model, used by `tracker.py`. |
 | `assets/` | Images and sounds (empty for now). |
+| `LEARN.md` | **Start here to learn the code:** how it works, file by file. |
 | `PLAN.md` | Game design, demo spec and future ideas. |
 | `STEPS.md` | Step-by-step build instructions. |
 | `requirements.txt` | Libraries to install. |

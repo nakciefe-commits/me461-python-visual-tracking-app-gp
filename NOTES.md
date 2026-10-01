@@ -259,3 +259,42 @@ run `pip install`. So normal starts are as fast as before and need no internet.
 - To force a reinstall, delete `.venv/installed-requirements.txt`.
 - If creating `.venv` fails, `run.sh` tells you to install `python3-venv`.
 - The first start needs internet and takes a few minutes (MediaPipe is large).
+
+---
+
+## Commit #6 — Simplified the code, added LEARN.md
+
+- **Date:** 1 Oct 2026
+
+### Summary
+
+Same game, less code, so it is easier to learn, plus `LEARN.md`, a guide to
+how the code works. Nothing changes for the
+player. The game code went from 1,066 to 856 lines (not counting tests and
+the old `tracker.py`).
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `LEARN.md` | Beginner guide: the big picture, key ideas (frames, BGR/RGB, `dt`, events, screens), every file explained, one frame followed step by step, and practice exercises. |
+
+### Removed
+
+| File | Why |
+|---|---|
+| `head_test.py` | The game now shows everything it did (face drawing, angles, direction), so it was duplicate code. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `camera.py` | The background thread just keeps the newest frame in `self.frame`; `read()` returns it. No more `Condition` waiting. Still ~30 fps. |
+| `head_tracker.py` | `read(frame, now)` replaces `read_angles(frame, timestamp_ms)`: the tracker makes MediaPipe's millisecond timestamps itself. All lost-face rules are in `current_direction(now, face_found)`, which also sets `status` ("head down", "face lost...") for the screen. Times are in seconds everywhere. |
+| `game.py` | `copy_progress` and `suspicion` removed (they were `copy_time` and `stare_time` written differently). `update()` is one function with two clear parts: copying and staring. `WARNING_TIME` = grace + fill time. |
+| `sounds.py` | One `tone()` function instead of three; `loop`/`stop` placeholders removed until Step 5 needs them. |
+| `render.py` | The suspicion bar is one bar (yellow during the grace time, red after) with a marker line. The popup is drawn by its own `draw_popup()`, called from `main.py`. |
+| `main.py` | No timestamp handling; uses `tracker.status` for the note under the preview. |
+| `tests/` | Updated for the new names (30 tests). |
+| `README.md` | Points to `LEARN.md`; `head_test.py` removed from the files table. |
+| `STEPS.md` | "Shared interfaces" matches the new code; Step 4 now says to add `lose_reason` and the `teacher` parameter. |

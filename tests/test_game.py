@@ -28,10 +28,10 @@ class CopyingTests(unittest.TestCase):
         self.assertEqual(game.answers, 1)
         self.assertEqual(events.count("answer"), 1)
 
-    def test_progress_bar_fills(self):
+    def test_copy_time_counts_up(self):
         game = Game()
         run(game, RIGHT, 1.25)
-        self.assertAlmostEqual(game.copy_progress, 0.5)
+        self.assertAlmostEqual(game.copy_time, 1.25)
 
     def test_looking_away_resets_progress(self):
         game = Game()
@@ -63,16 +63,11 @@ class CopyingTests(unittest.TestCase):
 
 
 class StaringTests(unittest.TestCase):
-    def test_grace_time_is_free(self):
+    def test_no_warning_before_warning_time(self):
         game = Game()
-        run(game, SCREEN, 2.875)
-        self.assertEqual(game.suspicion, 0)
-
-    def test_suspicion_fills_after_grace(self):
-        game = Game()
-        run(game, SCREEN, 4.0)
-        self.assertGreater(game.suspicion, 0)
-        self.assertLess(game.suspicion, 1)
+        run(game, SCREEN, 4.875)
+        self.assertEqual(game.warnings, 0)
+        self.assertAlmostEqual(game.stare_time, 4.875)
 
     def test_warning_after_grace_plus_fill(self):
         game = Game()
@@ -91,7 +86,6 @@ class StaringTests(unittest.TestCase):
         game = Game()
         events = run(game, SCREEN, 15.0)
         self.assertEqual(game.state, LOST)
-        self.assertEqual(game.lose_reason, "warnings")
         self.assertIn("lost", events)
 
     def test_looking_down_resets_staring(self):
@@ -99,7 +93,6 @@ class StaringTests(unittest.TestCase):
         run(game, SCREEN, 4.0)
         run(game, DOWN, 0.125)
         self.assertEqual(game.stare_time, 0)
-        self.assertEqual(game.suspicion, 0)
 
 
 class GameOverTests(unittest.TestCase):

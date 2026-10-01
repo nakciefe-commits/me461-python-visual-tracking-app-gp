@@ -78,31 +78,48 @@ done and tested by a person. Steps marked 👤 are done by the team, not the age
 
 ## Shared interfaces
 
-Later steps rely on these names. Keep them exactly as written, so steps fit
-together. Steps may **add** things, but must not rename or remove these.
+Later steps rely on these names. This block describes the code **as it is
+now** (after the simplification in commit #6). Steps may **add** things, but
+must not rename or remove these.
 
 ```python
 # head_tracker.py
 DOWN, SCREEN, LEFT, RIGHT = "DOWN", "SCREEN", "LEFT", "RIGHT"
 class HeadTracker:
     yaw: float; pitch: float                    # smoothed, degrees
-    def read_angles(self, frame_bgr, timestamp_ms) -> bool   # True = face found
+    direction: str                              # the direction currently believed
+    status: str                                 # "", "head down", "face lost...", "face not found"
+    def read(self, frame_bgr, now_seconds) -> bool            # True = face found
+    def face_visible(self, now_seconds) -> bool               # seen in the last FACE_LOST_GRACE s
+    def current_direction(self, now_seconds, face_found) -> str | None   # None = pause
     def calibrate(self, yaw, pitch) -> None
+    def relative_angles(self) -> tuple[float, float]
     def raw_direction(self) -> str              # no hold time
     def update_direction(self, now_seconds) -> str            # with hold time
+    def draw_face(self, frame_bgr, colour_bgr) -> None
     def close(self) -> None
+class Calibration:
+    def restart(self); def add(self, face_visible, dt); def done(self) -> bool
+    def seconds_left(self) -> float
+
+# camera.py
+class Camera:
+    running: bool                               # False = no webcam / it stopped
+    def read(self) -> frame | None              # newest frame
+    def release(self) -> None
 
 # game.py  (no pygame / cv2 imports)
+WARNING_TIME              # STARE_GRACE_TIME + STARE_FILL_TIME
 class Game:
     answers: int; warnings: int
-    copy_progress: float      # 0.0–1.0
-    suspicion: float          # 0.0–1.0 (the filling part after the grace time)
+    copy_time: float          # seconds of continuous looking sideways
     stare_time: float         # seconds of continuous looking at the screen
-    state: str                # "PLAYING", "WON", "LOST"
-    lose_reason: str | None   # "warnings", "caught", "time"
+    state: str                # PLAYING, WON, LOST
     popup_text: str | None; popup_timer: float
     def reset(self) -> None
-    def update(self, direction, dt, teacher=None) -> list[str]   # returns events
+    def update(self, direction, dt) -> list[str]   # returns events
+    # Step 4 adds: lose_reason ("warnings", "caught", "time") and a
+    # `teacher=None` parameter to update().
 
 # events returned by Game.update():
 #   "tick", "answer", "warning", "won", "lost"
@@ -118,8 +135,7 @@ class Teacher:
 # sounds.py
 class Sounds:
     def play(self, name) -> None                # one-shot, silent if no audio
-    def loop(self, name) -> None                # start looping (Step 5)
-    def stop(self, name) -> None
+    # Step 5 adds loop(name) and stop(name).
 ```
 
 ---
@@ -146,7 +162,13 @@ downloaded to the project root; a first draft of `head_tracker.py` written
 
 ---
 
-## Step 1 — Head tracker + test window ✅ (code done, 👤 testing left)
+## Step 1 — Head tracker + test window ✅ done
+
+> **Note:** this step and Step 2 are done. The text below is the original
+> instructions. The code was simplified afterwards (commit #6): `head_test.py`
+> was removed (the game shows the tracking itself), `read_angles` became
+> `read`, and `game.py` lost `copy_progress` / `suspicion`. For the current
+> names, see "Shared interfaces" above and `NOTES.md`.
 
 **Goal:** reliably turn the webcam image into `DOWN` / `SCREEN` / `LEFT` /
 `RIGHT` / no face, and have a window to check and tune it.
@@ -244,7 +266,7 @@ hand, or give `__init__` a `load_model=True` parameter). Cases:
 
 ---
 
-## Step 2 — The demo (no teacher, no art) ✅ (code done, 👤 testing left)
+## Step 2 — The demo (no teacher, no art) ✅ done (see the note in Step 1)
 
 **Goal:** the demo from `PLAN.md` section 7. A pygame window that shows the
 current option, the copy bar with tick sound, the suspicion bar with warning
@@ -485,6 +507,9 @@ STARE_ONLY_WHEN_FACING = True   # PLAN Q5: staring only counts if the teacher fa
 
 ### 4.3 Changes to `game.py`
 
+- Add `teacher=None` as a third parameter of `update()`, and a `lose_reason`
+  attribute (`None`, `"warnings"`, `"caught"`, `"time"`); set it to
+  `"warnings"` where the game is lost by warnings.
 - New attribute `time_left`, starts at `EXAM_TIME`. Count it down in `update`.
   At 0 with answers missing: `state = "LOST"`, `lose_reason = "time"`, emit
   `"lost"`.

@@ -9,8 +9,8 @@ import cv2
 import pygame
 
 from head_tracker import DOWN, SCREEN, LEFT, RIGHT
-from settings import (CALIBRATION_TIME, ANSWERS_NEEDED, MAX_WARNINGS,
-                      STARE_GRACE_TIME, STARE_FILL_TIME)
+from game import WON, WARNING_TIME
+from settings import CALIBRATION_TIME, ANSWERS_NEEDED, MAX_WARNINGS, COPY_TIME, STARE_GRACE_TIME
 
 # Colours are (Red, Green, Blue) in pygame, not (Blue, Green, Red) as in OpenCV!
 BACKGROUND = (25, 28, 35)
@@ -25,7 +25,7 @@ BLUE = (80, 150, 240)
 PREVIEW_SIZE = (320, 240)   # webcam preview in the game, pixels
 BIG_PREVIEW_SIZE = (480, 360)  # webcam preview on the start screen, pixels
 
-# What to show for each head direction: (box number, title)
+# The big title for each head direction
 TITLES = {
     DOWN: "1 - Looking at the paper",
     SCREEN: "2 - Looking at the teacher",
@@ -121,8 +121,7 @@ class Renderer:
 
         self.text("Q = quit", self.small, GREY, (cx, 575), center=True)
 
-    def draw_game(self, game, direction, camera_surface, yaw, pitch, fps,
-                  tracking_note=None, show_popup=True):
+    def draw_game(self, game, direction, camera_surface, yaw, pitch, fps, tracking_note):
         self.screen.fill(BACKGROUND)
 
         # Top left: current option, answers and warnings.
@@ -153,10 +152,9 @@ class Renderer:
         self.preview(camera_surface, px, 20)
         self.text(f"yaw {yaw:+.0f}   pitch {pitch:+.0f}   {fps:.0f} fps", self.small, GREY,
                   (px, 266))
-        if tracking_note:
-            # e.g. "face lost..." or "head down": the face is not tracked
-            # right now, and the game is guessing the direction.
-            self.text(tracking_note, self.small, YELLOW, (px + 230, 266))
+        # e.g. "face lost..." or "head down": the face is not tracked right
+        # now, and the game is guessing the direction.
+        self.text(tracking_note, self.small, YELLOW, (px + 230, 266))
 
         # Middle: the three options, the active one lit up.
         for i, (label, directions, colour) in enumerate(OPTION_BOXES):
@@ -171,32 +169,20 @@ class Renderer:
         # Bottom: the two bars.
         bar_x, bar_width = 190, self.width - 190 - 30
         self.text("Copying", self.medium, WHITE, (30, 436))
-        self.bar(bar_x, 430, bar_width, 34, game.copy_progress, GREEN)
+        self.bar(bar_x, 430, bar_width, 34, game.copy_time / COPY_TIME, GREEN)
 
-        # The suspicion bar has two parts: the free grace time (yellow), then
-        # the part that leads to a warning (red), split by a white marker.
+        # Suspicion: yellow during the free grace time, red after it. The white
+        # line marks where the grace time ends; reaching the end = warning.
         self.text("Suspicion", self.medium, WHITE, (30, 496))
-        grace_width = int(bar_width * STARE_GRACE_TIME / (STARE_GRACE_TIME + STARE_FILL_TIME))
-        grace_fraction = min(game.stare_time / STARE_GRACE_TIME, 1.0)
-        self.bar(bar_x, 490, bar_width, 34, 0, RED)  # empty background
-        if grace_fraction > 0:
-            pygame.draw.rect(self.screen, YELLOW,
-                             (bar_x, 490, int(grace_width * grace_fraction), 34), border_radius=6)
-        if game.suspicion > 0:
-            pygame.draw.rect(self.screen, RED,
-                             (bar_x + grace_width, 490,
-                              int((bar_width - grace_width) * game.suspicion), 34))
-        pygame.draw.line(self.screen, WHITE, (bar_x + grace_width, 484),
-                         (bar_x + grace_width, 529), 3)
+        colour = YELLOW if game.stare_time < STARE_GRACE_TIME else RED
+        self.bar(bar_x, 490, bar_width, 34, game.stare_time / WARNING_TIME, colour)
+        marker_x = bar_x + bar_width * STARE_GRACE_TIME / WARNING_TIME
+        pygame.draw.line(self.screen, WHITE, (marker_x, 484), (marker_x, 529), 3)
 
         self.text("Q = quit    R = restart    C = recalibrate", self.small, GREY, (30, 568))
 
-        # On top of everything: the warning popup (hidden under pause/end
-        # screens, where it would clash with their text).
-        if game.popup_text and show_popup:
-            self.popup(game.popup_text)
-
-    def popup(self, message):
+    def draw_popup(self, message):
+        """A red box with a message, drawn on top of the game screen."""
         image = self.medium.render(message, True, WHITE)
         box = image.get_rect(center=(self.width // 2, self.height // 2 - 60)).inflate(60, 50)
         pygame.draw.rect(self.screen, RED, box, border_radius=12)
@@ -215,7 +201,7 @@ class Renderer:
         """Drawn on top of the last game screen when the game is over."""
         self.darken(200)
         cx, cy = self.width // 2, self.height // 2
-        if game.state == "WON":
+        if game.state == WON:
             self.text("All answers filled!", self.huge, GREEN, (cx, cy - 50), center=True)
             self.text("You win", self.big, WHITE, (cx, cy + 10), center=True)
         else:

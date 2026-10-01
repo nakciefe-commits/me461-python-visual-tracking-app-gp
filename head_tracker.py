@@ -5,14 +5,14 @@ It answers one question per webcam frame: is the player looking
     DOWN    at the exam paper           (option 1)
     SCREEN  at the monitor              (option 2)
     LEFT    or RIGHT at a neighbour     (option 3)
-or is there no face at all?
+or is the player gone?
 
 How: MediaPipe's Face Landmarker gives a "transformation matrix" for the face,
 which says how the head is rotated. From that we compute two angles:
     yaw    turning left/right   (0 = straight at the camera)
     pitch  nodding up/down      (0 = straight at the camera)
 The angles are compared with the player's own "straight at the screen"
-angles, which we measure once at the start (calibration).
+angles, which are measured at the start (calibration).
 """
 
 import math
@@ -22,8 +22,8 @@ import mediapipe as mp
 from mediapipe.tasks.python import vision
 
 from settings import (FACE_MODEL_FILE, MIN_FACE_CONFIDENCE, FACE_LOST_GRACE,
-                      LOST_DOWN_PITCH, YAW_THRESHOLD, PITCH_DOWN_THRESHOLD, YAW_SIGN, PITCH_SIGN,
-                      SMOOTHING, HOLD_TIME)
+                      LOST_DOWN_PITCH, YAW_THRESHOLD, PITCH_DOWN_THRESHOLD,
+                      YAW_SIGN, PITCH_SIGN, SMOOTHING, HOLD_TIME)
 
 DOWN, SCREEN, LEFT, RIGHT = "DOWN", "SCREEN", "LEFT", "RIGHT"
 
@@ -55,28 +55,36 @@ class HeadTracker:
                 min_tracking_confidence=MIN_FACE_CONFIDENCE,
             )
             self.detector = vision.FaceLandmarker.create_from_options(options)
+        self.last_timestamp_ms = 0
 
         self.yaw = 0.0            # smoothed angles, in degrees
         self.pitch = 0.0
         self.neutral_yaw = 0.0    # the player's "looking at the screen" angles,
         self.neutral_pitch = 0.0  # set by calibrate()
-        self.has_angles = False   # False until the first face is seen
-        self.last_seen_ms = None  # timestamp of the last frame with a face
-        self.last_raw_pitch = 0.0 # unsmoothed pitch of the last frame with a face
 
+        self.last_seen = None     # time (seconds) of the last frame with a face
+        self.last_raw_pitch = 0.0 # unsmoothed pitch of the last frame with a face
         self.landmarks = None     # the 478 face points of the last frame (for drawing)
         self.nose_vector = None   # where the nose points, camera space (for drawing)
 
         self.direction = SCREEN   # the direction we currently believe
         self.candidate = SCREEN   # a new direction waiting for HOLD_TIME to pass
         self.candidate_since = 0.0
+        self.status = ""          # why the face is not tracked right now, for the screen
 
-    def read_angles(self, frame, timestamp_ms):
+    # ------------------------------------------------------------------
+    # Reading the face
+    # ------------------------------------------------------------------
+    def read(self, frame, now):
         """
-        Find the face in a BGR webcam frame and update self.yaw / self.pitch.
-        Returns True if a face was found, False if not.
-        `timestamp_ms` must be larger on every call (MediaPipe VIDEO mode).
+        Find the face in a BGR webcam frame and update yaw and pitch.
+        `now` is the current time in seconds. Returns True if a face was found.
         """
+        # MediaPipe (VIDEO mode) needs a time in milliseconds that grows
+        # with every frame.
+        timestamp_ms = max(int(now * 1000), self.last_timestamp_ms + 1)
+        self.last_timestamp_ms = timestamp_ms
+
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # OpenCV is BGR, MediaPipe wants RGB
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         result = self.detector.detect_for_video(mp_image, timestamp_ms)
@@ -84,7 +92,8 @@ class HeadTracker:
         if not result.facial_transformation_matrixes:
             self.landmarks = None
             return False
-        self.last_seen_ms = timestamp_ms
+
+        self.last_seen = now
         self.landmarks = result.face_landmarks[0]
 
         # The top-left 3x3 of the matrix is the rotation. Its third column is
@@ -92,64 +101,98 @@ class HeadTracker:
         # z towards the camera).
         m = result.facial_transformation_matrixes[0]
         nose_x, nose_y, nose_z = m[0][2], m[1][2], m[2][2]
-        self.nose_vector = (nose_x, nose_y, nose_z)
+        self.nose_vector = (nose_x, nose_y)
 
         # Positive yaw = the player turns to their own left.
         # Positive pitch = the player looks up.
         raw_yaw = YAW_SIGN * math.degrees(math.atan2(nose_x, nose_z))
         raw_pitch = PITCH_SIGN * math.degrees(math.asin(max(-1.0, min(1.0, nose_y))))
-
         self.last_raw_pitch = raw_pitch
 
-        if not self.has_angles:
-            # First face ever: jump straight there instead of sliding from 0.
-            self.yaw, self.pitch = raw_yaw, raw_pitch
-            self.has_angles = True
-        else:
-            # Smoothing: move only part of the way towards the new value, so
-            # one noisy frame cannot make the angle jump.
-            self.yaw += SMOOTHING * (raw_yaw - self.yaw)
-            self.pitch += SMOOTHING * (raw_pitch - self.pitch)
+        # Smoothing: move only part of the way towards the new value, so one
+        # noisy frame cannot make the angle jump.
+        self.yaw += SMOOTHING * (raw_yaw - self.yaw)
+        self.pitch += SMOOTHING * (raw_pitch - self.pitch)
         return True
 
-    def face_visible(self, timestamp_ms):
+    def face_visible(self, now):
         """
-        True if a face was seen within the last FACE_LOST_GRACE seconds.
+        True if a face was seen in the last FACE_LOST_GRACE seconds.
         The face often vanishes for a few frames in the middle of a head turn;
-        this stops those short gaps from pausing the game.
+        this stops those short gaps from counting.
         """
-        if self.last_seen_ms is None:
-            return False
-        return timestamp_ms - self.last_seen_ms <= FACE_LOST_GRACE * 1000
+        return self.last_seen is not None and now - self.last_seen <= FACE_LOST_GRACE
 
-    def lost_while_looking_down(self):
-        """
-        True if the face was tilting down when it was last seen.
-        Looking down at the paper hides the face from the camera (it mostly
-        sees the top of the head), so a face that vanished on its way down
-        means the player is looking at the paper, not that they left.
-        """
-        return (self.last_seen_ms is not None
-                and self.last_raw_pitch - self.neutral_pitch < -LOST_DOWN_PITCH)
+    # ------------------------------------------------------------------
+    # Angles -> direction
+    # ------------------------------------------------------------------
+    def calibrate(self, yaw, pitch):
+        """Remember these angles as 'looking straight at the screen'."""
+        self.neutral_yaw = yaw
+        self.neutral_pitch = pitch
+        self.direction = self.candidate = SCREEN
 
-    def current_direction(self, now, timestamp_ms, face_found):
+    def relative_angles(self):
+        """Yaw and pitch measured from the calibrated screen angles."""
+        return self.yaw - self.neutral_yaw, self.pitch - self.neutral_pitch
+
+    def raw_direction(self):
+        """Classify the current angles, without any hold time."""
+        yaw, pitch = self.relative_angles()
+        # DOWN is checked first: looking down at the paper wins over a small turn.
+        if pitch < -PITCH_DOWN_THRESHOLD:
+            return DOWN
+        if yaw > YAW_THRESHOLD:
+            return LEFT
+        if yaw < -YAW_THRESHOLD:
+            return RIGHT
+        return SCREEN
+
+    def update_direction(self, now):
+        """
+        Return the direction, changing it only after the new direction has
+        lasted HOLD_TIME seconds, so one shaky frame is not a glance.
+        """
+        new = self.raw_direction()
+        if new != self.candidate:
+            # Something new: start timing it.
+            self.candidate = new
+            self.candidate_since = now
+        elif new != self.direction and now - self.candidate_since >= HOLD_TIME:
+            # It has lasted long enough: believe it.
+            self.direction = new
+        return self.direction
+
+    def current_direction(self, now, face_found):
         """
         The direction to use this frame, or None if the player is gone and the
-        game should pause. `face_found` is what read_angles() returned.
-            face found                    -> the tracked direction
-            face lost while tilting down  -> DOWN (head bent over the paper)
-            face lost for a short moment  -> the last direction (mid-turn gap)
-            face lost for longer          -> None
+        game should pause. `face_found` is what read() returned.
+        Also sets self.status, a short note for the screen.
         """
         if face_found:
+            self.status = ""
             return self.update_direction(now)
-        if self.lost_while_looking_down():
+
+        # Looking down at the paper hides the face (the camera mostly sees
+        # the top of the head). So if the face vanished while tilting down,
+        # the player is reading the paper, not gone.
+        pitch_when_lost = self.last_raw_pitch - self.neutral_pitch
+        if self.last_seen is not None and pitch_when_lost < -LOST_DOWN_PITCH:
+            self.status = "head down"
             self.direction = self.candidate = DOWN
             return DOWN
-        if self.face_visible(timestamp_ms):
+
+        # Lost for a moment (mid-turn): keep the last direction.
+        if self.face_visible(now):
+            self.status = "face lost..."
             return self.direction
+
+        self.status = "face not found"
         return None
 
+    # ------------------------------------------------------------------
+    # Drawing
+    # ------------------------------------------------------------------
     def draw_face(self, frame, colour):
         """
         Draw what the tracker sees onto a BGR frame (before mirroring it):
@@ -164,52 +207,13 @@ class HeadTracker:
         for line in FACE_LINES:
             cv2.line(frame, points[line.start], points[line.end], colour, 1, cv2.LINE_AA)
 
-        # The arrow: from the nose tip in the direction the nose points.
+        # The arrow goes from the nose tip in the direction the nose points.
         # Camera space has y pointing up, the picture has y pointing down,
         # hence the minus.
-        nose_x, nose_y, _ = self.nose_vector
+        nose_x, nose_y = self.nose_vector
         tip = points[NOSE_TIP]
         end = (int(tip[0] + nose_x * ARROW_LENGTH), int(tip[1] - nose_y * ARROW_LENGTH))
         cv2.arrowedLine(frame, tip, end, colour, 3, cv2.LINE_AA, tipLength=0.25)
-        cv2.circle(frame, tip, 5, colour, -1)
-
-    def calibrate(self, yaw, pitch):
-        """Remember these angles as 'looking straight at the screen'."""
-        self.neutral_yaw = yaw
-        self.neutral_pitch = pitch
-        self.direction = self.candidate = SCREEN
-
-    def relative_angles(self):
-        """Yaw and pitch measured from the calibrated screen angles."""
-        return self.yaw - self.neutral_yaw, self.pitch - self.neutral_pitch
-
-    def raw_direction(self):
-        """Classify the current angles, without any hold time."""
-        yaw, pitch = self.relative_angles()
-
-        # DOWN is checked first: looking down at the paper wins over a small turn.
-        if pitch < -PITCH_DOWN_THRESHOLD:
-            return DOWN
-        if yaw > YAW_THRESHOLD:
-            return LEFT
-        if yaw < -YAW_THRESHOLD:
-            return RIGHT
-        return SCREEN
-
-    def update_direction(self, now):
-        """
-        Return the direction, changing it only after the new direction has
-        lasted HOLD_TIME seconds. `now` is the current time in seconds.
-        """
-        new = self.raw_direction()
-        if new != self.candidate:
-            # Something new: start timing it.
-            self.candidate = new
-            self.candidate_since = now
-        elif new != self.direction and now - self.candidate_since >= HOLD_TIME:
-            # It has lasted long enough: believe it.
-            self.direction = new
-        return self.direction
 
     def close(self):
         if self.detector is not None:
@@ -218,11 +222,9 @@ class HeadTracker:
 
 class Calibration:
     """
-    Measures the player's "looking at the screen" angles.
-
-    Call add() every frame with whether a face was found. It collects angles
-    for CALIBRATION_TIME seconds; if the face is lost, it starts over. When
-    done() is True, the average has already been given to the tracker.
+    Measures the player's "looking at the screen" angles: collects the angles
+    for `duration` seconds and gives their average to the tracker. If the face
+    is lost on the way, it starts over.
     """
 
     def __init__(self, tracker, duration):
@@ -234,24 +236,23 @@ class Calibration:
         self.yaws = []
         self.pitches = []
         self.elapsed = 0.0
-        self.finished = False
 
-    def add(self, face_found, dt):
-        if self.finished:
-            return
-        if not face_found:
-            self.restart()   # face lost: start again, the average would be wrong
-            return
-        self.yaws.append(self.tracker.yaw)
-        self.pitches.append(self.tracker.pitch)
-        self.elapsed += dt
-        if self.elapsed >= self.duration:
-            self.tracker.calibrate(sum(self.yaws) / len(self.yaws),
-                                   sum(self.pitches) / len(self.pitches))
-            self.finished = True
+    def done(self):
+        return self.elapsed >= self.duration
 
     def seconds_left(self):
         return max(0.0, self.duration - self.elapsed)
 
-    def done(self):
-        return self.finished
+    def add(self, face_visible, dt):
+        """Call once per frame while calibrating."""
+        if self.done():
+            return
+        if not face_visible:
+            self.restart()
+            return
+        self.yaws.append(self.tracker.yaw)
+        self.pitches.append(self.tracker.pitch)
+        self.elapsed += dt
+        if self.done():
+            self.tracker.calibrate(sum(self.yaws) / len(self.yaws),
+                                   sum(self.pitches) / len(self.pitches))

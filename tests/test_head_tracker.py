@@ -53,13 +53,13 @@ class HoldTimeTests(unittest.TestCase):
 
 class FaceVisibleTests(unittest.TestCase):
     def test_never_seen(self):
-        self.assertFalse(tracker_at(0, 0).face_visible(1000))
+        self.assertFalse(tracker_at(0, 0).face_visible(1.0))
 
     def test_short_gap_still_visible(self):
         tracker = tracker_at(0, 0)
-        tracker.last_seen_ms = 1000
-        self.assertTrue(tracker.face_visible(1500))     # 0.5 s gap
-        self.assertFalse(tracker.face_visible(1700))    # 0.7 s gap
+        tracker.last_seen = 1.0
+        self.assertTrue(tracker.face_visible(1.5))     # 0.5 s gap
+        self.assertFalse(tracker.face_visible(1.7))    # 0.7 s gap
 
 
 class LostFaceTests(unittest.TestCase):
@@ -67,32 +67,39 @@ class LostFaceTests(unittest.TestCase):
 
     def lost_after(self, raw_pitch):
         tracker = tracker_at(0, 0)
-        tracker.last_seen_ms = 1000
+        tracker.last_seen = 1.0
         tracker.last_raw_pitch = raw_pitch
         return tracker
 
+    def test_found_face_is_tracked(self):
+        tracker = tracker_at(0, 0)
+        self.assertEqual(tracker.current_direction(1.0, True), SCREEN)
+        self.assertEqual(tracker.status, "")
+
     def test_lost_while_tilting_down_is_down(self):
         tracker = self.lost_after(-15)
-        self.assertEqual(tracker.current_direction(5.0, 1100, False), DOWN)
+        self.assertEqual(tracker.current_direction(1.1, False), DOWN)
+        self.assertEqual(tracker.status, "head down")
 
     def test_down_lasts_while_face_is_hidden(self):
         # Reading the paper for 10 s must not pause the game.
         tracker = self.lost_after(-15)
-        self.assertEqual(tracker.current_direction(15.0, 11000, False), DOWN)
+        self.assertEqual(tracker.current_direction(11.0, False), DOWN)
 
     def test_short_gap_keeps_last_direction(self):
         tracker = self.lost_after(0)
         tracker.direction = LEFT
-        self.assertEqual(tracker.current_direction(5.0, 1300, False), LEFT)
+        self.assertEqual(tracker.current_direction(1.3, False), LEFT)
+        self.assertEqual(tracker.status, "face lost...")
 
     def test_long_gap_pauses(self):
         tracker = self.lost_after(0)
-        self.assertIsNone(tracker.current_direction(5.0, 2000, False))
+        self.assertIsNone(tracker.current_direction(2.0, False))
 
     def test_uses_calibrated_pitch(self):
         tracker = self.lost_after(-15)
         tracker.calibrate(0, -10)   # only 5 degrees below this player's neutral
-        self.assertIsNone(tracker.current_direction(5.0, 2000, False))
+        self.assertIsNone(tracker.current_direction(2.0, False))
 
 
 class CalibrationTests(unittest.TestCase):

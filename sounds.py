@@ -1,9 +1,9 @@
 """
 Sound effects.
 
-For the demo the sounds are made in code (a sound is just a list of numbers
-describing the speaker's position over time), so no sound files are needed.
-Later, files in assets/sounds/ will replace them.
+For the demo the sounds are made in code: a sound is just a long list of
+numbers telling the speaker where to be at each moment, and a sine wave of
+those numbers is a beep. Later, files in assets/sounds/ will replace them.
 
 If the computer has no working sound device, the game keeps running silently.
 """
@@ -12,39 +12,26 @@ import numpy as np
 import pygame
 
 SAMPLE_RATE = 44100   # numbers per second of sound
-VOLUME = 0.4          # 0.0-1.0, for all generated sounds
+VOLUME = 0.4          # 0.0-1.0
 
 
-def sine(freq, duration, fade=True):
-    """A pure tone. fade=True makes it die away instead of stopping abruptly."""
-    t = np.arange(int(SAMPLE_RATE * duration)) / SAMPLE_RATE
+def tone(freq, seconds, fade=True):
+    """A beep at `freq` Hz. fade=True makes it die away instead of stopping abruptly."""
+    t = np.arange(int(SAMPLE_RATE * seconds)) / SAMPLE_RATE
     wave = np.sin(2 * np.pi * freq * t)
     if fade:
-        wave *= np.linspace(1.0, 0.0, len(t)) ** 2
+        wave *= np.linspace(1.0, 0.0, len(t))
     return wave
 
 
-def square(freq, duration):
-    """A harsh 'buzz' tone."""
-    return np.sign(sine(freq, duration, fade=False)) * 0.6
-
-
-def sweep(start_freq, end_freq, duration):
-    """A tone that slides from one pitch to another."""
-    t = np.arange(int(SAMPLE_RATE * duration)) / SAMPLE_RATE
-    freq = np.linspace(start_freq, end_freq, len(t))
-    phase = 2 * np.pi * np.cumsum(freq) / SAMPLE_RATE
-    return np.sin(phase) * np.linspace(1.0, 0.0, len(t))
-
-
-def generated_sounds():
-    """name -> wave (numpy array of floats from -1 to 1)."""
+def make_waves():
+    """Sound name -> wave. Names match the events from game.update()."""
     return {
-        "tick": sine(1500, 0.03),
-        "answer": sine(880, 0.25),
-        "warning": square(150, 0.4),
-        "won": np.concatenate([sine(f, 0.15) for f in (523, 659, 784)]),
-        "lost": sweep(400, 150, 0.8),
+        "tick": tone(1500, 0.03),                                         # short click
+        "answer": tone(880, 0.25),                                        # ding
+        "warning": tone(150, 0.4, fade=False),                            # low buzz
+        "won": np.concatenate([tone(f, 0.15) for f in (523, 659, 784)]),  # rising notes
+        "lost": np.concatenate([tone(f, 0.25) for f in (400, 300, 200)]), # falling notes
     }
 
 
@@ -55,25 +42,17 @@ class Sounds:
             pygame.mixer.init(SAMPLE_RATE, -16, 1)
         except pygame.error as error:
             print(f"No sound ({error}). The game will run silently.")
-            self.enabled = False
             return
-        self.enabled = True
 
         # The mixer may have opened in stereo even though we asked for mono.
-        channels = pygame.mixer.get_init()[2]
-        for name, wave in generated_sounds().items():
+        stereo = pygame.mixer.get_init()[2] == 2
+        for name, wave in make_waves().items():
             samples = (wave * VOLUME * 32767).astype(np.int16)  # 16-bit numbers
-            if channels == 2:
+            if stereo:
                 samples = np.column_stack([samples, samples])   # same on both speakers
-            self.sounds[name] = pygame.sndarray.make_sound(np.ascontiguousarray(samples))
+            self.sounds[name] = pygame.sndarray.make_sound(samples)
 
     def play(self, name):
-        """Play a sound once. Unknown names and missing audio do nothing."""
-        if self.enabled and name in self.sounds:
+        """Play a sound once. Unknown names (and no sound device) do nothing."""
+        if name in self.sounds:
             self.sounds[name].play()
-
-    def loop(self, name):
-        """Start a looping sound (used from Step 5 on)."""
-
-    def stop(self, name):
-        """Stop a looping sound (used from Step 5 on)."""

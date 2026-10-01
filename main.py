@@ -31,8 +31,8 @@ START, CALIBRATING, GAME, END = "START", "CALIBRATING", "GAME", "END"
 
 # Colour of the face drawing for each direction, (Blue, Green, Red) for OpenCV.
 # Matches the option boxes on screen.
-FACE_COLOURS = {DOWN: (240, 150, 80), SCREEN: (60, 200, 240), LEFT: (110, 200, 70),
-                RIGHT: (110, 200, 70)}
+FACE_COLOURS = {DOWN: (240, 150, 80), SCREEN: (60, 200, 240),
+                LEFT: (110, 200, 70), RIGHT: (110, 200, 70)}
 WHITE_BGR = (240, 240, 240)
 
 
@@ -55,7 +55,7 @@ def main():
     clock = pygame.time.Clock()
 
     camera = Camera(CAMERA_INDEX)
-    if not camera.is_open():
+    if not camera.running:
         show_error(renderer, "Could not open the webcam. Try CAMERA_INDEX in settings.py.")
         pygame.quit()
         return
@@ -64,16 +64,12 @@ def main():
     calibration = Calibration(tracker, CALIBRATION_TIME)
     game = Game()
     screen_name = START
-    direction = SCREEN   # last known direction, kept while the face is lost
-
-    start_time = time.time()
-    previous_time = start_time
-    last_timestamp_ms = -1
+    direction = SCREEN   # last known direction, kept while paused
+    previous_time = time.time()
     running = True
 
     while running:
         # 1. Keys, clicks and the window's X button.
-        start_calibrating = False
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -81,18 +77,18 @@ def main():
                 if event.key in (pygame.K_q, pygame.K_ESCAPE):
                     running = False
                 elif event.key == pygame.K_SPACE and screen_name == START:
-                    start_calibrating = True
+                    calibration.restart()
+                    screen_name = CALIBRATING
+                elif event.key == pygame.K_c and screen_name == GAME:
+                    calibration.restart()            # recalibrate, keep the game
+                    screen_name = CALIBRATING
                 elif event.key == pygame.K_r:        # new game, back to the start screen
                     game.reset()
                     screen_name = START
-                elif event.key == pygame.K_c and screen_name == GAME:
-                    start_calibrating = True         # recalibrate, keep the game
             elif (event.type == pygame.MOUSEBUTTONDOWN and screen_name == START
                   and renderer.button_rect.collidepoint(event.pos)):
-                start_calibrating = True
-        if start_calibrating:
-            calibration.restart()
-            screen_name = CALIBRATING
+                calibration.restart()
+                screen_name = CALIBRATING
 
         # 2. Newest webcam frame and head angles.
         frame = camera.read()
@@ -103,55 +99,44 @@ def main():
         now = time.time()
         dt = min(now - previous_time, MAX_DT)
         previous_time = now
-
-        # MediaPipe needs a timestamp that grows on every frame.
-        timestamp_ms = max(int((now - start_time) * 1000), last_timestamp_ms + 1)
-        last_timestamp_ms = timestamp_ms
-        face_found = tracker.read_angles(frame, timestamp_ms)
-        # Seen recently enough? Short gaps (mid-turn) do not count as lost.
-        face_visible = tracker.face_visible(timestamp_ms)
+        face_found = tracker.read(frame, now)
         yaw, pitch = tracker.relative_angles()
-
-        # A note under the preview when the face is not tracked right now.
-        tracking_note = None
-        if not face_found and tracker.lost_while_looking_down():
-            tracking_note = "head down"
-        elif not face_found:
-            tracking_note = "face lost..."
-
-        # Draw the tracking onto the face, coloured like the current option.
-        in_game = screen_name in (GAME, END)
-        tracker.draw_face(frame, FACE_COLOURS[direction] if in_game else WHITE_BGR)
 
         # 3 + 4. Rules, sounds and drawing for the current screen.
         if screen_name in (START, CALIBRATING):
+            tracker.draw_face(frame, WHITE_BGR)
             camera_surface = camera_to_surface(frame, BIG_PREVIEW_SIZE)
-            if screen_name == CALIBRATING:
+            face_visible = tracker.face_visible(now)
+            if screen_name == START:
+                renderer.draw_start(camera_surface, face_visible)
+            else:
                 calibration.add(face_visible, dt)
                 renderer.draw_start(camera_surface, face_visible, calibration.seconds_left())
                 if calibration.done():
                     screen_name = GAME
-            else:
-                renderer.draw_start(camera_surface, face_visible)
 
         elif screen_name == GAME:
-            # None = the player is gone: the game pauses.
-            new_direction = tracker.current_direction(now, timestamp_ms, face_found)
-            paused = new_direction is None
+            new_direction = tracker.current_direction(now, face_found)
+            paused = new_direction is None   # None = the player is gone
             if not paused:
                 direction = new_direction
                 for name in game.update(direction, dt):
-                    sounds.play(name)   # event names match sound names
+                    sounds.play(name)        # event names match sound names
+
+            tracker.draw_face(frame, FACE_COLOURS[direction])
             renderer.draw_game(game, direction, camera_to_surface(frame), yaw, pitch,
-                               clock.get_fps(), tracking_note, show_popup=not paused)
+                               clock.get_fps(), tracker.status)
             if paused:
-                renderer.draw_paused()  # nothing was updated: the game is frozen
+                renderer.draw_paused()       # nothing was updated: the game is frozen
+            elif game.popup_text:
+                renderer.draw_popup(game.popup_text)
             if game.state != PLAYING:
                 screen_name = END
 
         else:  # END
+            tracker.draw_face(frame, FACE_COLOURS[direction])
             renderer.draw_game(game, direction, camera_to_surface(frame), yaw, pitch,
-                               clock.get_fps(), tracking_note, show_popup=False)
+                               clock.get_fps(), "")
             renderer.draw_end(game)
 
         pygame.display.flip()
