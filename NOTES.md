@@ -13,9 +13,7 @@ number and today's date, and describe what changed, not how you felt about it.
 
 ```
 sudo apt install -y python3-venv            # once per computer, Ubuntu
-python3 -m venv .venv                       # create the project's own Python environment
-.venv/bin/pip install -r requirements.txt   # install the libraries into it
-./run.sh                                    # start the program
+./run.sh                                    # start the game (first run also installs the libraries)
 ```
 
 Quit with `q`, Esc, or the window's X button. The video window must be selected
@@ -230,3 +228,34 @@ you cannot get caught.
   (`MIN_FACE_CONFIDENCE`), so it keeps a face that is turned to the side.
 - The tests use time steps of 0.125 s because 0.1 added ten times is not
   exactly 1.0 in floating point.
+
+---
+
+## Commit #5 — run.sh installs the libraries
+
+- **Date:** 1 Oct 2026
+
+### Summary
+
+`./run.sh` now sets everything up by itself, so nobody has to run
+`pip install` by hand, also not after a `git pull` that adds a library.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `run.sh` | Creates `.venv` if missing; installs `requirements.txt` when needed; then starts the game. |
+| `README.md` | Setup is now only `sudo apt install -y python3-venv`. |
+
+### How it works
+
+After a successful install, `run.sh` copies `requirements.txt` to
+`.venv/installed-requirements.txt`. On every start it compares the two files
+(`cmp`); only if they differ (first run, or `requirements.txt` changed) does it
+run `pip install`. So normal starts are as fast as before and need no internet.
+
+### Details worth knowing
+
+- To force a reinstall, delete `.venv/installed-requirements.txt`.
+- If creating `.venv` fails, `run.sh` tells you to install `python3-venv`.
+- The first start needs internet and takes a few minutes (MediaPipe is large).

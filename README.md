@@ -22,9 +22,11 @@ steps.
 git clone https://github.com/nakciefe-commits/me461-python-visual-tracking-app-gp.git
 cd me461-python-visual-tracking-app-gp
 sudo apt install -y python3-venv
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
 ```
+
+That's all: `run.sh` creates the `.venv` environment and installs the
+libraries from `requirements.txt` the first time it runs, and again whenever
+`requirements.txt` changes (for example after a `git pull`).
 
 ## Run
 
