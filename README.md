@@ -14,7 +14,8 @@ code. Next: playtesting, more sounds and art (see `PLAN.md` section 8).
 
 ## Requirements
 
-- Linux with Python 3 (developed on Ubuntu 26.04, Python 3.14)
+- Linux or Windows with Python 3 (developed on Ubuntu 26.04, Python 3.14;
+  on Windows, Python 3.12 is the safest choice, see below)
 - A webcam
 
 ## Setup
@@ -29,11 +30,20 @@ That's all: `run.sh` creates the `.venv` environment and installs the
 libraries from `requirements.txt` the first time it runs, and again whenever
 `requirements.txt` changes (for example after a `git pull`).
 
+**Windows:** install Python from [python.org](https://www.python.org/downloads/)
+(tick "Add python.exe to PATH") and clone the repository; `python3-venv` is
+not needed. `run.bat` does the same job as `run.sh`. If installing the
+libraries fails because MediaPipe has no package for your Python version,
+install Python 3.12, delete the `.venv` folder and run `run.bat` again.
+
 ## Run
 
 ```
 ./run.sh
 ```
+
+On Windows, double-click `run.bat` (or type `run.bat` in a terminal in the
+project folder).
 
 Sit at the desk with the webcam on top of the monitor. The start screen shows
 the webcam with the tracking drawn on your face. Sit normally, look at the
@@ -67,7 +77,8 @@ to track.
 To tune the head tracking, watch the yaw/pitch numbers under the webcam
 preview and change the numbers in `settings.py`.
 
-The old body tracker still runs with `.venv/bin/python tracker.py`.
+The old body tracker still runs with `.venv/bin/python tracker.py`
+(Windows: `.venv\Scripts\python tracker.py`).
 
 ## How it works
 
@@ -83,6 +94,8 @@ the loop. `LEARN.md` explains every file.
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
+On Windows: `.venv\Scripts\python -m unittest discover -s tests -v`
+
 ## Files
 
 | File | Purpose |
@@ -96,7 +109,9 @@ the loop. `LEARN.md` explains every file.
 | `sounds.py` | Sound effects: beeps made in code, some replaced by files. |
 | `settings.py` | Every tuning number in one place. |
 | `tests/` | Unit tests for the rules and the tracker. |
-| `run.sh` | Launcher. |
+| `run.sh` | Launcher (Linux). |
+| `run.bat` | Launcher (Windows). |
+| `.gitattributes` | Keeps Windows line endings in `run.bat`. |
 | `face_landmarker.task` | Pre-trained MediaPipe face model. |
 | `tracker.py` | The first body tracker, kept for reference. |
 | `pose_landmarker.task` | Pre-trained MediaPipe pose model, used by `tracker.py`. |

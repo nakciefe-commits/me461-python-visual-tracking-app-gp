@@ -221,7 +221,8 @@ tests (62).
    on; Easy/Normal/Hard; score from time left, warnings and close calls; a
    high-score file.
 6. **Final testing and README:** fresh `git clone` on another computer,
-   screenshot, credits and licences for art and sounds.
+   screenshot, credits and licences for art and sounds. Try `run.bat` on a
+   real Windows computer (written on Linux, not yet run on Windows).
 
 ---
 

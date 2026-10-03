@@ -301,7 +301,7 @@ such frame: the alarm.
 
 ## 5. Try it yourself
 
-Small changes to learn by doing. Run `./run.sh` after each one.
+Small changes to learn by doing. Run `./run.sh` (Windows: `run.bat`) after each one.
 
 1. **Easy:** in `settings.py`, set `COPY_TIME = 1.0`. Copying is now much faster.
 2. **Easy:** set `ANSWERS_NEEDED = 3`. Check that the answer boxes on screen

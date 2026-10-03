@@ -437,3 +437,57 @@ cleaned up: `STEPS.md` is gone, `CLAUDE.md` is new, `PLAN.md` was rewritten.
 3. Pictures for looking down (your paper) and sideways (the neighbour's
    paper) instead of the black screen.
 4. Menus, difficulty and score: see `PLAN.md` section 8.
+
+---
+
+## Commit #8 — Windows launcher (`windows` branch)
+
+- **Date:** 3 Oct 2026
+
+### Summary
+
+The Python code had nothing Linux-only in it (the webcam is opened with a
+plain `cv2.VideoCapture(index)`, paths use `os.path.join`), so the game
+should run on Windows too. Only the launcher `run.sh` was Linux-only. This
+commit adds `run.bat`, the Windows version, and Windows instructions in the
+README. It is on its own `windows` branch, not on `dont-get-caught`, until
+someone has tried it on a real Windows computer.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `run.bat` | Windows launcher: creates `.venv` with `py` (or `python`), installs `requirements.txt` when it changed, starts `main.py`. Same steps as `run.sh`. |
+| `.gitattributes` | Stores `*.bat` with Windows line endings (CRLF). |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `README.md` | Windows in Requirements, Setup, Run and Tests; `run.bat` and `.gitattributes` in the files table. |
+| `LEARN.md` | The exercises mention `run.bat`. |
+| `PLAN.md` | Step 6 (final testing): try `run.bat` on Windows. |
+
+### Details worth knowing
+
+- **Paths differ on Windows:** `.venv\Scripts\python.exe` instead of
+  `.venv/bin/python`.
+- **Line endings:** `cmd.exe` can mis-handle `goto` labels in a `.bat` file
+  with Linux line endings, hence `.gitattributes`.
+- **`fc /b`** is the Windows `cmp`: it compares `requirements.txt` with the
+  copy from the last install.
+- **Python version:** we develop on 3.14. If MediaPipe has no Windows package
+  for the installed Python, `pip` fails; Python 3.12 is the safe choice.
+- **The window stays open on errors** (`pause`), so a double-clicked
+  `run.bat` does not vanish before the error can be read.
+- 62 tests, all passing (no game code changed). Not tested by the agent:
+  `run.bat` was written on Linux and has **not been run on Windows**. A
+  person should try on Windows: double-click `run.bat` on a fresh clone (does
+  it create `.venv` and install?), run it a second time (does it skip the
+  install?), check the webcam opens (else change `CAMERA_INDEX`), the sounds
+  play, and the pictures load.
+
+### Next
+
+1. Try `run.bat` on a Windows computer, fix what fails, then merge `windows`
+   into `dont-get-caught`.
