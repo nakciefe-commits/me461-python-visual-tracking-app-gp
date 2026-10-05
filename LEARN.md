@@ -84,6 +84,7 @@ The game is always on one screen, stored in the variable `screen_name` in
 `main.py`:
 
 ```
+DISCLAIMER ──Space/click──►
 START ──Space/click──► CALIBRATING ──2 s──► GAME ──win/lose──► END
   ▲                                           │                  │
   └─────────────────── r ─────────────────────┴──────── r ───────┘
@@ -229,7 +230,7 @@ that's also how animation will work later.
 - `load_classroom()` loads a classroom picture once, scales it to the window's
   width and cuts off the top (`CLASSROOM_TOP`) and bottom so it fits.
 - `Renderer` loads fonts and pictures once and has a draw function per
-  screen: `draw_start`, `draw_game`, `draw_popup`, `draw_paused`, `draw_end`.
+  screen: `draw_disclaimer`, `draw_start`, `draw_game`, `draw_popup`, `draw_paused`, `draw_end`.
 - `draw_game` draws the teacher's picture (or black while you look away,
   fading in by `view`), then see-through strips: answers, warnings and the
   clock at the top, the copy and suspicion bars at the bottom.
@@ -241,9 +242,17 @@ that's also how animation will work later.
 Setup: open the window, sounds, camera, tracker, calibration and game. Then
 each frame:
 
-1. **Input**: keys and mouse (`pygame.event.get()`); quit, calibrate, restart.
+(The window: `open_window()` always gives a 960×600 surface to draw on. The
+`pygame.SCALED` flag stretches it to the real window size with black bars and
+maps mouse clicks back, so no drawing code needs to know the screen size.
+Normally it is a resizable window with a title bar, maximized at the start.
+`pygame.FULLSCREEN` with `SCALED` is a borderless window the size of the
+desktop, not a real video-mode change. F11 just calls `open_window()` again.)
+
+1. **Input**: keys and mouse (`pygame.event.get()`); quit, calibrate, restart, F11 fullscreen.
 2. **Camera**: `camera.read()`, then `tracker.read(frame, now)`.
 3. **Per screen**:
+   - DISCLAIMER: the warning screen, shown once when the game opens.
    - START / CALIBRATING: big preview, feed `calibration.add()`.
    - GAME: `direction = tracker.current_direction(...)`. If not `None`:
      `teacher.update(dt)`, filtered by `teacher.sounds()` (silence while
@@ -252,7 +261,8 @@ each frame:
      black, 1 = shown, fading in over `FADE_TIME`). Draw; on top, either the
      pause layer or the popup. Paused = nothing is updated, so the teacher
      and the clock freeze too.
-   - END: draw the game with the classroom always shown, and the end layer.
+   - END: the same branch as GAME, but nothing is updated: draw the game
+     with the classroom always shown, and the end layer on top.
 4. `pygame.display.flip()` shows the frame; `clock.tick(FPS)` waits so we don't
    run faster than 30 fps.
 

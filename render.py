@@ -50,6 +50,16 @@ LOOK_AWAY = {
     LEFT: "Copying from the left",
     RIGHT: "Copying from the right",
 }
+# The disclaimer shown when the game opens: (text, colour). Satire, but the
+# last line is meant seriously.
+DISCLAIMER_LINES = [
+    ("This game does not represent any real-life situation.", WHITE),
+    ("Any resemblance to real exams, classrooms or professors", WHITE),
+    ("is purely coincidental (and slightly suspicious).", WHITE),
+    ("It is purely for entertainment purposes.", WHITE),
+    ("No neighbours' answers were harmed in the making of this game.", GREY),
+    ("We love our professor and we respect academic honesty.", YELLOW),
+]
 END_TEXTS = {   # lose_reason -> big text on the end screen
     "caught": "Caught copying!",
     "warnings": "Too many warnings",
@@ -137,14 +147,12 @@ class Renderer:
         self.preview(camera_surface, cx - BIG_PREVIEW_SIZE[0] // 2, 20, BIG_PREVIEW_SIZE)
 
         if not face_found:
-            self.text("Face not found - move into the camera", self.medium, RED,
-                      (cx, 420), center=True)
+            message, colour = "Face not found - move into the camera", RED
         elif seconds_left is None:
-            self.text("Sit normally, look at the screen, then press Calibrate",
-                      self.medium, WHITE, (cx, 420), center=True)
+            message, colour = "Sit normally, look at the screen, then press Calibrate", WHITE
         else:
-            self.text("Keep looking at the screen...", self.medium, YELLOW,
-                      (cx, 420), center=True)
+            message, colour = "Keep looking at the screen...", YELLOW
+        self.text(message, self.medium, colour, (cx, 420), center=True)
 
         if seconds_left is None:
             hovered = self.button_rect.collidepoint(pygame.mouse.get_pos())
@@ -160,6 +168,18 @@ class Renderer:
         self.text("In the game:  Q = quit    R = restart    C = recalibrate    "
                   "D = always show the teacher (testing)",
                   self.small, GREY, (cx, 575), center=True)
+
+    def draw_disclaimer(self):
+        """The first screen: a satirical warning. Space or a click continues."""
+        self.screen.fill(BACKGROUND)
+        cx = self.width // 2
+        self.text("WARNING", self.huge, RED, (cx, 90), center=True)
+        y = 170
+        for message, colour in DISCLAIMER_LINES:
+            self.text(message, self.medium, colour, (cx, y), center=True)
+            y += 48
+        self.text("Press Space to solemnly swear you will never try this in a real exam",
+                  self.small, GREY, (cx, 560), center=True)
 
     def draw_game(self, game, teacher, direction, view, camera_surface, yaw, pitch, fps,
                   tracking_note, show_teacher_state):
@@ -229,8 +249,9 @@ class Renderer:
         # once the teacher has seen you copying (then it fills fast). The white
         # line marks where the free staring time ends.
         self.text("Suspicion", self.small, WHITE, (16, top + 50))
-        danger = game.suspicion() >= GRACE_PART or game.seen_copying
-        self.bar(bar_x, top + 46, bar_width, 24, game.suspicion(), RED if danger else YELLOW)
+        suspicion = game.suspicion()
+        danger = suspicion >= GRACE_PART or game.seen_copying
+        self.bar(bar_x, top + 46, bar_width, 24, suspicion, RED if danger else YELLOW)
         marker_x = bar_x + bar_width * GRACE_PART
         pygame.draw.line(self.screen, WHITE, (marker_x, top + 42), (marker_x, top + 74), 3)
 

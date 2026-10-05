@@ -21,6 +21,9 @@ PLAYING, WON, LOST = "PLAYING", "WON", "LOST"
 WARNING_TIME = STARE_GRACE_TIME + STARE_FILL_TIME
 # The free part of the suspicion bar: staring only gets dangerous past it.
 GRACE_PART = STARE_GRACE_TIME / WARNING_TIME
+# The bar counts as full from here. Adding up many small dt / time steps can
+# end just below 1 because of rounding (e.g. 24 steps of 0.125 / 3.0).
+FULL = 1 - 1e-9
 
 
 class Game:
@@ -104,13 +107,13 @@ class Game:
                 events.append("spotted")   # alarm: the screen is black, so the player must hear it
             self.seen_copying = True
             self.suspicion_level += dt / CAUGHT_TIME
-            if self.suspicion_level >= 1:
+            if self.suspicion_level >= FULL:
                 events.append("caught")
                 self.lose("caught", events)
                 return events
         elif staring:
             self.suspicion_level += dt / WARNING_TIME
-            if self.suspicion_level >= 1:
+            if self.suspicion_level >= FULL:
                 self.warn(events)
         else:
             self.suspicion_level = max(0.0, self.suspicion_level - dt / SUSPICION_DRAIN_TIME)

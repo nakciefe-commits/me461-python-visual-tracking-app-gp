@@ -35,7 +35,8 @@ libraries from `requirements.txt` the first time it runs, and again whenever
 ./run.sh
 ```
 
-Sit at the desk with the webcam on top of the monitor. The start screen shows
+The game opens with a (satirical) warning screen; press Space or click to go
+on. Sit at the desk with the webcam on top of the monitor. The start screen shows
 the webcam with the tracking drawn on your face. Sit normally, look at the
 screen, and click **Calibrate** (or press Space): for 2 seconds the game learns
 your "looking at the screen" position. Then:
@@ -56,8 +57,12 @@ You have 60 seconds.
 Losing by being caught or by 3 warnings plays the Metal Gear alert; running
 out of time plays falling notes.
 
-Keys: Space calibrate, `q`/Esc quit, `r` restart, `c` recalibrate, `d`
-always show the classroom and the teacher's state (for testing). If no face
+Keys: Space calibrate, `q`/Esc quit, `r` restart, `c` recalibrate, F11
+fullscreen on/off, `d` always show the classroom and the teacher's state (for
+testing). The game opens as a maximized window (title bar and taskbar stay
+visible); F11 makes it borderless fullscreen. In `settings.py`, set
+`FULLSCREEN = True` to start fullscreen or `MAXIMIZED = False` to start as a
+small 960×600 window. If no face
 is seen for more than 0.6 s the game pauses, unless your head was going down:
 then you are looking at the paper (the camera can't see your face then), and
 the game carries on. You don't need to turn your head

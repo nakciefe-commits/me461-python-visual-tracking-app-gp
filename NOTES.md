@@ -437,3 +437,166 @@ cleaned up: `STEPS.md` is gone, `CLAUDE.md` is new, `PLAN.md` was rewritten.
 3. Pictures for looking down (your paper) and sideways (the neighbour's
    paper) instead of the black screen.
 4. Menus, difficulty and score: see `PLAN.md` section 8.
+
+---
+
+## Commit #8 — Simplified main.py and render.py
+
+- **Date:** 3 Oct 2026
+
+### Summary
+
+Small clean-up with **no change to how the game plays or looks**. The code
+was already short; this removes the few places where the same thing was
+written twice.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | GAME and END are one branch: both drew the face and the game screen with almost the same call. END now skips the update and passes `view = 1.0` and an empty tracking note, as before. Space (start screen) and `c` (in game) share one "start calibrating" branch. Removed a stale comment about the option boxes, which no longer exist. |
+| `render.py` | `draw_start()` picks the message and colour first, then draws once instead of three copies of the same `text()` call. `draw_game()` reads `game.suspicion()` once. |
+| `LEARN.md` | The `main.py` section says END shares the GAME branch. |
+
+### Details worth knowing
+
+- 62 tests, all passing. The screens were also drawn once without a window
+  (SDL dummy driver) to check nothing crashes. Not tested by the agent: the
+  real game with a webcam. A person should check: Space and the Calibrate
+  button start calibration, `c` recalibrates during a game, the pause screen
+  appears when you leave the camera, and the end screen shows the classroom
+  with the win/lose text.
+- The `windows` branch (Windows launcher) also uses the number #8 in its
+  NOTES entry. If it is merged later, renumber one of them.
+
+### Next
+
+Same as commit #7.
+
+---
+
+## Commit #9 — Disclaimer screen
+
+- **Date:** 3 Oct 2026
+
+### Summary
+
+The game now opens with a satirical **WARNING** screen: the game is not
+real life, any resemblance to real exams or professors is coincidental, it
+is only for fun, and we love our professor and respect academic honesty.
+Space or a click goes on to the start screen. It is shown once per launch;
+`r` goes back to the start screen, not to the disclaimer.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | New first screen `DISCLAIMER`. Space or a mouse click anywhere moves on to `START`. The disclaimer check comes before the "Space = calibrate" check, so one press does not skip both screens. |
+| `render.py` | `DISCLAIMER_LINES` (text and colour per line) and `draw_disclaimer()`. |
+| `README.md` | Mentions the warning screen. |
+| `LEARN.md` | The screen diagram, the `render.py` screen list and the `main.py` loop include the disclaimer. |
+
+### Details worth knowing
+
+- The text is in `DISCLAIMER_LINES` in `render.py`: change the wording there.
+  At font size 34 a line can be about 80 characters before it is wider than
+  the 960 px window (the longest line now is 743 px).
+- While the disclaimer is shown, only Space, a click and `q`/Esc do
+  anything; `r`, `c` and `d` are ignored.
+- 62 tests, all passing; the screen was drawn without a window and checked
+  as a picture. A person should check: the game opens on the warning, Space
+  goes to the start screen (and does **not** start calibrating), a click
+  does the same, and `q` still quits.
+
+### Next
+
+Same as commit #7.
+
+---
+
+## Commit #10 — Maximized window and F11 fullscreen
+
+- **Date:** 5 Oct 2026
+
+### Summary
+
+The game now opens as a normal window (title bar and taskbar still visible)
+that is maximized to fill the screen and can be resized. The game is still
+drawn at 960×600 and pygame stretches it to fit, with black bars so nothing
+is squashed. F11 switches to a borderless window covering the whole screen
+and back.
+
+### Added
+
+| File | Change |
+|---|---|
+| `settings.py` | `FULLSCREEN = False`: start in a normal window (True = borderless fullscreen). `MAXIMIZED = True`: the normal window starts maximized. |
+| `main.py` | `open_window(fullscreen)` opens the window with `pygame.SCALED`, plus `pygame.FULLSCREEN`, or `pygame.RESIZABLE` and a `maximize()` call. F11 calls it again with the other mode. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `README.md` | F11 key and the `FULLSCREEN` / `MAXIMIZED` settings. |
+| `LEARN.md` | How the window is scaled, in the `main.py` section. |
+
+### Details worth knowing
+
+- The first version opened borderless fullscreen by default; the team
+  wanted a maximized window with the title bar instead, so that is now the
+  default and fullscreen is behind F11.
+- Maximizing uses `pygame.Window.from_display_module().maximize()` (pygame-ce
+  2.5+); `set_mode()` has no flag for it.
+- `SCALED | FULLSCREEN` uses SDL's "desktop fullscreen": the monitor keeps
+  its resolution, so Alt-Tab and other windows still work, unlike real
+  exclusive fullscreen.
+- `SCALED` also converts mouse positions, so the Calibrate button still
+  works without changes in `render.py`.
+- F11 calls `set_mode()` again instead of `pygame.display.toggle_fullscreen()`,
+  because the toggle is not supported by every video driver (it fails with
+  the dummy driver). The surface stays 960×600, so the renderer keeps working.
+- Tests: all 62 pass (after the fix in commit #11). Opening and
+  switching the window was checked without a screen (SDL dummy driver).
+  A person should check: the game opens maximized with its title bar and
+  the taskbar visible, dragging the window smaller still shows the whole
+  game, F11 switches to borderless fullscreen and back (maximized again), the Calibrate button
+  still reacts to clicks in both modes, and `q`/Esc still quits.
+
+### Next
+
+Same as commit #7.
+
+---
+
+## Commit #11 — Tuning and two test fixes
+
+- **Date:** 5 Oct 2026
+
+### Summary
+
+New tuning numbers in `settings.py` after play-testing. Two tests broke with
+them: one had a time written into it, the other showed a rounding bug where
+the suspicion bar could stop just below full. Both are fixed; all 62 tests
+pass.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `settings.py` | `MIN_FACE_CONFIDENCE` 0.3 → 0.4, `PITCH_DOWN_THRESHOLD` 28 → 23, `COPY_TIME` 3 → 5 s, `STARE_GRACE_TIME` 3 → 2 s, `STARE_FILL_TIME` 2 → 1 s, `EXAM_TIME` 60 → 80 s, `CAUGHT_TIME` 0.9 → 0.7 s, `SUSPICION_DRAIN_TIME` 8 → 10 s. |
+| `game.py` | The bar counts as full from `FULL = 1 - 1e-9` instead of exactly 1. |
+| `tests/test_game.py` | `test_looking_down_drains_slowly` stares for `WARNING_TIME / 2` instead of a fixed 4 s, which is longer than the new `WARNING_TIME` (3 s). |
+
+### Details worth knowing
+
+- Adding `dt / 3.0` 24 times gives 0.99999…, not 1, so the warning came one
+  frame late. Any `WARNING_TIME` or `CAUGHT_TIME` that is not a power of two
+  can do this; `FULL` absorbs the rounding. In play it was one frame, so
+  only the test noticed.
+- A person should check that the new numbers feel right: copying an answer
+  takes 5 s, staring at the screen gives a warning after 3 s, and looking
+  down counts at a smaller head tilt.
+
+### Next
+
+Same as commit #7.

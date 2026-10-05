@@ -102,10 +102,9 @@ class StaringTests(unittest.TestCase):
     def test_looking_down_drains_slowly(self):
         # Not reset at once: the bar jumping to empty would give away the teacher.
         game = Game()
-        run(game, SCREEN, 4.0)
+        run(game, SCREEN, WARNING_TIME / 2)   # half full, no warning yet
         run(game, DOWN, 1.0)
-        self.assertAlmostEqual(game.suspicion(),
-                               4.0 / WARNING_TIME - 1.0 / SUSPICION_DRAIN_TIME)
+        self.assertAlmostEqual(game.suspicion(), 0.5 - 1.0 / SUSPICION_DRAIN_TIME)
         run(game, DOWN, SUSPICION_DRAIN_TIME)
         self.assertEqual(game.suspicion(), 0)
 
