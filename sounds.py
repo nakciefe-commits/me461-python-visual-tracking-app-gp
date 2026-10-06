@@ -35,11 +35,18 @@ def tone(freq, seconds, fade=True):
     return wave
 
 
+def scribble(seconds):
+    """A short scratchy noise, like a pencil: random numbers instead of a sine wave."""
+    noise = np.random.default_rng(0).uniform(-1.0, 1.0, int(SAMPLE_RATE * seconds))
+    return 0.5 * noise * np.linspace(1.0, 0.0, len(noise))
+
+
 def make_waves():
     """Sound name -> wave. Names match the events from game.update() and teacher.update()."""
     return {
         "tick": tone(1500, 0.03),                                         # short click
-        "answer": tone(880, 0.25),                                        # ding
+        "read": tone(880, 0.25),                                          # ding: neighbour's paper read
+        "write": scribble(0.15),                                          # pencil on paper
         "warning": tone(150, 0.4, fade=False),                            # low buzz
         "won": np.concatenate([tone(f, 0.15) for f in (523, 659, 784)]),  # rising notes
         "lost_time": np.concatenate([tone(f, 0.25) for f in (400, 300, 200)]),  # falling notes

@@ -2,6 +2,16 @@
 Game rules: copying, staring, warnings, getting caught, the exam clock,
 winning and losing.
 
+How an answer gets onto your paper:
+    1. Each question has a right letter (A-D), and only ONE neighbour (left or
+       right, chosen at random) knows it. The other one's paper shows "?".
+    2. Look at a neighbour until the copy bar is full: you read their paper
+       (the letter, or "?" = "try the other side").
+    3. Look down at your own paper and press the letter (write()). You must
+       remember it: the letter is only shown on the neighbour's paper.
+       Any letter can be written, but only after the answer has been read;
+       wrong letters only show up in the grade at the end.
+
 This file only does the rules; it draws nothing and plays nothing. Every frame
 main.py calls update() with the head direction, and update() returns a list
 of "events" (like "tick" or "warning") so main.py knows which sounds to play.
@@ -10,12 +20,16 @@ Keeping the rules apart from the drawing means the rules can be tested without
 a camera or a window (see tests/test_game.py).
 """
 
-from head_tracker import SCREEN, LEFT, RIGHT
+import random
+
+from head_tracker import DOWN, SCREEN, LEFT, RIGHT
 from settings import (ANSWERS_NEEDED, COPY_TIME, STARE_GRACE_TIME, STARE_FILL_TIME,
                       MAX_WARNINGS, POPUP_TIME, TICK_INTERVAL, EXAM_TIME,
                       STARE_ONLY_WHEN_FACING, CAUGHT_TIME, SUSPICION_DRAIN_TIME)
 
 PLAYING, WON, LOST = "PLAYING", "WON", "LOST"
+LETTERS = "ABCD"   # the choices of every question
+UNKNOWN = "?"      # what the neighbour who does not know the answer shows
 
 # Staring this long (from an empty bar) gives a warning.
 WARNING_TIME = STARE_GRACE_TIME + STARE_FILL_TIME
@@ -27,7 +41,10 @@ FULL = 1 - 1e-9
 
 
 class Game:
-    def __init__(self):
+    def __init__(self, rng=None):
+        # Tests pass a random.Random with a fixed seed, so the "random"
+        # answers are the same every run.
+        self.rng = rng or random.Random()
         self.reset()
 
     def reset(self):
@@ -35,12 +52,20 @@ class Game:
         self.state = PLAYING
         self.lose_reason = None   # "warnings", "caught" or "time" once lost
         self.time_left = EXAM_TIME
-        self.answers = 0
         self.warnings = 0
 
-        self.copy_time = 0.0      # seconds copied of the current answer (kept when looking away)
-        self.copy_locked = False  # True after an answer, until you look away
-        self.next_tick = 0.0      # copy_time at which the next tick sound plays
+        # The answer key: the right letter of each question, and which
+        # neighbour knows it.
+        self.right_letters = [self.rng.choice(LETTERS) for _ in range(ANSWERS_NEEDED)]
+        self.knowing_side = [self.rng.choice((LEFT, RIGHT)) for _ in range(ANSWERS_NEEDED)]
+        self.written = []         # letters written on your paper so far, in order
+        self.read_sides = set()   # neighbours whose paper you have read for the current question
+
+        # Seconds copied from each neighbour for the current question. Each
+        # side keeps its own progress, also when you look away.
+        self.copy_time = {LEFT: 0.0, RIGHT: 0.0}
+        self.next_tick = 0.0      # copy time at which the next tick sound plays
+        self.last_direction = None
 
         # The suspicion bar, 0 (empty) to 1 (full). Staring at the teacher
         # fills it slowly, being seen copying fills it fast. It never jumps
@@ -52,6 +77,54 @@ class Game:
 
         self.popup_text = None    # warning message on screen, or None
         self.popup_timer = 0.0    # seconds until the popup disappears
+
+    @property
+    def answers(self):
+        """How many answers are written on your paper."""
+        return len(self.written)
+
+    def question(self):
+        """Index (0 = question 1) of the question you are working on."""
+        return self.answers
+
+    def paper_shows(self, side):
+        """
+        What you read on that neighbour's paper for the current question: the
+        letter, "?" if they do not know it, or None if you have not read it yet.
+        """
+        if side not in self.read_sides or self.answers == ANSWERS_NEEDED:
+            return None
+        q = self.question()
+        return self.right_letters[q] if side == self.knowing_side[q] else UNKNOWN
+
+    def can_write(self):
+        """True once the current question's answer has been read."""
+        return (self.state == PLAYING
+                and self.knowing_side[self.question()] in self.read_sides)
+
+    def correct_count(self):
+        """How many written answers are right (the grade at the end)."""
+        return sum(w == r for w, r in zip(self.written, self.right_letters))
+
+    def write(self, letter, direction):
+        """
+        The player pressed a letter key. It is written only while looking
+        down at your paper, and only after the answer has been read.
+        Returns a list of events, like update().
+        """
+        events = []
+        if direction != DOWN or not self.can_write():
+            return events
+        self.written.append(letter)
+        events.append("write")
+        # On to the next question: nothing read and nothing copied yet.
+        self.read_sides = set()
+        self.copy_time = {LEFT: 0.0, RIGHT: 0.0}
+        self.next_tick = 0.0
+        if self.answers == ANSWERS_NEEDED:
+            self.state = WON
+            events.append("won")
+        return events
 
     def suspicion(self):
         """How full the suspicion bar is, 0..1."""
@@ -123,28 +196,20 @@ class Game:
 
         # --- Option 3: copying from a neighbour ---
         # While the teacher sees you, copying does not move forward: glancing
-        # sideways then is all risk and no gain.
-        if direction in (LEFT, RIGHT):
-            if not self.copy_locked and not seen:
-                if self.copy_time >= self.next_tick:   # first tick right at the start
-                    events.append("tick")
-                    self.next_tick += TICK_INTERVAL
-                self.copy_time += dt
-
-                if self.copy_time >= COPY_TIME:
-                    self.answers += 1
-                    events.append("answer")
-                    self.copy_time = 0.0
-                    self.next_tick = 0.0
-                    self.copy_locked = True   # must look away before the next one
-                    if self.answers == ANSWERS_NEEDED:
-                        self.state = WON
-                        events.append("won")
-        else:
-            # Looked away: the copy bar keeps its progress, so an answer can be
-            # copied in pieces. Ticking starts again right away on looking back.
-            self.next_tick = self.copy_time
-            self.copy_locked = False
+        # sideways then is all risk and no gain. A paper already read has
+        # nothing more to give for this question.
+        if direction != self.last_direction and direction in (LEFT, RIGHT):
+            # Just turned to this side: ticking starts again right away.
+            self.next_tick = self.copy_time[direction]
+        self.last_direction = direction
+        if direction in (LEFT, RIGHT) and not seen and direction not in self.read_sides:
+            if self.copy_time[direction] >= self.next_tick:   # first tick right at the start
+                events.append("tick")
+                self.next_tick += TICK_INTERVAL
+            self.copy_time[direction] += dt
+            if self.copy_time[direction] >= COPY_TIME:
+                self.read_sides.add(direction)
+                events.append("read")
 
         # --- The exam clock ---
         self.time_left = max(0.0, self.time_left - dt)

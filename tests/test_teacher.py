@@ -110,6 +110,15 @@ class TeacherTests(unittest.TestCase):
             for looking in ("busy", "watching"):
                 path = os.path.join(root, f"classroom_{place}_{looking}.jpeg")
                 self.assertTrue(os.path.exists(path), path)
+        # The pictures for looking down, left and right (no teacher in them).
+        for looking in ("down", "left", "right"):
+            path = os.path.join(root, f"classroom_desk_looking_{looking}.jpeg")
+            self.assertTrue(os.path.exists(path), path)
+        # Each neighbour's paper with the letter (or "?") they wrote.
+        for side in ("left", "right"):
+            for shown in ("A", "B", "C", "D", "unknown"):
+                path = os.path.join(root, f"{side}_{shown}.jpeg")
+                self.assertTrue(os.path.exists(path), path)
 
 
 if __name__ == "__main__":

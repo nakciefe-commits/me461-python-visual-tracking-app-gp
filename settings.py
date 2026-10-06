@@ -31,8 +31,8 @@ MAXIMIZED = True            # True = the normal window starts maximized (title b
 FPS = 30                    # frames per second the game tries to run at
 
 # --- Rules ---
-ANSWERS_NEEDED = 5          # answers to fill to win
-COPY_TIME = 5.0             # seconds of looking sideways to fill one answer
+ANSWERS_NEEDED = 5          # questions on the exam; write all of them to hand it in
+COPY_TIME = 5.0             # seconds of looking at a neighbour to read their answer (A-D or "?")
 STARE_GRACE_TIME = 2.0      # seconds you may look at the screen for free
 STARE_FILL_TIME = 1.0       # seconds after the grace time until a warning
 MAX_WARNINGS = 3            # this many warnings = game over

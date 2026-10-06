@@ -158,19 +158,32 @@ frame, so you can see what the tracker sees.
 `calibrate()`. If the face is lost on the way, it starts over.
 
 ### `game.py` — the rules
-`Game` holds the game's state: `answers`, `warnings`, `copy_time`,
+`Game` holds the game's state: the answer key (`right_letters`,
+`knowing_side`), `written`, `read_sides`, `warnings`, `copy_time`,
 `suspicion_level`, `time_left`, `state` (`PLAYING` / `WON` / `LOST`) and the
 popup. `update(direction, dt, teacher)` runs once per frame and has three
-parts: the suspicion bar, copying, and the exam clock.
+parts: the suspicion bar, copying, and the exam clock. `write(letter,
+direction)` is called when a letter key is pressed.
 
-**Copying (LEFT or RIGHT):**
-- `copy_time` grows by `dt`. A `"tick"` event every `TICK_INTERVAL` (0.3 s).
+**The answer key:** at `reset()` each question gets a random right letter
+(`right_letters`, A-D) and a random neighbour who knows it (`knowing_side`,
+LEFT or RIGHT). Like the teacher, `Game` takes a `random.Random`, and the tests
+also set the key by hand so they know the answers.
+
+**Copying (LEFT or RIGHT): reading a neighbour's paper**
+- `copy_time` is a dictionary, one number per side: `copy_time[LEFT]` grows
+  by `dt` while you look left. A `"tick"` event every `TICK_INTERVAL` (0.3 s).
 - No progress while the teacher sees you copying (no gain, only risk).
-- At `COPY_TIME` (3 s): one more answer, `"answer"` event, and
-  `copy_locked = True`, so you must look away before the next answer starts
-  (otherwise one long look would fill everything).
-- 5 answers → `WON`.
-- Looking anywhere else keeps `copy_time`, so an answer can be copied in pieces.
+- At `COPY_TIME`: the side goes into `read_sides`, `"read"` event.
+  `paper_shows(side)` then gives the letter, or `"?"` for the neighbour who
+  does not know it. A paper already read gives nothing more.
+- Looking anywhere else keeps `copy_time`, so a paper can be read in pieces.
+
+**Writing (DOWN + a letter key):** `write()` does nothing unless you look
+down and `can_write()` (the knowing neighbour's paper is read). Any letter is
+written into `written` (`"write"` event), and the next question starts with
+nothing read. 5 written → `WON`. `answers` is just `len(written)`;
+`correct_count()` compares `written` with `right_letters` for the grade.
 
 **The suspicion bar (`suspicion_level`, 0 to 1):**
 - **Seen copying** (sideways while `teacher.is_watching()`): grows by
@@ -231,9 +244,18 @@ that's also how animation will work later.
   width and cuts off the top (`CLASSROOM_TOP`) and bottom so it fits.
 - `Renderer` loads fonts and pictures once and has a draw function per
   screen: `draw_disclaimer`, `draw_start`, `draw_game`, `draw_popup`, `draw_paused`, `draw_end`.
-- `draw_game` draws the teacher's picture (or black while you look away,
-  fading in by `view`), then see-through strips: answers, warnings and the
+- `draw_game` draws the teacher's picture (fading in by `view`), or while
+  you look away the picture for that direction (`LOOK_AWAY_IMAGES`: your
+  paper, or the left/right neighbour's paper, never the teacher), then see-through strips: answers, warnings and the
   clock at the top, the copy and suspicion bars at the bottom.
+- On your paper it writes `game.written` on the answer lines
+  (`OWN_ANSWER_Y`). For a neighbour, `neighbour_picture()` picks the plain
+  picture until the copy bar is full, then the one with the letter circled
+  on their paper (`left_B`, `right_unknown` for "?"). If that picture is
+  missing, `neighbour_note()` draws the letter in a white note instead.
+  `look_away_texts()` picks the hint ("Press A, B, C or D...").
+- `draw_end` shows the grade and `answer_boxes(..., graded=True)`: green =
+  right, red = wrong.
 - Helpers: `text()`, `bar()` (grey background + coloured part),
   `darken()` (see-through black layer, for the whole window or a strip).
 - The draw functions only **read** `game` and `teacher`; they never change them.
@@ -249,7 +271,8 @@ Normally it is a resizable window with a title bar, maximized at the start.
 `pygame.FULLSCREEN` with `SCALED` is a borderless window the size of the
 desktop, not a real video-mode change. F11 just calls `open_window()` again.)
 
-1. **Input**: keys and mouse (`pygame.event.get()`); quit, calibrate, restart, F11 fullscreen.
+1. **Input**: keys and mouse (`pygame.event.get()`); quit, calibrate, restart, F11 fullscreen,
+   and A-D (`LETTER_KEYS`) → `game.write(letter, direction)`.
 2. **Camera**: `camera.read()`, then `tracker.read(frame, now)`.
 3. **Per screen**:
    - DISCLAIMER: the warning screen, shown once when the game opens.
@@ -294,14 +317,16 @@ frame in the middle of that:
    0.1 s → returns `LEFT`.
 4. `teacher.update(0.033)` → still `BUSY`, returns `[]`.
 5. `game.update(LEFT, 0.033, teacher)` → the teacher is not watching, so the
-   suspicion bar drains a little; `copy_time` is 1.20 s, which has reached the
-   next tick time (ticks are at 0, 0.3, 0.6, 0.9, 1.2...) → a `"tick"` event;
-   then `copy_time` grows to 1.233 s. Returns `["tick"]`.
+   suspicion bar drains a little; `copy_time[LEFT]` is 1.20 s, which has
+   reached the next tick time (ticks are at 0, 0.3, 0.6, 0.9, 1.2...) → a
+   `"tick"` event; then it grows to 1.233 s. Returns `["tick"]`.
 6. `main.py` calls `sounds.play("tick")`.
-7. `classroom_view(LEFT, ...)` is 0, so `renderer.draw_game()` draws a black
-   screen with "Copying from the left" and fills the copy bar to
-   1.233 / 3.0 ≈ 41%.
+7. `classroom_view(LEFT, ...)` is 0, so `renderer.draw_game()` draws the
+   left neighbour's paper with "Copying answer 1 from the left" and fills
+   the copy bar to 1.233 / 5.0 ≈ 25%.
 8. `pygame.display.flip()`: you see it.
+9. Later, at 5.0 s, `"read"`: a note above her paper shows, say, "C". You
+   look down and press C: `game.write("C", DOWN)` writes it on your paper.
 
 Had the teacher been `WATCHING`, step 5 would instead raise the suspicion bar
 by 0.033 / 0.9, not move the copy bar, and return `["spotted"]` on the first
@@ -316,7 +341,7 @@ Small changes to learn by doing. Run `./run.sh` after each one.
 1. **Easy:** in `settings.py`, set `COPY_TIME = 1.0`. Copying is now much faster.
 2. **Easy:** set `ANSWERS_NEEDED = 3`. Check that the answer boxes on screen
    update by themselves (look at how `render.py` uses `ANSWERS_NEEDED`).
-3. **Medium:** in `sounds.py`, change the `"answer"` sound to two notes, like
+3. **Medium:** in `sounds.py`, change the `"read"` sound to two notes, like
    `"won"` is built.
 4. **Medium:** in `render.py`, change the colour of the copy bar.
 5. **Harder:** in `game.py`, make looking DOWN drain the suspicion bar twice

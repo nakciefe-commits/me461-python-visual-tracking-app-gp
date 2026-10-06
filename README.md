@@ -43,9 +43,9 @@ your "looking at the screen" position. Then:
 
 | Head | Option | What happens |
 |---|---|---|
-| Down | 1 - paper | Safe. The screen is black. |
+| Down | 1 - paper | Safe. You see your own paper, not the teacher, and hear nothing. Press **A, B, C or D** to write the answer you read. |
 | At the screen | 2 - teacher | The only way to see the classroom and what the teacher is doing. While the teacher looks at the class, the suspicion bar fills; after 3 s it turns red, and when it is full you get a warning. 3 warnings = game over. Being seen copying fills the same bar, so staring afterwards carries on from there. The bar never jumps to empty: it drains slowly while you do nothing suspicious. |
-| Left / right | 3 - copy | Hold 3 s to fill one answer (ticking sound). Fill 5 to win. The screen is black. If the teacher is looking at the class, an **alarm** plays and the suspicion bar fills in 0.9 s: look away before it is full, or you are **caught**. Copying does not move forward while the teacher sees you. |
+| Left / right | 3 - copy | Hold 5 s to read the neighbour's answer (ticking sound): a letter, or **?** if they don't know it (then the other neighbour does). Remember it, look down and write it. Write all 5 to hand in the exam; the end screen shows how many are right. You see the neighbour's paper, not the teacher. If the teacher is looking at the class, an **alarm** plays and the suspicion bar fills in 0.9 s: look away before it is full, or you are **caught**. Copying does not move forward while the teacher sees you. |
 
 The teacher erases the board or plays on the phone (safe), then looks at the
 class for a few seconds (danger). **Luigi's "hmm"** means the teacher is
@@ -57,9 +57,9 @@ You have 60 seconds.
 Losing by being caught or by 3 warnings plays the Metal Gear alert; running
 out of time plays falling notes.
 
-Keys: Space calibrate, `q`/Esc quit, `r` restart, `c` recalibrate, F11
-fullscreen on/off, `d` always show the classroom and the teacher's state (for
-testing). The game opens as a maximized window (title bar and taskbar stay
+Keys: Space calibrate, `a`/`b`/`c`/`d` write an answer (while looking at
+your paper), `q`/Esc quit, `r` restart, `k` recalibrate, F11 fullscreen
+on/off, `t` always show the classroom and the teacher's state (for testing). The game opens as a maximized window (title bar and taskbar stay
 visible); F11 makes it borderless fullscreen. In `settings.py`, set
 `FULLSCREEN = True` to start fullscreen or `MAXIMIZED = False` to start as a
 small 960×600 window. If no face
@@ -105,7 +105,7 @@ the loop. `LEARN.md` explains every file.
 | `face_landmarker.task` | Pre-trained MediaPipe face model. |
 | `tracker.py` | The first body tracker, kept for reference. |
 | `pose_landmarker.task` | Pre-trained MediaPipe pose model, used by `tracker.py`. |
-| `assets/images/` | The four classroom pictures (`original/`: as made by Gemini, before sharpening). |
+| `assets/images/` | The four classroom pictures, plus the three look-away pictures (`classroom_desk_looking_down/left/right`) and each neighbour's paper with a letter (`left_A` … `left_D`, `left_unknown` = "?", same for `right_`) (`original/`: as made by Gemini, before sharpening). |
 | `assets/sounds/` | Sound files (Luigi "hmm", MGS alert, chalk erasing for later). |
 | `LEARN.md` | **Start here to learn the code:** how it works, file by file. |
 | `PLAN.md` | Game design, open questions, what is done and what is next. |

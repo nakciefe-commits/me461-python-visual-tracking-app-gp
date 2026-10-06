@@ -600,3 +600,171 @@ pass.
 ### Next
 
 Same as commit #7.
+
+---
+
+## Commit #12 — Pictures for looking down, left and right
+
+- **Date:** 6 Oct 2026
+
+### Summary
+
+The instructor asked for pictures instead of the black screen while the
+player looks away. Looking down now shows your own exam paper, looking left
+or right shows that neighbour copying their exam. None of them show the
+teacher, so you still have to look at the screen (or listen) to know what
+the teacher is doing.
+
+### Added
+
+| File | Change |
+|---|---|
+| `assets/images/classroom_desk_looking_down.jpeg` | Your desk from above: the spiral exam paper, hands, pencil, breadboard. |
+| `assets/images/classroom_desk_looking_left.jpeg` | The left neighbour (curly hair, beige t-shirt) writing on their exam. |
+| `assets/images/classroom_desk_looking_right.jpeg` | The right neighbour (maroon t-shirt, calculator) writing on their exam. |
+| `render.py` | `LOOK_AWAY_IMAGES`: direction → picture. `LOOK_AWAY_STRIP`: height of the text strip, pixels. |
+| `tests/test_teacher.py` | `test_images_exist` also checks the three new pictures. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `render.py` | `draw_game` draws the look-away picture instead of black. The "Copying from the left" text moved from the middle to a dark strip above the bars, so it does not cover the neighbour's paper. Looking down now says "You can't see or hear the teacher" (you really hear nothing then). |
+| `README.md`, `LEARN.md`, `PLAN.md` | The screen is no longer black while looking away; PLAN section 5 says how the pictures were made. |
+
+### Details worth knowing
+
+- The pictures were made with Gemini by giving it
+  `original/classroom_board_busy.jpeg` and asking for the same room,
+  style and students from the same seat. Making them from text only would
+  give a different classroom each time. They are 2048×2048.
+- They go through the same `load_classroom()` as the teacher pictures, so
+  only about 26%–89% of the height is shown. Their important part is in
+  that band.
+- The first moment after turning back to the screen is still black, then
+  the classroom fades in (`FADE_TIME`), as before.
+- The right picture shows part of the board but not the teacher. That is
+  fine: the board alone says nothing about the teacher.
+- Tests: all 62 pass. The three screens were drawn without a window (SDL
+  dummy driver) and checked by eye. A person should check: looking left
+  shows the curly-haired neighbour and looking right shows the one with the
+  calculator (if they are swapped, the camera's left/right is flipped:
+  `YAW_SIGN`); looking down shows your paper; the text strip does not cover
+  the neighbour's paper; the copy bar is still readable on top.
+
+### Next
+
+Same as commit #7, minus the look-away pictures.
+
+---
+
+## Commit #13 — A-D answers: read from a neighbour, write on your paper
+
+- **Date:** 6 Oct 2026
+
+### Summary
+
+Copying no longer fills an answer by itself. Each question has a right
+letter (A, B, C or D), and only one neighbour, chosen at random, knows it.
+Looking at a neighbour until the copy bar is full **reads** their paper: a
+note above it shows the letter, or "?" if they don't know it (then the other
+neighbour does). The player must remember the letter, look down at their own
+paper and press A-D to **write** it. After 5 answers the exam is handed in
+and the end screen shows the grade (e.g. 4/5 correct). This answers open
+question Q1 in `PLAN.md`.
+
+### Added
+
+| File | Change |
+|---|---|
+| `game.py` | Answer key `right_letters` / `knowing_side` (random at `reset()`), `written`, `read_sides`. `paper_shows(side)`, `can_write()`, `write(letter, direction)`, `correct_count()`, `question()`. `Game(rng)` takes a `random.Random` like `Teacher`. `LETTERS`, `UNKNOWN`. |
+| `main.py` | `LETTER_KEYS`: A/B/C/D call `game.write()`. |
+| `render.py` | `answer_boxes()` (letters in the boxes; green/red at the end), `neighbour_note()` (the white note with the letter or "?"), `look_away_texts()` (hints), the letters handwritten on your paper. `PAPER_SPOT`, `NOTE_SIZE`, `OWN_ANSWER_X`, `OWN_ANSWER_Y`: pixel positions in the pictures. |
+| `sounds.py` | `"read"` (ding, was `"answer"`), `"write"` (a short pencil scratch made from random noise). |
+| `tests/test_game.py` | 13 copying tests for reading, "?", writing only while looking down and after reading, separate progress per side, wrong letters graded, the random key. 69 tests now. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `game.py` | `copy_time` is one number per side (`{LEFT: .., RIGHT: ..}`); halves from two sides do not add up. `answers` is now `len(written)`. `copy_locked` is gone: a paper already read gives nothing more anyway. Winning = 5 answers written. |
+| `main.py`, `render.py` | Keys: recalibrate `c` → `k`, testing view `d` → `t`, because C and D are answers now. |
+| `render.py` | While looking down the text strip is at the top, so it does not hide answer lines 4 and 5. End screen: "Exam handed in!" and the grade. |
+| `settings.py` | Comments of `ANSWERS_NEEDED` and `COPY_TIME`. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The new way of answering, the keys, the grade. |
+
+### Details worth knowing
+
+- Decided with the team: any letter can be written (wrong ones only lower
+  the grade), but only after the answer was read, so guessing without
+  copying is not possible. The letter is **not** shown while looking down:
+  remembering it is part of the game.
+- Each neighbour is random per question, so a side can know several answers
+  in a row; nothing forces a mix.
+- Writing is checked with the direction from the last frame, so a key
+  pressed while turning down may be ignored for a moment.
+- `test_win_on_last_second_is_a_win` now writes the last answer in the last
+  frame of the exam, because filling the bar no longer wins by itself.
+- Tests: all 69 pass. The look-left, look-right, look-down and end screens
+  were drawn without a window and checked by eye. A person should check:
+  the note sits above each neighbour's paper; "?" really comes from one side
+  and the letter from the other; A-D do nothing while not looking down or
+  before reading; letters appear on the right lines of your paper; K
+  recalibrates and T shows the teacher; the end screen colours the boxes.
+
+### Next
+
+- The team's funny sound for wrong answers (on the end screen).
+- Maybe a pass mark (e.g. 3/5) so a bad grade is not a win.
+- Then the rest of commit #7's list.
+
+---
+
+## Commit #14 — Neighbour pictures with the answer on their paper
+
+- **Date:** 6 Oct 2026
+
+### Summary
+
+The white note with the letter is replaced by pictures: once the copy bar
+is full, the neighbour's picture changes to one where the letter (A-D) or a
+"?" is circled on their exam sheet. Before the bar is full the plain picture
+is shown, so the answer cannot be seen early.
+
+### Added
+
+| File | Change |
+|---|---|
+| `assets/images/left_A … left_D.jpeg`, `left_unknown.jpeg` | The left neighbour with that letter (or "?", scratching her head) on her sheet. Made with Gemini from `classroom_desk_looking_left.jpeg`. |
+| `assets/images/right_A … right_D.jpeg`, `right_unknown.jpeg` | The same for the right neighbour. |
+| `render.py` | `PAPER_IMAGES`, `SIDE_NAMES`, `neighbour_picture(game, side)`: which picture to show. |
+| `tests/test_game.py` | `test_nothing_shown_until_the_bar_is_full`: one frame before full, still hidden. |
+| `tests/test_teacher.py` | `test_images_exist` also checks the 10 paper pictures. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `render.py` | Looking sideways draws `neighbour_picture()`. The white note (`neighbour_note()`) is only a fallback for a missing picture. |
+| `assets/images/left_?.jpeg`, `right_?.jpeg` | Renamed to `left_unknown.jpeg`, `right_unknown.jpeg`: `?` in a file name breaks on Windows and in the shell. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The new pictures. |
+
+### Details worth knowing
+
+- The picture only depends on `game.paper_shows(side)`, which stays `None`
+  until the copy bar is full, so the answer cannot leak early. The new test
+  checks the last frame before full.
+- `left_A` and `right_A` are 1024 px (not sharpened); the others 2048 px.
+  They still fill the window, just a bit softer. Sharpen them with
+  Real-ESRGAN like the others when there is time.
+- In the right "?" picture the circle sits just above the text strip; check
+  it is not covered.
+- Tests: all 70 pass. Drew the left picture one frame before full (plain),
+  at full (`left_C`), and the right "?" (`right_unknown`) without a window
+  and checked them by eye. A person should check: the letter on each
+  picture is readable on your screen, it only appears when the bar is full,
+  and the wrong-side neighbour shows "?".
+
+### Next
+
+Same as commit #13.

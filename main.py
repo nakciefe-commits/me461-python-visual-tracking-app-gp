@@ -3,8 +3,9 @@ The game: the classroom, the teacher, the copy bar, the suspicion bar.
 
 Run it with:   ./run.sh      (or  .venv/bin/python main.py)
 Keys:          Space = calibrate (start screen), q / Esc = quit,
-               r = restart, c = recalibrate, F11 = fullscreen on/off,
-               d = always show the classroom and the teacher's state (for testing)
+               r = restart, k = recalibrate, F11 = fullscreen on/off,
+               a / b / c / d = write that answer (while looking at your paper),
+               t = always show the classroom and the teacher's state (for testing)
 
 The program is one loop that repeats about 30 times a second:
     1. handle key presses and clicks
@@ -27,6 +28,8 @@ from sounds import Sounds
 from teacher import Teacher
 
 MAX_DT = 0.1   # seconds; a slow frame must not fill a whole bar at once
+# Answer keys -> the letter they write on your paper.
+LETTER_KEYS = {pygame.K_a: "A", pygame.K_b: "B", pygame.K_c: "C", pygame.K_d: "D"}
 
 # The screens. "Face not found" is not a screen of its own: it is the GAME
 # screen with the game paused. DISCLAIMER is shown once, when the game opens.
@@ -105,7 +108,7 @@ def main():
     screen_name = DISCLAIMER
     direction = SCREEN   # last known direction, kept while paused
     look_time = 0.0      # seconds the player has been looking at the screen in one go
-    show_always = False  # d key: always show the classroom (for testing)
+    show_always = False  # t key: always show the classroom (for testing)
     previous_time = time.time()
     running = True
 
@@ -126,14 +129,19 @@ def main():
                     if event.key == pygame.K_SPACE:
                         screen_name = START
                 elif ((event.key == pygame.K_SPACE and screen_name == START)
-                      or (event.key == pygame.K_c and screen_name == GAME)):  # c: recalibrate, keep the game
+                      or (event.key == pygame.K_k and screen_name == GAME)):  # k: recalibrate, keep the game
                     calibration.restart()
                     screen_name = CALIBRATING
                 elif event.key == pygame.K_r:        # new game, back to the start screen
                     game.reset()
                     teacher.reset()
                     screen_name = START
-                elif event.key == pygame.K_d:
+                elif event.key in LETTER_KEYS and screen_name == GAME:
+                    # game.write() checks that you look at your paper and
+                    # have read the answer; otherwise nothing happens.
+                    for name in game.write(LETTER_KEYS[event.key], direction):
+                        sounds.play(name)
+                elif event.key == pygame.K_t:
                     show_always = not show_always
             elif event.type == pygame.MOUSEBUTTONDOWN and screen_name == DISCLAIMER:
                 screen_name = START                  # a click anywhere continues

@@ -17,12 +17,14 @@ the player's head. The player can do three things:
 
 | # | Action | Head direction | Why do it |
 |---|---|---|---|
-| 1 | Look at the exam paper | **Down** | Safe, but you see and hear nothing. |
+| 1 | Look at the exam paper | **Down** | Safe, and the only place to write an answer (keys A-D), but you see and hear nothing. |
 | 2 | Look at the teacher | **Straight at the monitor** | The only way to *see* what the teacher is doing, but staring while they look at the class is suspicious. |
-| 3 | Copy from a neighbour | **Left or right** | The only way to fill answers, but if the teacher sees it, you get caught. |
+| 3 | Copy from a neighbour | **Left or right** | The only way to read answers, but if the teacher sees it, you get caught. |
 
-**Goal:** fill all 5 answers in 60 seconds without getting caught and without
-collecting 3 warnings.
+**Goal:** write all 5 answers before the exam time runs out, without getting
+caught and without collecting 3 warnings. Each answer is A, B, C or D, and
+only one neighbour knows it; the other one's paper shows "?". At the end the
+exam is graded (e.g. 4/5 correct).
 
 ### Why it is fun: the information problem
 
@@ -31,10 +33,12 @@ copying they are blind to the teacher, and while looking at the paper they are
 blind **and deaf**. That creates the core loop:
 
 1. Glance at the monitor to check the teacher.
-2. When the teacher is busy, look sideways and copy.
+2. When the teacher is busy, look sideways and copy. If the paper shows "?",
+   the answer is on the other side.
 3. Listen while copying: Luigi's "hmm" means the teacher is about to look up.
 4. Look away from the neighbour before the teacher sees you.
-5. Do not stare at the teacher while they look at the class, or you get a
+5. Look down at your paper and write the letter you remember (A-D).
+6. Do not stare at the teacher while they look at the class, or you get a
    warning.
 
 The exam clock forces the player to take risks: without it, the safe play
@@ -74,6 +78,13 @@ Each webcam frame becomes one of:
 ### 3.1 Looking down (paper)
 
 - Always safe. Nothing fills; the suspicion bar drains.
+- The screen shows your own paper (`classroom_desk_looking_down`) with the
+  letters written so far on the answer lines.
+- **Writing:** press A, B, C or D to write the current answer. It only works
+  while looking down, and only after the answer has been read from the
+  neighbour who knows it. Any letter is accepted (you have to remember what
+  you read); wrong ones only show in the grade at the end. Then the next
+  question starts.
 - No sound from the teacher at all.
 
 ### 3.2 Looking at the screen (teacher)
@@ -87,10 +98,16 @@ Each webcam frame becomes one of:
 
 ### 3.3 Looking sideways (copying)
 
-- The screen is black.
-- The **copy bar** fills; `COPY_TIME` (3 s) = one answer (tick sound while
-  filling, ding when done). Looking away **keeps** the progress, so an answer
-  can be copied in pieces. After an answer you must look away before the next.
+- The screen shows the neighbour's paper (`classroom_desk_looking_left` /
+  `_right`), never the teacher.
+- Each question has a random right letter (A-D) and a random neighbour who
+  knows it.
+- The **copy bar** fills; after `COPY_TIME` (5 s) you have **read** that
+  neighbour's paper (tick sound while filling, ding when done): the picture
+  changes to show the letter circled on their paper, or "?" if they don't
+  know it. Each neighbour
+  has their own progress, kept when looking away, so a paper can be read in
+  pieces. A paper already read gives nothing more for this question.
 - **Seen copying** (the teacher is watching): an alarm plays, the suspicion
   bar fills fast (full in `CAUGHT_TIME`, 0.9 s), and copying does not move
   forward. Look away before it is full and you escape; full = **caught**.
@@ -106,7 +123,7 @@ the player when the teacher looked away: it drains slowly
 
 | Outcome | Condition | Sound |
 |---|---|---|
-| **Win** | 5 answers | rising notes |
+| **Win** (exam handed in) | 5 answers written; the end screen shows how many are right | rising notes |
 | **Lose: caught** | suspicion bar full while seen copying | MGS alert |
 | **Lose: warnings** | 3 warnings | MGS alert |
 | **Lose: time** | `EXAM_TIME` (60 s) runs out | falling notes |
@@ -149,6 +166,17 @@ safe       "hmm" sound   copying = caught
   upscaler, run once by hand, not part of the game). Originals are in
   `assets/images/original/`. A new picture must show the same classroom from
   the same angle, so that swapping pictures only changes the teacher.
+- **Look-away pictures** (`classroom_desk_looking_down/left/right`, asked for
+  by the instructor): what the player sees while looking down or sideways.
+  Made by giving Gemini `original/classroom_board_busy.jpeg` and asking for
+  the same style, room and students from the same seat, turned down/left/
+  right. They never show the teacher, so the information problem stays. The
+  important part (the neighbour's paper) must be in the middle of the
+  picture, because the game cuts off the top (`CLASSROOM_TOP`).
+- **Paper pictures** (`left_A` … `left_D`, `left_unknown`, same for `right_`):
+  the same look-left/right picture, edited by Gemini so the neighbour's exam
+  sheet has the letter (or "?") circled on it. Shown only once the copy bar
+  is full; before that the plain picture, so nothing gives the answer away.
 - **Sounds** (`sounds.py`): most are beeps generated in code; `SOUND_FILES`
   replaces some with files from `assets/sounds/`:
 
@@ -156,7 +184,7 @@ safe       "hmm" sound   copying = caught
 |---|---|
 | `state:TURNING` | `luigi-hmm.mp3` |
 | `lost_caught`, `lost_warnings` | `mgs-alert-sound.mp3` |
-| `tick`, `answer`, `warning`, `spotted`, `won`, `lost_time` | generated beeps |
+| `tick`, `read` (ding), `write` (pencil scratch), `warning`, `spotted`, `won`, `lost_time` | generated beeps |
 
 `Erasing Chalk On Chalkboard Sound Effect.mp3` is in the folder but not used
 yet (see section 8).
@@ -187,9 +215,9 @@ since the last frame) keeps the speed the same at any frame rate.
 
 ## 7. Open questions
 
-- **Q1 — How is an answer filled?** Now: look sideways for 3 s. Alternative:
-  look sideways to "read", then look down to "write" it (gives the paper a
-  purpose; lose the answer if caught before writing).
+- **Q1 — How is an answer filled?** ✅ decided: look sideways to read the
+  letter (or "?"), then look down and press A-D to write it. Wrong letters
+  only lower the grade.
 - **Q2 — Interrupted copying:** ✅ decided: progress is **kept**.
 - **Q3 — Number of warnings:** 3 (could be 2).
 - **Q4 — Exam time:** ✅ 60 s for now; tune by playtesting.
@@ -200,9 +228,10 @@ since the last frame) keeps the speed the same at any frame rate.
 ## 8. Done and next
 
 **Done:** head tracking with calibration; copying and staring rules; the
-teacher with four pictures; exam clock; the dark screen while looking away;
+teacher with four pictures; exam clock; the classroom hidden while looking away;
 real sounds for turning and game over; one suspicion bar that drains slowly;
-tests (62).
+pictures for looking down, left and right; A-D answers read from one
+neighbour and written on your paper, graded at the end; tests (69).
 
 **Next, roughly in order:**
 
@@ -212,9 +241,8 @@ tests (62).
 2. **More sounds:** the chalk sound as a loop while the teacher erases the
    board (needs `loop()`/`stop()` in `sounds.py`), quiet classroom background,
    real tick/ding files. The game must keep working without them.
-3. **More art:** pictures for `DOWN` (your paper) and `LEFT`/`RIGHT` (the
-   neighbour's paper) instead of the black screen; a turning picture; a
-   walking teacher so moving between board and desk is not a jump.
+3. **More art:** a turning picture; a walking teacher so moving between board
+   and desk is not a jump.
 4. **Menus and polish:** main menu, how-to-play screen, end screen with
    answers/time/warnings, readable webcam errors.
 5. **Difficulty and score:** the teacher checks more often as the exam goes
@@ -227,8 +255,9 @@ tests (62).
 
 ## 9. Future ideas
 
-- **Neighbours with different answers:** left = good student, right = bad
-  student; wrong answers lower the grade.
+- **A funny sound for wrong answers** on the end screen (the team will add a
+  sound file).
+- **Pass mark:** e.g. at least 3/5 correct to count as a win.
 - **Neighbour covers their paper** sometimes, or notices you and raises a hand.
 - **Teacher gets suspicious over time:** each warning makes them check more.
 - **Levels:** different teachers (strict, sleepy, wandering) or rooms.
