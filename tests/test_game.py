@@ -2,6 +2,7 @@
 
 import math
 import os
+import random
 import sys
 import unittest
 
@@ -9,7 +10,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from game import Game, PLAYING, WON, LOST, WARNING_TIME
 from head_tracker import DOWN, SCREEN, LEFT, RIGHT
-from settings import EXAM_TIME, ANSWERS_NEEDED, CAUGHT_TIME, COPY_TIME, SUSPICION_DRAIN_TIME
+from settings import (EXAM_TIME, ANSWERS_NEEDED, ANSWER_CHOICES, CAUGHT_TIME,
+                      SUSPICION_DRAIN_TIME, PAPER_FOCUS_TIME)
 
 # 1/8 s per step: adds up exactly in floating point, so 20 steps are exactly 2.5 s.
 # Times come from settings.py, so tuning them does not break the tests.
@@ -24,52 +26,182 @@ def run(game, direction, seconds):
     return events
 
 
-class CopyingTests(unittest.TestCase):
-    def test_copy_time_fills_one_answer(self):
-        game = Game()
-        events = run(game, LEFT, COPY_TIME)
-        self.assertEqual(game.answers, 1)
-        self.assertEqual(events.count("answer"), 1)
+class ExamPaperTests(unittest.TestCase):
+    def setUp(self):
+        self.game = Game(random.Random(1))
 
-    def test_copy_time_counts_up(self):
-        game = Game()
-        run(game, RIGHT, 1.25)
-        self.assertAlmostEqual(game.copy_time, 1.25)
+    def test_own_paper_starts_blank_and_neighbours_are_marked(self):
+        self.assertEqual(self.game.player_answers, [None] * ANSWERS_NEEDED)
+        for direction in (LEFT, RIGHT):
+            marks = self.game.neighbour_answers[direction]
+            self.assertEqual(len(marks), ANSWERS_NEEDED)
+            self.assertTrue(all(choice in ANSWER_CHOICES for choice in marks))
+            self.assertEqual(marks, self.game.answer_key)
 
-    def test_looking_away_keeps_progress(self):
-        game = Game()
-        run(game, LEFT, 1.0)
-        run(game, DOWN, 2.0)
-        self.assertAlmostEqual(game.copy_time, 1.0)
+    def test_neighbour_marks_stay_fixed_when_looking_around(self):
+        before = self.game.neighbour_answers.copy()
+        for direction in (LEFT, DOWN, RIGHT, SCREEN):
+            run(self.game, direction, DT)
+        self.assertEqual(self.game.neighbour_answers, before)
 
-    def test_copy_in_pieces(self):
-        game = Game()
-        run(game, LEFT, COPY_TIME / 2)
-        run(game, DOWN, 1.0)
-        events = run(game, RIGHT, COPY_TIME / 2)
-        self.assertEqual(game.answers, 1)
-        self.assertEqual(events[0], "tick")   # ticking starts again right away
+    def test_looking_sideways_does_not_write_or_win(self):
+        for direction in (LEFT, RIGHT):
+            self.assertNotIn("answer", run(self.game, direction, EXAM_TIME / 4))
+        self.assertEqual(self.game.answers, 0)
+        self.assertEqual(self.game.state, PLAYING)
 
-    def test_must_look_away_between_answers(self):
-        game = Game()
-        run(game, LEFT, 5.0)
-        self.assertEqual(game.answers, 1)
+    def test_keyboard_writes_then_advances_to_next_blank_question(self):
+        self.assertEqual(self.game.answer("a", SCREEN), ["answer"])
+        self.assertEqual(self.game.player_answers[0], "a")
+        self.assertEqual(self.game.active_question, 1)
+        self.assertEqual(self.game.answers, 1)
 
-    def test_five_answers_wins(self):
-        game = Game()
+    def test_all_five_keys_and_uppercase_are_accepted(self):
+        for choice in ANSWER_CHOICES:
+            with self.subTest(choice=choice):
+                game = Game(random.Random(1))
+                game.answer(choice.upper(), DOWN)
+                self.assertEqual(game.player_answers[0], choice)
+
+    def test_cannot_answer_sideways_or_while_paused(self):
+        for direction in (LEFT, RIGHT, None):
+            self.assertEqual(self.game.answer("c", direction), [])
+        self.assertEqual(self.game.answers, 0)
+
+    def test_invalid_choices_are_ignored(self):
+        for choice in ("x", "", "ab", None, 0):
+            self.assertEqual(self.game.answer(choice, SCREEN), [])
+        self.assertEqual(self.game.answers, 0)
+
+    def test_revising_an_answer_does_not_double_count_it(self):
+        self.game.answer("a", SCREEN)
+        self.game.select_question(0, DOWN)
+        self.game.answer("b", DOWN)
+        self.assertEqual(self.game.player_answers[0], "b")
+        self.assertEqual(self.game.answers, 1)
+        self.assertEqual(self.game.active_question, 1)
+
+    def test_navigation_wraps_and_rejects_invalid_indices(self):
+        self.game.move_question(-1, SCREEN)
+        self.assertEqual(self.game.active_question, ANSWERS_NEEDED - 1)
+        self.game.move_question(1, DOWN)
+        self.assertEqual(self.game.active_question, 0)
+        for index in (-1, ANSWERS_NEEDED):
+            self.assertFalse(self.game.select_question(index, SCREEN))
+        self.assertEqual(self.game.active_question, 0)
+
+    def test_navigation_is_frozen_sideways_and_paused(self):
+        for direction in (LEFT, RIGHT, None):
+            self.assertFalse(self.game.move_question(1, direction))
+        self.assertEqual(self.game.active_question, 0)
+
+    def test_correct_manual_answers_win(self):
         events = []
-        for _ in range(5):
-            events += run(game, LEFT, COPY_TIME)
-            events += run(game, DOWN, 0.125)
-        self.assertEqual(game.state, WON)
-        self.assertIn("won", events)
+        for choice in self.game.neighbour_answers[LEFT]:
+            events += self.game.answer(choice, DOWN)
+        self.assertEqual(self.game.state, WON)
+        self.assertEqual(self.game.correct_answers, ANSWERS_NEEDED)
+        self.assertEqual(events.count("answer"), ANSWERS_NEEDED)
+        self.assertEqual(events.count("won"), 1)
 
-    def test_ticks_while_copying(self):
+    def test_wrong_answer_can_be_revisited_after_paper_is_full(self):
+        expected = self.game.answer_key[0]
+        wrong = next(choice for choice in ANSWER_CHOICES if choice != expected)
+        self.game.answer(wrong, SCREEN)
+        for choice in self.game.answer_key[1:]:
+            self.game.answer(choice, SCREEN)
+        self.assertEqual(self.game.answers, ANSWERS_NEEDED)
+        self.assertEqual(self.game.state, PLAYING)
+        self.assertIsNotNone(self.game.popup_text)
+        self.game.select_question(0, SCREEN)
+        self.assertIn("won", self.game.answer(expected, SCREEN))
+
+    def test_reset_clears_marks_selection_and_score(self):
+        self.game.answer("a", SCREEN)
+        self.game.reset()
+        self.assertEqual(self.game.player_answers, [None] * ANSWERS_NEEDED)
+        self.assertEqual(self.game.active_question, 0)
+        self.assertEqual((self.game.answers, self.game.correct_answers), (0, 0))
+        self.assertEqual(self.game.state, PLAYING)
+
+    def test_seeded_exams_can_be_repeated_but_reset_generates_a_new_exam(self):
+        other = Game(random.Random(1))
+        self.assertEqual(self.game.answer_key, other.answer_key)
+        # Check RNG state as well, so repeated letters cannot make this flaky.
+        state = self.game.rng.getstate()
+        self.game.reset()
+        other.reset()
+        self.assertNotEqual(self.game.rng.getstate(), state)
+        self.assertEqual(self.game.answer_key, other.answer_key)
+
+    def test_answers_after_win_or_loss_are_ignored(self):
+        for state in (WON, LOST):
+            with self.subTest(state=state):
+                game = Game()
+                game.state = state
+                self.assertEqual(game.answer("e", DOWN), [])
+                self.assertFalse(game.move_question(1, DOWN))
+                self.assertEqual(game.answers, 0)
+
+
+class PaperFocusTests(unittest.TestCase):
+    def test_a_new_exam_starts_blurry(self):
         game = Game()
-        events = run(game, RIGHT, 1.0)
-        # One tick right at the start, then one every 0.3 s: 3 or 4 in 1 s
-        # depending on how the frames line up.
-        self.assertIn(events.count("tick"), (3, 4))
+        self.assertEqual(game.paper_clarity, 0)
+        self.assertIsNone(game.paper_direction)
+
+    def test_continuous_look_slowly_clears_the_paper(self):
+        game = Game()
+        for expected in (0.25, 0.5, 0.75, 1.0):
+            game.update(LEFT, PAPER_FOCUS_TIME / 4)
+            self.assertAlmostEqual(game.paper_clarity, expected)
+        self.assertEqual(game.answers, 0)  # focusing only reads, never writes
+
+    def test_focus_is_capped_after_the_paper_is_clear(self):
+        game = Game()
+        game.update(RIGHT, PAPER_FOCUS_TIME * 2)
+        self.assertEqual(game.paper_clarity, 1)
+        self.assertEqual(game.paper_focus_time, PAPER_FOCUS_TIME)
+
+    def test_looking_away_restarts_blur(self):
+        for direction in (SCREEN, DOWN):
+            with self.subTest(direction=direction):
+                game = Game()
+                game.update(LEFT, PAPER_FOCUS_TIME)
+                game.update(direction, DT)
+                self.assertEqual(game.paper_clarity, 0)
+                game.update(LEFT, PAPER_FOCUS_TIME / 4)
+                self.assertAlmostEqual(game.paper_clarity, 0.25)
+
+    def test_switching_neighbours_starts_blurry_again(self):
+        game = Game()
+        game.update(LEFT, PAPER_FOCUS_TIME)
+        game.update(RIGHT, PAPER_FOCUS_TIME / 4)
+        self.assertAlmostEqual(game.paper_clarity, 0.25)
+        self.assertEqual(game.paper_direction, RIGHT)
+
+    def test_answering_starts_the_next_question_blurry(self):
+        game = Game()
+        game.update(LEFT, PAPER_FOCUS_TIME)
+        game.answer(game.answer_key[0], DOWN)
+        self.assertEqual(game.active_question, 1)
+        self.assertEqual(game.paper_clarity, 0)
+
+    def test_revisiting_a_question_resets_focus(self):
+        game = Game()
+        game.update(LEFT, PAPER_FOCUS_TIME)
+        game.select_question(1, DOWN)
+        self.assertEqual(game.paper_clarity, 0)
+        self.assertEqual(game.active_question, 1)
+
+    def test_tracking_pause_and_restart_clear_focus(self):
+        game = Game()
+        game.update(LEFT, PAPER_FOCUS_TIME)
+        game.reset_paper_focus()
+        self.assertEqual(game.paper_clarity, 0)
+        game.update(RIGHT, PAPER_FOCUS_TIME)
+        game.reset()
+        self.assertEqual(game.paper_clarity, 0)
 
 
 class StaringTests(unittest.TestCase):
@@ -217,17 +349,17 @@ class TeacherRuleTests(unittest.TestCase):
         self.assertEqual(game.warnings, 1)
         self.assertEqual(game.state, PLAYING)
 
-    def test_no_copying_while_seen(self):
+    def test_being_seen_does_not_write_answers(self):
         game = Game()
         events = run_with(game, LEFT, CAUGHT_TIME / 2, FakeTeacher(watching=True, facing=True))
-        self.assertEqual(game.copy_time, 0)
-        self.assertNotIn("tick", events)
+        self.assertEqual(game.answers, 0)
+        self.assertNotIn("answer", events)
 
     def test_copying_while_busy_is_safe(self):
         game = Game()
-        run_with(game, RIGHT, COPY_TIME, FakeTeacher(watching=False))
+        run_with(game, RIGHT, DT, FakeTeacher(watching=False))
         self.assertEqual(game.state, PLAYING)
-        self.assertEqual(game.answers, 1)
+        self.assertEqual(game.answers, 0)
 
     def test_looking_down_while_watched_is_safe(self):
         game = Game()
@@ -271,9 +403,11 @@ class TeacherRuleTests(unittest.TestCase):
 
     def test_win_on_last_second_is_a_win(self):
         game = Game()
-        game.time_left = COPY_TIME   # exactly the time one answer takes
-        game.answers = ANSWERS_NEEDED - 1
-        run_with(game, LEFT, COPY_TIME, FakeTeacher())
+        for choice in game.answer_key[:-1]:
+            game.answer(choice, DOWN)
+        game.time_left = DT
+        game.answer(game.answer_key[-1], DOWN)
+        run_with(game, DOWN, DT, FakeTeacher())
         self.assertEqual(game.state, WON)
 
 

@@ -1,10 +1,11 @@
 """
-The game: the classroom, the teacher, the copy bar, the suspicion bar.
+The game: the classroom, exam papers, keyboard answers and suspicion.
 
 Run it with:   ./run.sh      (or  .venv/bin/python main.py)
 Keys:          Space = calibrate (start screen), q / Esc = quit,
-               r = restart, c = recalibrate, F11 = fullscreen on/off,
-               d = always show the classroom and the teacher's state (for testing)
+               a / b / c / d / e = answer, Up / Down = select question,
+               r = restart, F2 = recalibrate, F11 = fullscreen on/off,
+               F3 = show the teacher's state (for testing)
 
 The program is one loop that repeats about 30 times a second:
     1. handle key presses and clicks
@@ -22,7 +23,7 @@ from game import Game, PLAYING
 from head_tracker import HeadTracker, Calibration, DOWN, SCREEN, LEFT, RIGHT
 from render import Renderer, camera_to_surface, BIG_PREVIEW_SIZE
 from settings import (CAMERA_INDEX, CALIBRATION_TIME, WINDOW_WIDTH, WINDOW_HEIGHT, FPS, FADE_TIME,
-                      FULLSCREEN, MAXIMIZED)
+                      FULLSCREEN, MAXIMIZED, ANSWER_CHOICES)
 from sounds import Sounds
 from teacher import Teacher
 
@@ -37,16 +38,16 @@ DISCLAIMER, START, CALIBRATING, GAME, END = (
 FACE_COLOURS = {DOWN: (240, 150, 80), SCREEN: (60, 200, 240),
                 LEFT: (110, 200, 70), RIGHT: (110, 200, 70)}
 WHITE_BGR = (240, 240, 240)
+ANSWER_KEYS = {getattr(pygame, "K_" + choice): choice for choice in ANSWER_CHOICES}
 
 
-def show_error(renderer, message):
-    """Show an error on the window for a few seconds (e.g. no webcam)."""
-    renderer.screen.fill((25, 28, 35))
-    renderer.text(message, renderer.medium, (220, 60, 60),
-                  (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2), center=True)
-    pygame.display.flip()
-    print(message)
-    time.sleep(3)
+def handle_exam_key(game, key, direction):
+    """Use the freshly tracked head direction, never last frame's direction."""
+    if key in ANSWER_KEYS:
+        return game.answer(ANSWER_KEYS[key], direction)
+    if key in (pygame.K_UP, pygame.K_DOWN):
+        game.move_question(-1 if key == pygame.K_UP else 1, direction)
+    return []
 
 
 def open_window(fullscreen):
@@ -87,127 +88,152 @@ def main():
     pygame.init()
     fullscreen = FULLSCREEN
     screen = open_window(fullscreen)
-    pygame.display.set_caption("Don't Get Caught - demo")
+    pygame.display.set_caption("Don't Get Caught - Exam Papers")
     renderer = Renderer(screen)
     sounds = Sounds()
     clock = pygame.time.Clock()
 
     camera = Camera(CAMERA_INDEX)
-    if not camera.running:
-        show_error(renderer, "Could not open the webcam. Try CAMERA_INDEX in settings.py.")
-        pygame.quit()
-        return
 
-    tracker = HeadTracker()
-    calibration = Calibration(tracker, CALIBRATION_TIME)
-    game = Game()
-    teacher = Teacher()
-    screen_name = DISCLAIMER
-    direction = SCREEN   # last known direction, kept while paused
-    look_time = 0.0      # seconds the player has been looking at the screen in one go
-    show_always = False  # d key: always show the classroom (for testing)
-    previous_time = time.time()
-    running = True
+    tracker = None
+    try:
+        tracker = HeadTracker()
+        calibration = Calibration(tracker, CALIBRATION_TIME)
+        game = Game()
+        teacher = Teacher()
+        screen_name = DISCLAIMER
+        direction = SCREEN   # last known direction, kept while paused
+        look_time = 0.0      # seconds the player has been looking at the screen in one go
+        show_always = False  # F3: teacher state for testing; papers remain visible
+        previous_time = time.time()
+        camera_waiting = False
+        running = True
 
-    while running:
-        # 1. Keys, clicks and the window's X button.
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key in (pygame.K_q, pygame.K_ESCAPE):
+        while running:
+            exam_keys = []  # wait for this frame's head tracking before accepting answers
+            # 1. Keys, clicks and the window's X button.
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
                     running = False
-                elif event.key == pygame.K_F11:
-                    fullscreen = not fullscreen
-                    open_window(fullscreen)   # same surface size, so the renderer keeps working
-                elif screen_name == DISCLAIMER:
-                    # Checked before Space below, so one press does not also
-                    # start calibrating.
-                    if event.key == pygame.K_SPACE:
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_q, pygame.K_ESCAPE):
+                        running = False
+                    elif event.key == pygame.K_F11:
+                        fullscreen = not fullscreen
+                        open_window(fullscreen)   # same surface size, so the renderer keeps working
+                    elif screen_name == DISCLAIMER:
+                        # Checked before Space below, so one press does not also
+                        # start calibrating.
+                        if event.key == pygame.K_SPACE:
+                            screen_name = START
+                    elif ((event.key == pygame.K_SPACE and screen_name == START)
+                          or (event.key == pygame.K_F2 and screen_name == GAME)):
+                        game.reset_paper_focus()
+                        calibration.restart()
+                        screen_name = CALIBRATING
+                    elif event.key == pygame.K_r:        # new game, back to the start screen
+                        game.reset()
+                        teacher.reset()
                         screen_name = START
-                elif ((event.key == pygame.K_SPACE and screen_name == START)
-                      or (event.key == pygame.K_c and screen_name == GAME)):  # c: recalibrate, keep the game
+                    elif event.key == pygame.K_F3:
+                        show_always = not show_always
+                    elif screen_name == GAME and not getattr(event, "repeat", False):
+                        exam_keys.append(event.key)
+                elif event.type == pygame.MOUSEBUTTONDOWN and screen_name == DISCLAIMER:
+                    screen_name = START                  # a click anywhere continues
+                elif (event.type == pygame.MOUSEBUTTONDOWN and screen_name == START
+                      and renderer.button_rect.collidepoint(event.pos)):
                     calibration.restart()
                     screen_name = CALIBRATING
-                elif event.key == pygame.K_r:        # new game, back to the start screen
-                    game.reset()
-                    teacher.reset()
-                    screen_name = START
-                elif event.key == pygame.K_d:
-                    show_always = not show_always
-            elif event.type == pygame.MOUSEBUTTONDOWN and screen_name == DISCLAIMER:
-                screen_name = START                  # a click anywhere continues
-            elif (event.type == pygame.MOUSEBUTTONDOWN and screen_name == START
-                  and renderer.button_rect.collidepoint(event.pos)):
-                calibration.restart()
-                screen_name = CALIBRATING
 
-        # 2. Newest webcam frame and head angles.
-        frame = camera.read()
-        if frame is None:
-            show_error(renderer, "The webcam stopped sending pictures.")
-            break
+            # 2. Newest webcam frame and head angles.
+            if not running:
+                break  # quitting must also work before the camera has produced a picture
+            frame = camera.read()
+            if frame is None:
+                # Freeze the exam, teacher and answer input while the worker reconnects.
+                # Discard elapsed waiting time when pictures return.
+                previous_time = time.time()
+                if not camera_waiting:
+                    tracker.reset_tracking()
+                    game.reset_paper_focus()
+                camera_waiting = True
+                if screen_name == CALIBRATING:
+                    calibration.restart()
+                renderer.draw_camera_wait(camera.status or "Waiting for a fresh camera picture...")
+                pygame.display.flip()
+                clock.tick(FPS)
+                continue
 
-        now = time.time()
-        dt = min(now - previous_time, MAX_DT)
-        previous_time = now
-        face_found = tracker.read(frame, now)
-        yaw, pitch = tracker.relative_angles()
+            camera_waiting = False
 
-        # 3 + 4. Rules, sounds and drawing for the current screen.
-        if screen_name == DISCLAIMER:
-            renderer.draw_disclaimer()
+            now = time.time()
+            dt = min(now - previous_time, MAX_DT)
+            previous_time = now
+            face_found = tracker.read(frame, now)
+            yaw, pitch = tracker.relative_angles()
 
-        elif screen_name in (START, CALIBRATING):
-            tracker.draw_face(frame, WHITE_BGR)
-            camera_surface = camera_to_surface(frame, BIG_PREVIEW_SIZE)
-            face_visible = tracker.face_visible(now)
-            if screen_name == START:
-                renderer.draw_start(camera_surface, face_visible)
-            else:
-                calibration.add(face_visible, dt)
-                renderer.draw_start(camera_surface, face_visible, calibration.seconds_left())
-                if calibration.done():
-                    screen_name = GAME
+            # 3 + 4. Rules, sounds and drawing for the current screen.
+            if screen_name == DISCLAIMER:
+                renderer.draw_disclaimer()
 
-        else:  # GAME or END: both draw the game screen
-            over = screen_name == END
-            paused = False
-            if not over:
-                new_direction = tracker.current_direction(now, face_found)
-                paused = new_direction is None   # None = the player is gone
-            if not over and not paused:
-                direction = new_direction
-                look_time = look_time + dt if direction == SCREEN else 0.0
-                # Event names match sound names.
-                # Looking down at the paper you hear nothing from the teacher.
-                heard = teacher.sounds(teacher.update(dt), can_hear=direction != DOWN)
-                for name in heard + game.update(direction, dt, teacher):
-                    sounds.play(name)
+            elif screen_name in (START, CALIBRATING):
+                tracker.draw_face(frame, WHITE_BGR)
+                camera_surface = camera_to_surface(frame, BIG_PREVIEW_SIZE)
+                face_visible = tracker.face_visible(now)
+                if screen_name == START:
+                    renderer.draw_start(camera_surface, face_visible)
+                else:
+                    calibration.add(face_visible, dt)
+                    renderer.draw_start(camera_surface, face_visible, calibration.seconds_left())
+                    if calibration.done():
+                        screen_name = GAME
 
-            tracker.draw_face(frame, FACE_COLOURS[direction])
-            # The classroom is always shown at the end: if you were caught, you
-            # see the teacher looking at you.
-            view = 1.0 if over else classroom_view(direction, look_time, show_always)
-            note = "" if over else tracker.status
-            renderer.draw_game(game, teacher, direction, view, camera_to_surface(frame),
-                               yaw, pitch, clock.get_fps(), note, show_always)
-            if over:
-                renderer.draw_end(game)
-            elif paused:
-                renderer.draw_paused()       # nothing was updated: the game is frozen
-            elif game.popup_text:
-                renderer.draw_popup(game.popup_text)
-            if game.state != PLAYING:
-                screen_name = END
+            else:  # GAME or END: both draw the game screen
+                over = screen_name == END
+                paused = False
+                if not over:
+                    new_direction = tracker.current_direction(now, face_found)
+                    paused = new_direction is None   # None = the player is gone
+                    if paused:
+                        game.reset_paper_focus()
+                if not over and not paused:
+                    direction = new_direction
+                    look_time = look_time + dt if direction == SCREEN else 0.0
+                    # Event names match sound names.
+                    # Looking down at the paper you hear nothing from the teacher.
+                    heard = teacher.sounds(teacher.update(dt), can_hear=direction != DOWN)
+                    game_events = game.update(direction, dt, teacher)
+                    for key in exam_keys:
+                        game_events += handle_exam_key(game, key, direction)
+                    for name in heard + game_events:
+                        sounds.play(name)
 
-        pygame.display.flip()
-        clock.tick(FPS)
+                tracker.draw_face(frame, FACE_COLOURS[direction])
+                # The classroom is always shown at the end: if you were caught, you
+                # see the teacher looking at you.
+                view = 1.0 if over else classroom_view(direction, look_time, show_always)
+                note = "" if over else tracker.status
+                renderer.draw_game(game, teacher, direction, view, camera_to_surface(frame),
+                                   yaw, pitch, clock.get_fps(), note, show_always)
+                if over:
+                    renderer.draw_end(game)
+                elif paused:
+                    renderer.draw_paused()       # nothing was updated: the game is frozen
+                elif game.popup_text:
+                    renderer.draw_popup(game.popup_text)
+                if game.state != PLAYING:
+                    screen_name = END
 
-    # Give the webcam back to the system and close everything.
-    camera.release()
-    tracker.close()
-    pygame.quit()
+            pygame.display.flip()
+            clock.tick(FPS)
+
+    finally:
+        # Release the camera even if model loading or drawing fails.
+        camera.release()
+        if tracker is not None:
+            tracker.close()
+        pygame.quit()
 
 
 if __name__ == "__main__":

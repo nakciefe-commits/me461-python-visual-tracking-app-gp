@@ -6,7 +6,14 @@ change. Each value says its unit (seconds, degrees, pixels).
 """
 
 # --- Webcam ---
-CAMERA_INDEX = 0            # 0 = first webcam; try 1 if the wrong one opens
+CAMERA_INDEX = 1            # 0 = first webcam; try 1 if the wrong one opens
+CAMERA_FALLBACK_INDICES = (0,)  # tried only before the first working camera is found; () disables fallback
+CAMERA_WARMUP_TIME = 3.0     # seconds to wait for a newly opened camera's first picture
+CAMERA_STALE_TIME = 0.5      # seconds; older pictures pause the game instead of pretending to be live
+CAMERA_RECONNECT_TIME = 1.0  # seconds without a good picture before reopening the same camera
+CAMERA_RETRY_INTERVAL = 0.5  # seconds between open/reconnect attempts
+CAMERA_READ_RETRY = 0.05     # seconds between failed frame reads (avoid a busy loop)
+CAMERA_STOP_TIMEOUT = 1.0   # seconds to wait for the reader on exit; some drivers block in read()
 FACE_MODEL_FILE = "face_landmarker.task"
 
 # --- Face finding ---
@@ -31,14 +38,13 @@ MAXIMIZED = True            # True = the normal window starts maximized (title b
 FPS = 30                    # frames per second the game tries to run at
 
 # --- Rules ---
-ANSWERS_NEEDED = 5          # answers to fill to win
-COPY_TIME = 5.0             # seconds of looking sideways to fill one answer
+ANSWERS_NEEDED = 5          # questions to answer correctly to win
+ANSWER_CHOICES = ("a", "b", "c", "d", "e")  # keyboard keys and paper options
 STARE_GRACE_TIME = 2.0      # seconds you may look at the screen for free
 STARE_FILL_TIME = 1.0       # seconds after the grace time until a warning
 MAX_WARNINGS = 3            # this many warnings = game over
 POPUP_TIME = 2.0            # seconds a popup stays on screen
-TICK_INTERVAL = 0.3         # seconds between tick sounds while copying
-EXAM_TIME = 80              # seconds; run out before all answers are filled = lose
+EXAM_TIME = 90              # seconds; run out before all answers are correct = lose
 
 # --- Teacher ---
 # (min, max) seconds for each teacher state; each time a random value in between is used.
@@ -56,3 +62,29 @@ SUSPICION_DRAIN_TIME = 10.0  # seconds for a full suspicion bar to empty while y
 # --- Classroom view ---
 FADE_TIME = 0.15            # seconds for the classroom to fade in from black when you look at the screen (above 0)
 CLASSROOM_TOP = 250         # pixels; how much of the (scaled) image's top is cut off to fit the window
+
+# --- Exam paper (all sizes in pixels) ---
+PAPER_RECT = (24, 76, 660, 432)  # full own paper when looking down
+NEIGHBOUR_PAPER_RECT = (24, 128, 660, 332)  # one question when looking sideways
+NEIGHBOUR_QUESTION_HEIGHT = 124  # pixels; height of the single question row
+PAPER_FOCUS_TIME = 2.5       # seconds looking continuously at one neighbour until the paper is sharp
+PAPER_BLUR_SIGMA = 20.0     # pixels; maximum Gaussian blur at the start of a sideways look
+PAPER_BLUR_WORK_SIGMA = 3.0 # pixels; downsample large blurs to keep drawing fast
+PAPER_QUESTIONS_PER_PAGE = 5  # rows; arrow keys also change pages for longer exams
+PAPER_PADDING = 18
+PAPER_HEADER_HEIGHT = 62
+PAPER_FOOTER_HEIGHT = 32
+PAPER_FONT_SIZE = 20
+PAPER_SMALL_FONT_SIZE = 16
+PAPER_OPTION_RADIUS = 9
+PAPER_SHADOW_OFFSET = 6
+PAPER_BORDER_WIDTH = 2
+PAPER_CORNER_RADIUS = 8
+PAPER_COLOUR = (249, 246, 232)       # RGB
+PAPER_INK = (42, 53, 66)            # RGB
+PAPER_LINE = (189, 183, 164)        # RGB
+PAPER_ACTIVE_COLOUR = (226, 236, 247)  # RGB; selected question background
+PAPER_MARK_COLOUR = (35, 91, 153)    # RGB; pen marks
+DESK_COLOUR = (96, 66, 43)          # RGB
+DESK_LINE_COLOUR = (111, 77, 49)    # RGB
+DESK_LINE_SPACING = 48              # pixels between wooden desk lines

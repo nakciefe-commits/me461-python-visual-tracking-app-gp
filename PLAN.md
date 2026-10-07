@@ -17,25 +17,26 @@ the player's head. The player can do three things:
 
 | # | Action | Head direction | Why do it |
 |---|---|---|---|
-| 1 | Look at the exam paper | **Down** | Safe, but you see and hear nothing. |
-| 2 | Look at the teacher | **Straight at the monitor** | The only way to *see* what the teacher is doing, but staring while they look at the class is suspicious. |
-| 3 | Copy from a neighbour | **Left or right** | The only way to fill answers, but if the teacher sees it, you get caught. |
+| 1 | Look at the exam paper | **Down** | Safe; see your paper and write A..E. The teacher is hidden and silent. |
+| 2 | Look at the teacher | **Straight at the monitor** | See the classroom; your paper is hidden. Staring at a watching teacher is suspicious. |
+| 3 | Read a neighbour's paper | **Left or right** | See only the current question, gradually clearing from blur. Being seen is dangerous; keys cannot write here. |
 
-**Goal:** fill all 5 answers in 60 seconds without getting caught and without
-collecting 3 warnings.
+**Goal:** answer all 5 questions correctly in 90 seconds without getting
+caught and without collecting 3 warnings.
 
 ### Why it is fun: the information problem
 
 The player can only see the classroom while looking at the monitor. While
-copying they are blind to the teacher, and while looking at the paper they are
-blind **and deaf**. That creates the core loop:
+reading a neighbour's paper they cannot see the teacher, and while looking
+down at their own paper they cannot see **or hear** the teacher. That creates the core loop:
 
 1. Glance at the monitor to check the teacher.
-2. When the teacher is busy, look sideways and copy.
+2. When the teacher is busy, look sideways, let the current question become
+   sharp, and remember its marked A..E option.
 3. Listen while copying: Luigi's "hmm" means the teacher is about to look up.
 4. Look away from the neighbour before the teacher sees you.
-5. Do not stare at the teacher while they look at the class, or you get a
-   warning.
+5. Return to your own paper (DOWN or SCREEN), answer with A..E, and use
+   Up / Down to revisit a question. Do not stare at a watching teacher.
 
 The exam clock forces the player to take risks: without it, the safe play
 would be to look at the paper forever.
@@ -48,7 +49,7 @@ Each webcam frame becomes one of:
 
 | Result | Meaning |
 |---|---|
-| `DOWN` | Head tilted down more than `PITCH_DOWN_THRESHOLD` (28°) |
+| `DOWN` | Head tilted down more than `PITCH_DOWN_THRESHOLD` (23°) |
 | `LEFT` / `RIGHT` | Head turned more than `YAW_THRESHOLD` (18°) |
 | `SCREEN` | Otherwise |
 | `None` | No face for more than `FACE_LOST_GRACE` (0.6 s): the game pauses |
@@ -73,43 +74,52 @@ Each webcam frame becomes one of:
 
 ### 3.1 Looking down (paper)
 
-- Always safe. Nothing fills; the suspicion bar drains.
+- Always safe; the suspicion bar drains. Your full exam paper is visible.
+- A..E marks the selected question; Up / Down changes the selection.
 - No sound from the teacher at all.
 
 ### 3.2 Looking at the screen (teacher)
 
-- The classroom fades in from black over `FADE_TIME` (0.15 s).
+- The classroom fades in over `FADE_TIME` (0.15 s). The own-paper overlay is
+  hidden. Existing A..E input still works; look down to inspect your paper.
 - While the teacher looks at the class, the **suspicion bar** fills: full
-  after 5 s (`STARE_GRACE_TIME` 3 s shown yellow, then `STARE_FILL_TIME` 2 s
+  after 3 s (`STARE_GRACE_TIME` 2 s shown yellow, then `STARE_FILL_TIME` 1 s
   red). Full = **warning** (popup + buzz) and the bar starts over.
 - While the teacher is busy, staring is free (`STARE_ONLY_WHEN_FACING`).
 - **3 warnings = game over.**
 
 ### 3.3 Looking sideways (copying)
 
-- The screen is black.
-- The **copy bar** fills; `COPY_TIME` (3 s) = one answer (tick sound while
-  filling, ding when done). Looking away **keeps** the progress, so an answer
-  can be copied in pieces. After an answer you must look away before the next.
+- Show just the selected question on the left or right neighbour's paper:
+  initially Q1, then the next blank question after writing. Both neighbours
+  use the same answer key, generated once per exam.
+- The paper starts blurred and becomes sharp over `PAPER_FOCUS_TIME` (2.5 s).
+  The focus clock belongs to one continuous sideways look. Looking away,
+  switching neighbours, changing questions, recalibrating or losing camera/face
+  tracking resets it. Focusing never automatically writes a mark.
+- Sideways looks never mark your paper. Return to DOWN or SCREEN and type the
+  remembered choice; writing automatically advances to the next blank row.
 - **Seen copying** (the teacher is watching): an alarm plays, the suspicion
-  bar fills fast (full in `CAUGHT_TIME`, 0.9 s), and copying does not move
-  forward. Look away before it is full and you escape; full = **caught**.
+  bar fills fast (full in `CAUGHT_TIME`, 0.7 s). Look away before it is full
+  and you escape; full = **caught**.
+- Up / Down can revisit answers on your own paper. A full but incorrect paper
+  remains playable; a hint asks you to review it. All correct answers win.
 
 ### 3.4 The suspicion bar
 
 One bar for both staring and being seen copying, so staring after being seen
 carries on from there. It never jumps back to empty, because that would tell
 the player when the teacher looked away: it drains slowly
-(`SUSPICION_DRAIN_TIME`, 8 s for a full bar) while nothing suspicious happens.
+(`SUSPICION_DRAIN_TIME`, 10 s for a full bar) while nothing suspicious happens.
 
 ### 3.5 Winning and losing
 
 | Outcome | Condition | Sound |
 |---|---|---|
-| **Win** | 5 answers | rising notes |
+| **Win** | 5 manually entered correct answers | rising notes |
 | **Lose: caught** | suspicion bar full while seen copying | MGS alert |
 | **Lose: warnings** | 3 warnings | MGS alert |
-| **Lose: time** | `EXAM_TIME` (60 s) runs out | falling notes |
+| **Lose: time** | `EXAM_TIME` (90 s) runs out | falling notes |
 
 ---
 
@@ -144,7 +154,8 @@ safe       "hmm" sound   copying = caught
 
 - **pygame-ce** draws everything (`render.py`): the classroom picture fills
   the 960×600 window, with see-through strips for answers, warnings, the exam
-  clock, the webcam preview and the two bars.
+  clock, webcam preview, keyboard instructions and suspicion bar. Papers
+  and the desk are drawn directly using pygame, without extra image files.
 - **Pictures** were made with Gemini and sharpened with Real-ESRGAN (an AI
   upscaler, run once by hand, not part of the game). Originals are in
   `assets/images/original/`. A new picture must show the same classroom from
@@ -167,7 +178,7 @@ yet (see section 8).
 
 ```
 main.py            Main loop and screens (start, calibrating, game, end)
-camera.py          Reads the webcam in a background thread
+camera.py          Reads/retries/reconnects the webcam in a background thread
 head_tracker.py    Webcam frame → yaw/pitch → DOWN / SCREEN / LEFT / RIGHT / None
 teacher.py         Teacher state machine; which sounds the player hears
 game.py            Rules: bars, answers, warnings, clock, win/lose. No drawing.
@@ -187,12 +198,12 @@ since the last frame) keeps the speed the same at any frame rate.
 
 ## 7. Open questions
 
-- **Q1 — How is an answer filled?** Now: look sideways for 3 s. Alternative:
-  look sideways to "read", then look down to "write" it (gives the paper a
-  purpose; lose the answer if caught before writing).
-- **Q2 — Interrupted copying:** ✅ decided: progress is **kept**.
+- **Q1 — How is an answer filled?** ✅ Read the marked neighbour paper, then
+  return to your own paper (DOWN or SCREEN) and write with A..E.
+- **Q2 — Interrupted answering:** ✅ Written marks are **kept**. Up / Down
+  revisits any question. Reading a neighbour never writes automatically.
 - **Q3 — Number of warnings:** 3 (could be 2).
-- **Q4 — Exam time:** ✅ 60 s for now; tune by playtesting.
+- **Q4 — Exam time:** ✅ 90 s for now; tune by playtesting.
 - **Q5 — Does staring count while the teacher is busy?** ✅ No.
 
 ---
@@ -200,21 +211,22 @@ since the last frame) keeps the speed the same at any frame rate.
 ## 8. Done and next
 
 **Done:** head tracking with calibration; copying and staring rules; the
-teacher with four pictures; exam clock; the dark screen while looking away;
-real sounds for turning and game over; one suspicion bar that drains slowly;
-tests (62).
+teacher with four pictures; exam clock; own paper visible only when looking down;
+one current question on neighbour papers with gradual blur; camera recovery;
+A..E input and question navigation;
+correct-answer checking; real sounds for turning and game over; one suspicion
+bar that drains slowly; tests (104). F2 recalibrates; F3 shows teacher state.
 
 **Next, roughly in order:**
 
 1. **Playtest and tune** the numbers in `settings.py` with the whole team
-   (teacher durations, `COPY_TIME`, `EXAM_TIME`, `CAUGHT_TIME`). Test with
+   (teacher durations, `EXAM_TIME`, `CAUGHT_TIME`). Test with
    other webcams, lighting, glasses.
 2. **More sounds:** the chalk sound as a loop while the teacher erases the
    board (needs `loop()`/`stop()` in `sounds.py`), quiet classroom background,
    real tick/ding files. The game must keep working without them.
-3. **More art:** pictures for `DOWN` (your paper) and `LEFT`/`RIGHT` (the
-   neighbour's paper) instead of the black screen; a turning picture; a
-   walking teacher so moving between board and desk is not a jump.
+3. **More art:** polish the drawn desk/papers, add a turning picture and
+   a walking teacher so moving between board and desk is not a jump.
 4. **Menus and polish:** main menu, how-to-play screen, end screen with
    answers/time/warnings, readable webcam errors.
 5. **Difficulty and score:** the teacher checks more often as the exam goes

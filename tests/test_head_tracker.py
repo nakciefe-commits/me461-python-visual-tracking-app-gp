@@ -105,6 +105,17 @@ class LostFaceTests(unittest.TestCase):
         tracker.calibrate(0, -10)   # only 5 degrees below this player's neutral
         self.assertIsNone(tracker.current_direction(2.0, False))
 
+    def test_camera_gap_clears_old_down_guess_but_preserves_calibration_and_timestamp(self):
+        tracker = self.lost_after(-15)
+        tracker.calibrate(12, -3)
+        tracker.last_timestamp_ms = 1234
+        tracker.direction = DOWN
+        tracker.reset_tracking()
+        self.assertIsNone(tracker.current_direction(2.0, False))
+        self.assertEqual(tracker.relative_angles(), (0, 0))
+        self.assertEqual((tracker.neutral_yaw, tracker.neutral_pitch), (12, -3))
+        self.assertEqual(tracker.last_timestamp_ms, 1234)
+
 
 class CalibrationTests(unittest.TestCase):
     def test_averages_angles(self):

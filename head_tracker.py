@@ -126,6 +126,18 @@ class HeadTracker:
     # ------------------------------------------------------------------
     # Angles -> direction
     # ------------------------------------------------------------------
+    def reset_tracking(self):
+        """A camera gap must not reuse an old 'head down' guess when it returns."""
+        self.last_seen = None
+        self.landmarks = None
+        self.nose_vector = None
+        self.yaw = self.neutral_yaw
+        self.pitch = self.last_raw_pitch = self.neutral_pitch
+        self.direction = self.candidate = SCREEN
+        self.candidate_since = 0.0
+        self.status = "waiting for camera"
+        # Keep calibration and the increasing MediaPipe timestamp across reconnects.
+
     def calibrate(self, yaw, pitch):
         """Remember these angles as 'looking straight at the screen'."""
         self.neutral_yaw = yaw

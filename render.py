@@ -1,13 +1,11 @@
 """
 Drawing: everything the player sees.
 
-The game screen is the classroom picture (assets/images/classroom_*.jpeg),
-with see-through strips on top: answers, warnings and the exam clock at the
-top, the two bars at the bottom, the webcam preview on the right.
+The classroom is shown when facing forward; the player's paper is shown only
+when looking down. Sideways looks show one neighbour question, slowly focusing.
 
-The classroom is only shown while the player looks at the screen. Looking
-away turns the screen black, so the teacher can only be checked by really
-looking (and heard, through the sounds).
+Neighbours' marks are visible on their papers; only keyboard input writes
+onto the player's own paper. The teacher stays hidden behind the desk view.
 
 Each draw_... function paints one whole screen onto the pygame window. They
 only read the game's state; they never change it.
@@ -19,8 +17,17 @@ import cv2
 import pygame
 
 from head_tracker import DOWN, SCREEN, LEFT, RIGHT
-from game import WON, GRACE_PART
-from settings import CALIBRATION_TIME, ANSWERS_NEEDED, MAX_WARNINGS, COPY_TIME, CLASSROOM_TOP
+from game import PLAYING, WON, GRACE_PART
+from settings import (CALIBRATION_TIME, ANSWERS_NEEDED, MAX_WARNINGS, CLASSROOM_TOP,
+                      ANSWER_CHOICES, PAPER_RECT, NEIGHBOUR_PAPER_RECT,
+                      NEIGHBOUR_QUESTION_HEIGHT, PAPER_BLUR_SIGMA, PAPER_BLUR_WORK_SIGMA,
+                      PAPER_QUESTIONS_PER_PAGE, PAPER_PADDING, PAPER_HEADER_HEIGHT,
+                      PAPER_FOOTER_HEIGHT, PAPER_FONT_SIZE,
+                      PAPER_SMALL_FONT_SIZE, PAPER_OPTION_RADIUS,
+                      PAPER_SHADOW_OFFSET, PAPER_BORDER_WIDTH, PAPER_CORNER_RADIUS,
+                      PAPER_COLOUR, PAPER_INK, PAPER_LINE, PAPER_ACTIVE_COLOUR,
+                      PAPER_MARK_COLOUR, DESK_COLOUR, DESK_LINE_COLOUR,
+                      DESK_LINE_SPACING)
 
 # Colours are (Red, Green, Blue) in pygame, not (Blue, Green, Red) as in OpenCV!
 BACKGROUND = (25, 28, 35)
@@ -43,13 +50,6 @@ IMAGE_FOLDER = os.path.join("assets", "images")
 CLASSROOM_IMAGES = ["classroom_board_busy", "classroom_board_watching",
                     "classroom_desk_busy", "classroom_desk_watching"]
 
-# What the black screen says when the player looks away
-LOOK_AWAY = {
-    DOWN: "Looking at your paper",
-    SCREEN: "",
-    LEFT: "Copying from the left",
-    RIGHT: "Copying from the right",
-}
 # The disclaimer shown when the game opens: (text, colour). Satire, but the
 # last line is meant seriously.
 DISCLAIMER_LINES = [
@@ -95,6 +95,9 @@ class Renderer:
         self.big = pygame.font.SysFont(None, 52)
         self.medium = pygame.font.SysFont(None, 34)
         self.small = pygame.font.SysFont(None, 24)
+        # DejaVu Sans includes Turkish letters and arrow symbols on Linux.
+        self.paper_font = pygame.font.SysFont("dejavusans", PAPER_FONT_SIZE)
+        self.paper_small = pygame.font.SysFont("dejavusans", PAPER_SMALL_FONT_SIZE)
         # The "Calibrate" button on the start screen. main.py checks clicks on it.
         self.button_rect = pygame.Rect(0, 0, 300, 60)
         self.button_rect.center = (self.width // 2, 500)
@@ -136,6 +139,99 @@ class Renderer:
     # ------------------------------------------------------------------
     # Screens
     # ------------------------------------------------------------------
+    def draw_desk(self):
+        """A wooden desk gives papers a background without revealing the teacher."""
+        self.screen.fill(DESK_COLOUR)
+        for y in range(TOP_BAR, self.height, DESK_LINE_SPACING):
+            pygame.draw.line(self.screen, DESK_LINE_COLOUR, (0, y), (self.width, y))
+
+    def blur_paper(self, rect, clarity):
+        """Blur only the neighbour paper, leaving the webcam and HUD readable."""
+        if clarity >= 1.0:
+            return
+        # pygame arrays use (width, height, RGB); OpenCV expects (height, width, RGB).
+        pixels = pygame.surfarray.array3d(self.screen.subsurface(rect)).swapaxes(0, 1)
+        sigma = PAPER_BLUR_SIGMA * (1.0 - max(0.0, clarity))
+        if sigma <= 0:
+            return
+        # Large Gaussian kernels are expensive. Blur a smaller image with the
+        # same apparent radius, and use full resolution near the sharp endpoint.
+        scale = min(1.0, PAPER_BLUR_WORK_SIGMA / sigma)
+        if scale < 1.0:
+            pixels = cv2.resize(pixels, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        blurred = cv2.GaussianBlur(pixels, (0, 0), sigmaX=sigma * scale,
+                                   borderType=cv2.BORDER_REPLICATE)
+        if scale < 1.0:
+            blurred = cv2.resize(blurred, rect.size, interpolation=cv2.INTER_LINEAR)
+        self.screen.blit(pygame.surfarray.make_surface(blurred.swapaxes(0, 1)), rect)
+
+    def draw_exam_paper(self, game, direction):
+        """Draw question lines and A..E bubbles directly; no extra image is needed."""
+        neighbour = direction in (LEFT, RIGHT)
+        rect = pygame.Rect(NEIGHBOUR_PAPER_RECT if neighbour else PAPER_RECT)
+        marks = game.neighbour_answers[direction] if neighbour else game.player_answers
+        title = ("SOL KOMŞUNUN KÂĞIDI" if direction == LEFT else "SAĞ KOMŞUNUN KÂĞIDI"
+                 if neighbour else "SINAV KÂĞIDIN")
+        header, footer = PAPER_HEADER_HEIGHT, PAPER_FOOTER_HEIGHT
+        font, radius = self.paper_font, PAPER_OPTION_RADIUS
+        left, right = rect.left + PAPER_PADDING, rect.right - PAPER_PADDING
+
+        pygame.draw.rect(self.screen, DARK_GREY,
+                         rect.move(PAPER_SHADOW_OFFSET, PAPER_SHADOW_OFFSET),
+                         border_radius=PAPER_CORNER_RADIUS)
+        pygame.draw.rect(self.screen, PAPER_COLOUR, rect, border_radius=PAPER_CORNER_RADIUS)
+        pygame.draw.rect(self.screen, PAPER_LINE, rect, PAPER_BORDER_WIDTH,
+                         border_radius=PAPER_CORNER_RADIUS)
+        self.text(title, self.paper_font, PAPER_INK,
+                  (left, rect.top + header // 4))
+        self.text(f"Soru {game.active_question + 1} / {ANSWERS_NEEDED}",
+                  self.paper_small, PAPER_MARK_COLOUR,
+                  (right - PAPER_PADDING * 7, rect.top + header // 4))
+        subtitle = "İşaretli şıkkı hatırla, sonra kendi kâğıdına dön." if neighbour else (
+            "A, B, C, D, E ile cevapla. Ok tuşlarıyla soruyu değiştir.")
+        self.text(subtitle, self.paper_small, PAPER_INK, (left, rect.top + header * 2 // 3))
+
+        # Longer exams get pages; the selected question is always on the visible page.
+        if neighbour:
+            # Read just the current question: first Q1, then the next blank
+            # question after writing. Revisiting a row shows that same row here.
+            first, last = game.active_question, game.active_question + 1
+            row_height = NEIGHBOUR_QUESTION_HEIGHT
+            row_top = rect.top + header + (rect.height - header - footer - row_height) // 2
+        else:
+            first = game.active_question // PAPER_QUESTIONS_PER_PAGE * PAPER_QUESTIONS_PER_PAGE
+            last = min(first + PAPER_QUESTIONS_PER_PAGE, ANSWERS_NEEDED)
+            row_height = (rect.height - header - footer) // (last - first)
+            row_top = rect.top + header
+        option_step = (right - left) // len(ANSWER_CHOICES)
+        for row, question in enumerate(range(first, last)):
+            y = row_top + row * row_height
+            if question == game.active_question:
+                pygame.draw.rect(self.screen, PAPER_ACTIVE_COLOUR,
+                                 (left, y, right - left, row_height),
+                                 border_radius=PAPER_CORNER_RADIUS)
+            self.text(f"{question + 1}. soru", font, PAPER_INK,
+                      (left + PAPER_PADDING // 2, y))
+            # Placeholder question text is just a printed line.
+            line_y = y + font.get_height() // 2
+            pygame.draw.line(self.screen, PAPER_LINE,
+                             (left + PAPER_PADDING * 6, line_y), (right - PAPER_PADDING, line_y))
+            choice_y = y + row_height * 3 // 4
+            for column, choice in enumerate(ANSWER_CHOICES):
+                x = left + PAPER_PADDING + column * option_step
+                selected = marks[question] == choice
+                pygame.draw.circle(self.screen, PAPER_MARK_COLOUR if selected else PAPER_LINE,
+                                   (x, choice_y), radius, 0 if selected else PAPER_BORDER_WIDTH)
+                self.text(choice, font, PAPER_MARK_COLOUR if selected else PAPER_INK,
+                          (x + radius * 2, choice_y - font.get_height() // 2))
+
+        hint = ("Kendi kâğıdına dönerek cevapla." if neighbour else
+                "A B C D E: cevapla    ↑ ↓: soru seç    F2: kalibrasyon    F3: test")
+        self.text(hint, self.paper_small, PAPER_INK,
+                  (left, rect.bottom - footer + footer // 4))
+        if neighbour:
+            self.blur_paper(rect, game.paper_clarity)
+
     def draw_start(self, camera_surface, face_found, seconds_left=None):
         """
         The start screen: a big webcam preview and a "Calibrate" button.
@@ -165,8 +261,8 @@ class Renderer:
             r = self.button_rect
             self.bar(r.x, r.y + 15, r.width, 30, done, YELLOW)
 
-        self.text("In the game:  Q = quit    R = restart    C = recalibrate    "
-                  "D = always show the teacher (testing)",
+        self.text("A B C D E = answer    Up / Down = question    "
+                  "F2 = recalibrate    F3 = teacher test    Q = quit",
                   self.small, GREY, (cx, 575), center=True)
 
     def draw_disclaimer(self):
@@ -188,25 +284,26 @@ class Renderer:
         1 = fully shown. main.py raises it over FADE_TIME after the player
         looks at the screen.
         """
-        cx, cy = self.width // 2, self.height // 2
+        cx = self.width // 2
 
-        # The classroom, or black while looking away.
-        if view > 0:
+        # Forward shows the teacher without a paper. Down shows your own
+        # paper; sideways shows the neighbour's current question through blur.
+        if game.state == PLAYING and direction != SCREEN:
+            self.draw_desk()
+            self.draw_exam_paper(game, direction)
+        elif view > 0:
             self.screen.blit(self.classroom[teacher.image_name()], (0, 0))
             if view < 1:
                 self.darken(int(255 * (1 - view)))   # fading in from black
         else:
             self.screen.fill(BLACK)
-            self.text(LOOK_AWAY[direction], self.big, GREY, (cx, cy - 20), center=True)
-            self.text("You can't see the teacher - listen!", self.medium, DARK_GREY,
-                      (cx, cy + 30), center=True)
 
         # Top strip: answers, warnings, exam clock, tracking numbers.
         self.darken(170, (0, 0, self.width, TOP_BAR))
         self.text("Answers", self.small, WHITE, (16, 20))
         for i in range(ANSWERS_NEEDED):
             box = (96 + i * 30, 16, 22, 22)
-            if i < game.answers:
+            if game.player_answers[i] is not None:
                 pygame.draw.rect(self.screen, GREEN, box, border_radius=4)
             else:
                 pygame.draw.rect(self.screen, GREY, box, 2, border_radius=4)
@@ -233,17 +330,23 @@ class Renderer:
         # Right: webcam preview, under the top strip.
         self.preview(camera_surface, self.width - PREVIEW_SIZE[0] - 12, TOP_BAR + 8)
 
-        # Testing aid (D key): name the teacher's state.
+        # Testing aid (F3 key): name the teacher's state without hiding papers.
         if show_teacher_state:
             self.text(f"teacher: {teacher.state} at the {teacher.place}", self.medium,
                       YELLOW, (16, TOP_BAR + 12))
 
-        # Bottom strip: the two bars.
+        # Bottom strip: writing instructions and the suspicion bar.
         top = self.height - BOTTOM_BAR
         self.darken(170, (0, top, self.width, BOTTOM_BAR))
         bar_x, bar_width = 120, self.width - 120 - 20
-        self.text("Copying", self.small, WHITE, (16, top + 14))
-        self.bar(bar_x, top + 10, bar_width, 24, game.copy_time / COPY_TIME, GREEN)
+        if direction in (LEFT, RIGHT):
+            instruction = f"Question {game.active_question + 1}: keep looking as the paper becomes clear."
+        elif direction == SCREEN:
+            instruction = "Looking at the teacher. Look down to see your own paper."
+        else:
+            instruction = (f"Question {game.active_question + 1}:  A B C D E = answer    "
+                           "Up / Down = select question")
+        self.text(instruction, self.small, WHITE, (16, top + 14))
 
         # Suspicion: yellow during the free staring time, red after it, and red
         # once the teacher has seen you copying (then it fills fast). The white
@@ -271,14 +374,39 @@ class Renderer:
         self.text("Game paused - look at the camera to continue", self.medium, WHITE,
                   (cx, cy + 30), center=True)
 
+    def draw_camera_wait(self, message):
+        """The window stays responsive while camera startup/recovery runs elsewhere."""
+        self.screen.fill(BACKGROUND)
+        cx, cy = self.width // 2, self.height // 2
+        self.text("Waiting for camera", self.big, YELLOW, (cx, cy - 70), center=True)
+        # Driver errors can be much wider than the window; keep the status readable.
+        words = message.split()
+        line, y = "", cy - 15
+        for word in words:
+            candidate = (line + " " + word).strip()
+            if line and self.small.size(candidate)[0] > self.width - 60:
+                self.text(line, self.small, WHITE, (cx, y), center=True)
+                y += self.small.get_linesize()
+                line = word
+            else:
+                line = candidate
+        self.text(line, self.small, WHITE, (cx, y), center=True)
+        self.text("The exam is paused. Reconnecting automatically.", self.medium, GREY,
+                  (cx, cy + 100), center=True)
+        self.text("Close other camera apps or check CAMERA_INDEX in settings.py.",
+                  self.small, GREY, (cx, cy + 145), center=True)
+        self.text("Q / Esc = quit", self.medium, WHITE, (cx, self.height - 45), center=True)
+
     def draw_end(self, game):
         """Drawn on top of the last game screen when the game is over."""
         self.darken(200)
         cx, cy = self.width // 2, self.height // 2
         if game.state == WON:
-            self.text("All answers filled!", self.huge, GREEN, (cx, cy - 50), center=True)
+            self.text("All answers correct!", self.huge, GREEN, (cx, cy - 50), center=True)
             self.text("You win", self.big, WHITE, (cx, cy + 10), center=True)
         else:
             self.text(END_TEXTS[game.lose_reason], self.huge, RED, (cx, cy - 50), center=True)
             self.text("Game over", self.big, WHITE, (cx, cy + 10), center=True)
-        self.text("R = play again    Q = quit", self.medium, GREY, (cx, cy + 80), center=True)
+        self.text(f"Correct answers: {game.correct_answers}/{ANSWERS_NEEDED}",
+                  self.medium, WHITE, (cx, cy + 60), center=True)
+        self.text("R = play again    Q = quit", self.medium, GREY, (cx, cy + 105), center=True)

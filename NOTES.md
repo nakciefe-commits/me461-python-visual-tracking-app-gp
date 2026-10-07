@@ -600,3 +600,191 @@ pass.
 ### Next
 
 Same as commit #7.
+
+---
+
+## Commit #12 — Visible exam papers and keyboard answers
+
+- **Date:** 6 Oct 2026
+
+### Summary
+
+Created `me461-python-visual-tracking-app2-gp` as a complete copy of the original
+project. The player now sees their own paper and marked neighbour papers,
+remembers A..E choices, returns to their own paper and writes with the keyboard.
+All five answers must match the exam key to win. No commit was made for this update.
+
+### Added
+
+| File | Change |
+|---|---|
+| `game.py` | Stable random exam key, left/right neighbour marks, blank player marks, selected question, answer entry/revision and correct-answer score. |
+| `render.py` | Full and compact paper layouts, numbered placeholder lines and A..E bubbles, selected row, wooden desk and final score. Turkish labels use DejaVu Sans. |
+| `settings.py` | Answer choices and paper/desk sizes, colours and fonts. |
+| `tests/test_input.py` | Tests for all answer keys, C/D conflicts, arrows and fresh head direction/paused input in the main loop. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | Queue answer keys until current head tracking; reject them while sideways, paused or finished. F2 recalibrates and F3 shows teacher state, freeing C and D for answers. |
+| `game.py` | Only manual answers write marks; five correct answers win, and incorrect completed papers remain editable. Existing suspicion, warnings, teacher risk and 90-second clock remain. |
+| `render.py` | Forward view shows the teacher above a compact own paper; down/side views show a full paper without the teacher. HUD counts actual filled rows and displays writing instructions. |
+| `tests/test_game.py` | Replace automatic copying tests with manual writing, neighbour stability, revision, wrong-answer recovery, reset and input guards. |
+| `README.md`, `LEARN.md`, `PLAN.md` | Document the new reading/writing loop, controls and current timings; README includes Turkish playing instructions. |
+| `.venv/bin/` | Update copied launchers' absolute paths to the new folder. Assets, models, original tracker and other source files are retained. |
+
+### Removed
+
+| Item | Why |
+|---|---|
+| Automatic answer filling, copy timer/lock and copy progress bar | Looking sideways reads another paper; keyboard input writes the player's answer. |
+| `COPY_TIME`, `TICK_INTERVAL` settings | Timed automatic copying no longer runs. Sound assets and generated effects remain available. |
+
+### Details worth knowing
+
+- Both neighbours display the same correct key for this exam. The key is fixed
+  during play and regenerated on restart. The player's marks are a separate list.
+- A..E works while facing forward or looking down. Each answer selects the next
+  blank question. Up / Down wraps through the paper to revise existing marks.
+- A full but incorrect paper gives an overall review hint without showing which
+  answers are wrong. The end screen reports the number of correct answers.
+- Sideways keys do not secretly write; paused/calibrating/end-screen keys do not
+  carry into play. Tests exercise the actual main-loop input ordering with mocks.
+- Paper drawings use pygame shapes; no new dependency or generated image is needed.
+  Exams longer than five questions use pages based on the selected question.
+- Validation: 75 tests passed. Headless rendering checked all four directions,
+  teacher views, feedback, pause and end screens. Real webcam/game feel still
+  needs a person to check.
+
+### Next
+
+1. Run `./run.sh` in the new folder. Calibrate while facing forward; look left
+   and right and check that each paper has five marked choices.
+2. Return forward/down and answer with all five letter keys; check auto-advance,
+   arrows and revisions. Try an incorrect full paper, then fix it to win.
+3. Check F2 calibration, F3 testing overlay, R restart and F11 fullscreen.
+   Leave the camera and confirm keys do not write while paused; look sideways
+   during WATCHING and confirm the alarm and caught rules still work.
+
+
+---
+
+## Commit #13 — Keep the game open during camera failures
+
+- **Date:** 6 Oct 2026
+
+### Summary
+
+The old reader stopped permanently after a single failed frame, and main.py
+then closed the game. Camera startup and recovery now run in the background;
+missing/stale pictures pause the exam while the reader retries and reconnects.
+
+### Added
+
+| File | Change |
+|---|---|
+| `camera.py` | First-frame validation, preferred-camera fallback, failed-frame retries, stale-frame limit, reconnect status and safe worker-owned capture release. |
+| `settings.py` | Camera warm-up, stale/reconnect/retry/stop timings and fallback indices. |
+| `render.py` | Camera waiting screen with status; quit remains available. |
+| `tests/test_camera.py` | Simulated startup failures, empty frames, exceptions, retries, fallback, reconnection, frame ownership and shutdown. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | Pause instead of exit when no frame exists; discard keys and elapsed waiting time; restart calibration after gaps. Finally release camera/tracker even if initialization or drawing fails. |
+| `head_tracker.py` | Clear stale face/angle guesses after camera gaps while preserving calibration and MediaPipe timestamp order. |
+| `tests/test_input.py`, `tests/test_head_tracker.py` | Verify paused camera input, recovery, quit before first picture, cleanup after initialization errors and stale direction reset. |
+| `README.md`, `LEARN.md`, `PLAN.md` | Document retries, camera selection and new reader behavior. |
+
+### Removed
+
+| Item | Why |
+|---|---|
+| Fatal single-frame failure and blocking initial frame wait | A missing frame can be temporary; the window should remain responsive. |
+
+### Details worth knowing
+
+- Prefer camera 1; before the first valid picture, camera 0 is also tried.
+  Once a working device is found, reconnection stays with it. Set
+  `CAMERA_FALLBACK_INDICES = ()` to disable initial fallback.
+- `isOpened()` alone does not prove that a camera produces images. Initial
+  frames have a warm-up period; one missing frame is retried instead of closing.
+- `read()` returns a copy so drawing face overlays does not mutate the saved
+  camera frame. Images older than 0.5 seconds cause a pause.
+- Only the worker releases OpenCV's capture, avoiding concurrent read/release.
+  Some drivers can block in read; the window still pauses/quits, but a blocked
+  driver may delay the worker's reconnection until its read returns.
+- A physical camera is unavailable in this environment. Recovery is verified
+  using mocks/fake time and the actual main-loop input order.
+
+### Next
+
+Run the game with the real camera. Check first-frame startup, camera selection
+in the terminal, a short interruption and reconnection. Close other camera
+apps if the device remains unavailable; Q/Esc should work while waiting.
+
+---
+
+## Commit #14 — Hide own paper from teacher view; focus one neighbour question
+
+- **Date:** 6 Oct 2026
+
+### Summary
+
+Looking at the teacher no longer displays the own-paper overlay. Left/right
+looks show only the selected question, initially question 1. The neighbour
+paper starts blurred and becomes sharp over 2.5 seconds of continuous looking.
+
+### Added
+
+| File | Change |
+|---|---|
+| `game.py` | Per-neighbour focus timer, clarity property and reset helper. |
+| `render.py` | Single-question neighbour layout and gradual Gaussian blur limited to the paper. |
+| `settings.py` | Neighbour paper/row layout, focus duration, blur strength and working blur size. |
+| `tests/test_render.py` | Actual headless checks for hidden own paper, one neighbour question, progression, sharp own paper, gradual edge contrast and read-only rendering. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `game.py` | Looking away, switching sides, answering, revisiting questions and restarting reset paper focus. Focusing never writes an answer. |
+| `main.py` | Face/camera gaps and recalibration reset focus; pause time cannot make the paper sharp. |
+| `render.py` | SCREEN shows only the classroom/HUD; DOWN shows the full own paper. After answering Q1, neighbour views show Q2; revisiting a question shows that row. |
+| `tests/test_game.py` | Focus growth, cap, side/away reset, question changes and restart tests. |
+| `README.md`, `LEARN.md`, `PLAN.md` | Describe hidden papers, sequential reading and gradual focus; document camera recovery from the previous change. |
+
+### Removed
+
+| Item | Why |
+|---|---|
+| Compact own-paper overlay and its settings | Own paper should not be visible while looking at the teacher. |
+| All neighbour questions visible together | Each sideways look should show only the question currently being answered. |
+
+### Details worth knowing
+
+- `PAPER_FOCUS_TIME = 2.5` is the sharpness delay; `PAPER_BLUR_SIGMA = 20.0`
+  controls initial blur. These can be tuned independently.
+- Each look is independent: returning to a neighbour or changing sides starts
+  blurry again. Written player marks remain stored.
+- Both neighbours still use the same stable exam key. Looking sideways after
+  answering selects the next blank question; Up/Down can revisit earlier rows.
+- Existing A..E input is retained for DOWN and SCREEN, but marks are visible
+  only when looking DOWN. The teacher's suspicion rules continue during focus.
+- Gaussian blur uses a smaller working image for strong blur and full resolution
+  as it clears, keeping the effect inexpensive. HUD and webcam remain sharp.
+- Validation: 104 tests pass, including the camera recovery tests. Headless
+  renders cover teacher/own-paper views and blurry, intermediate and sharp
+  neighbour papers. Physical webcam feel still requires a person to try it.
+
+### Next
+
+1. Look forward: verify the own-paper overlay is absent. Look down: verify the
+   own paper is clear and all marks are retained.
+2. Look left/right: verify only Q1 appears, blurry at first and clear after
+   2.5 seconds. Look away or switch sides and check that blur starts again.
+3. Answer Q1, then look sideways: only Q2 should appear. Revisit Q1 with the
+   arrows and verify its neighbour view returns. Check camera interruption,
+   F2 recalibration and R restart reset focus correctly.

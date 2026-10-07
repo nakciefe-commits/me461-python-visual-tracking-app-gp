@@ -21,7 +21,7 @@ Each time round the loop ("one frame"):
                          head_tracker.py ──► direction: DOWN / SCREEN / LEFT / RIGHT
                                                  │        (or None = player gone)
                                                  ▼
-                       teacher.py + game.py ──► events: "tick", "spotted", "state:TURNING"...
+                       teacher.py + game.py ──► events: "answer", "spotted", "state:TURNING"...
                                                  │                 │
                                                  ▼                 ▼
                                             render.py          sounds.py
@@ -99,19 +99,27 @@ are not updated (paused).
 
 ### `settings.py` — the numbers
 Only constants, in UPPER_CASE, each with its unit. **Want to change how the game
-feels? Change a number here**, save, restart. Examples: `COPY_TIME = 3.0` (how
-long to copy an answer), `YAW_THRESHOLD = 18` (how far to turn for "side"),
+feels? Change a number here**, save, restart. Examples: `EXAM_TIME = 90` (seconds
+to finish the exam), `YAW_THRESHOLD = 18` (how far to turn for "side"),
 `TEACHER_DURATIONS` (how long the teacher stays busy or watching).
 
 ### `camera.py` — the webcam
 Reading a frame makes the program wait ~20 ms for the camera. To avoid waiting,
 `Camera` starts a **thread**: a second worker that runs at the same time as the
 game. That worker (`keep_reading`) reads frames forever and saves the newest one
-in `self.frame`. When the game calls `read()`, it just gets `self.frame`
-straight away.
+in `self.frame`. `read()` immediately returns a copy of a recent frame, or
+`None` if no fresh picture exists. The copy keeps face overlays from changing
+the stored image.
 
-- `running` is False if there is no webcam or it stopped.
-- `release()` stops the thread and gives the webcam back.
+- `running` means the worker is alive, including while waiting/reconnecting.
+- `open_capture()` first tries `CAMERA_INDEX`, then fallback indices until a
+  device actually produces a valid picture. `isOpened()` alone is not enough.
+- One dropped frame is retried; prolonged failures reopen the selected device.
+  Images older than `CAMERA_STALE_TIME` are rejected. All timings are in settings.
+- `release()` sets a stop event and waits briefly. Only the worker releases
+  its capture, preventing a release while another thread is reading it.
+- When no frame is available, main.py draws a waiting screen, freezes the exam,
+  discards answer keys and resets stale head-direction/focus guesses.
 
 ### `head_tracker.py` — where is the head pointing?
 The hardest file. Three parts:
@@ -135,7 +143,7 @@ The hardest file. Three parts:
   (*neutral*). Everyone sits differently, so all angles are measured from
   *your* neutral (`relative_angles()`).
 - `raw_direction()` compares the angles with the limits:
-  more than `PITCH_DOWN_THRESHOLD` (28°) down → `DOWN`, more than
+  more than `PITCH_DOWN_THRESHOLD` (23°) down → `DOWN`, more than
   `YAW_THRESHOLD` (18°) left/right → `LEFT`/`RIGHT`, otherwise `SCREEN`.
 - `update_direction(now)` adds a **hold time**: a new direction must last
   `HOLD_TIME` (0.1 s) before it's believed. While a new direction is waiting it's called the
@@ -158,39 +166,48 @@ frame, so you can see what the tracker sees.
 `calibrate()`. If the face is lost on the way, it starts over.
 
 ### `game.py` — the rules
-`Game` holds the game's state: `answers`, `warnings`, `copy_time`,
-`suspicion_level`, `time_left`, `state` (`PLAYING` / `WON` / `LOST`) and the
-popup. `update(direction, dt, teacher)` runs once per frame and has three
-parts: the suspicion bar, copying, and the exam clock.
+`Game` keeps exam papers, selection, warnings, suspicion, clock and state
+(`PLAYING` / `WON` / `LOST`). `update()` handles suspicion and the clock;
+`answer()` handles keyboard marks.
 
-**Copying (LEFT or RIGHT):**
-- `copy_time` grows by `dt`. A `"tick"` event every `TICK_INTERVAL` (0.3 s).
-- No progress while the teacher sees you copying (no gain, only risk).
-- At `COPY_TIME` (3 s): one more answer, `"answer"` event, and
-  `copy_locked = True`, so you must look away before the next answer starts
-  (otherwise one long look would fill everything).
-- 5 answers → `WON`.
-- Looking anywhere else keeps `copy_time`, so an answer can be copied in pieces.
+**The papers:**
+- `answer_key` is an immutable tuple of random A..E choices generated in
+  `reset()`. Both entries in `neighbour_answers` show this same exam key.
+- `player_answers` is a separate list starting with `None` for every question.
+  Looking sideways only displays the neighbours' marks; it never writes.
+- `active_question` is a zero-based index. `select_question()` and
+  `move_question()` revisit any row. Arrow navigation wraps around.
+- `answer(choice, direction)` accepts A..E only while PLAYING and looking
+  DOWN or SCREEN. It writes the mark, emits `"answer"`, and selects the next
+  blank row. Sideways and paused directions are rejected.
+- `answers` counts filled rows; `correct_answers` compares marks to the key.
+  Both are computed properties so revisions cannot double-count answers.
+- All correct marks set `WON` and emit `"won"`. A full but incorrect paper
+  gives a review hint; use Up / Down and A..E to correct it.
+- `paper_focus_time` counts continuous seconds looking at one neighbour.
+  `paper_clarity` is that time divided by `PAPER_FOCUS_TIME`, capped at 1.
+  Looking away, changing sides/questions, pausing tracking or recalibrating
+  calls `reset_paper_focus()`. Only `update()` advances it; rendering never does.
 
 **The suspicion bar (`suspicion_level`, 0 to 1):**
 - **Seen copying** (sideways while `teacher.is_watching()`): grows by
-  `dt / CAUGHT_TIME`, full in 0.9 s → `"caught"`, `LOST`. A `"spotted"` alarm
+  `dt / CAUGHT_TIME`, full in 0.7 s → `"caught"`, `LOST`. A `"spotted"` alarm
   plays each time a glance starts.
 - **Staring** (SCREEN while the teacher looks at the class): grows by
-  `dt / WARNING_TIME`, full after 5 s → one more warning, `"warning"` event,
+  `dt / WARNING_TIME`, full after 3 s → one more warning, `"warning"` event,
   a popup for 2 s, and the bar starts again from 0. 3 warnings → `LOST`.
 - Both add to the **same** bar: after being seen, staring carries on from
   there.
-- Otherwise it **drains slowly** (`SUSPICION_DRAIN_TIME`, 8 s for a full bar).
+- Otherwise it **drains slowly** (`SUSPICION_DRAIN_TIME`, 10 s for a full bar).
   It never jumps to empty, because that would tell you the teacher looked away.
 
-**The exam clock:** `time_left` counts down from `EXAM_TIME` (60 s); at 0 →
+**The exam clock:** `time_left` counts down from `EXAM_TIME` (90 s); at 0 →
 `LOST`.
 
 **Losing** emits `"lost"` and `"lost_<reason>"` (`lost_caught`,
 `lost_warnings`, `lost_time`), so each way of losing can have its own sound.
 
-**Looking DOWN** is the safe place: nothing fills, the bar drains.
+**Looking DOWN** is safe: the bar drains and keyboard answers still work.
 
 ### `teacher.py` — the teacher
 A **state machine**: the teacher is always in one state, and after a random
@@ -231,9 +248,18 @@ that's also how animation will work later.
   width and cuts off the top (`CLASSROOM_TOP`) and bottom so it fits.
 - `Renderer` loads fonts and pictures once and has a draw function per
   screen: `draw_disclaimer`, `draw_start`, `draw_game`, `draw_popup`, `draw_paused`, `draw_end`.
-- `draw_game` draws the teacher's picture (or black while you look away,
-  fading in by `view`), then see-through strips: answers, warnings and the
-  clock at the top, the copy and suspicion bars at the bottom.
+- `draw_game` shows the classroom without an own-paper overlay when looking
+  forward. DOWN shows the own paper; LEFT / RIGHT show one current question. The
+  teacher is hidden in these desk views. The top strip shows individually
+  filled questions, warnings and time; the bottom has instructions and suspicion.
+- `draw_exam_paper` draws question lines, A..E circles and pen marks. Own papers
+  use `player_answers`; neighbour papers use `neighbour_answers`. The active
+  row is highlighted; the own paper has pages for longer exams. Layout and colours are in
+  `settings.py`; DejaVu Sans supports Turkish labels and arrow symbols.
+- `blur_paper()` applies Gaussian blur only to the neighbour paper using
+  `game.paper_clarity`. Large blurs use a smaller working image to keep drawing
+  fast; near the sharp endpoint the image uses full resolution. HUD/webcam
+  remain clear, and looking at the teacher never draws a paper overlay.
 - Helpers: `text()`, `bar()` (grey background + coloured part),
   `darken()` (see-through black layer, for the whole window or a strip).
 - The draw functions only **read** `game` and `teacher`; they never change them.
@@ -249,15 +275,21 @@ Normally it is a resizable window with a title bar, maximized at the start.
 `pygame.FULLSCREEN` with `SCALED` is a borderless window the size of the
 desktop, not a real video-mode change. F11 just calls `open_window()` again.)
 
-1. **Input**: keys and mouse (`pygame.event.get()`); quit, calibrate, restart, F11 fullscreen.
-2. **Camera**: `camera.read()`, then `tracker.read(frame, now)`.
+1. **Input**: keys and mouse (`pygame.event.get()`); quit, calibrate, restart,
+   F11 fullscreen. F2 recalibrates and F3 toggles the teacher test overlay.
+   A..E and Up / Down are queued until fresh head tracking is available.
+2. **Camera**: `camera.read()`, then `tracker.read(frame, now)`. If no frame
+   exists, show camera status, freeze rules and discard this frame's answer keys.
+   `try/finally` releases camera resources even after a loading/drawing error.
 3. **Per screen**:
    - DISCLAIMER: the warning screen, shown once when the game opens.
    - START / CALIBRATING: big preview, feed `calibration.add()`.
    - GAME: `direction = tracker.current_direction(...)`. If not `None`:
      `teacher.update(dt)`, filtered by `teacher.sounds()` (silence while
-     looking down), and `game.update(direction, dt, teacher)`; play a sound
-     per event. `classroom_view()` says how visible the classroom is (0 =
+     looking down), and `game.update(direction, dt, teacher)`. Then
+     `handle_exam_key()` sends queued keys to `answer()` / `move_question()`
+     using this frame's direction. Play a sound per event.
+     `classroom_view()` says how visible the classroom is (0 =
      black, 1 = shown, fading in over `FADE_TIME`). Draw; on top, either the
      pause layer or the popup. Paused = nothing is updated, so the teacher
      and the clock freeze too.
@@ -267,10 +299,15 @@ desktop, not a real video-mode change. F11 just calls `open_window()` again.)
    run faster than 30 fps.
 
 ### `tests/`
-`test_game.py`, `test_teacher.py` and `test_head_tracker.py` check the rules,
+`test_game.py`, `test_input.py`, `test_camera.py`, `test_render.py`,
+`test_teacher.py` and `test_head_tracker.py` check the rules,
 the teacher and the direction logic **without a camera**, by calling the
 functions with made-up angles and times. `test_game.py` uses a `FakeTeacher`
-whose watching/facing the test sets by hand. Run them:
+whose watching/facing the test sets by hand. `test_input.py` also checks C/D,
+arrow keys and a mocked main loop that changes direction and loses the face
+while keys are pressed. Camera tests simulate failures/reconnection with a fake
+clock; render tests check hidden papers, one-question neighbours and blur using
+SDL's dummy video driver. All 104 tests need no camera. Run them:
 
 ```
 .venv/bin/python -m unittest discover -s tests -v
@@ -283,8 +320,7 @@ updating because you changed the rule on purpose).
 
 ## 4. Follow one frame
 
-You turn your head left to copy while the teacher erases the board. One
-frame in the middle of that:
+You turn your head left while the teacher erases the board:
 
 1. `camera.read()` returns the newest picture.
 2. `tracker.read()` → MediaPipe finds the face; the nose arrow points left;
@@ -293,19 +329,20 @@ frame in the middle of that:
    `raw_direction()` says `LEFT` (25 > 18), and it has been `LEFT` for more than
    0.1 s → returns `LEFT`.
 4. `teacher.update(0.033)` → still `BUSY`, returns `[]`.
-5. `game.update(LEFT, 0.033, teacher)` → the teacher is not watching, so the
-   suspicion bar drains a little; `copy_time` is 1.20 s, which has reached the
-   next tick time (ticks are at 0, 0.3, 0.6, 0.9, 1.2...) → a `"tick"` event;
-   then `copy_time` grows to 1.233 s. Returns `["tick"]`.
-6. `main.py` calls `sounds.play("tick")`.
-7. `classroom_view(LEFT, ...)` is 0, so `renderer.draw_game()` draws a black
-   screen with "Copying from the left" and fills the copy bar to
-   1.233 / 3.0 ≈ 41%.
-8. `pygame.display.flip()`: you see it.
+5. `game.update(LEFT, 0.033, teacher)` drains suspicion and decreases time.
+   Your own marks stay blank.
+6. `draw_game()` draws the desk and only question 1 on the left neighbour's
+   paper. It starts blurry; keep looking to make it sharp over 2.5 seconds.
+   Remember, for example, that question 1 is marked B.
+7. Return to SCREEN or DOWN and press B. After fresh tracking,
+   `handle_exam_key()` calls `game.answer("b", direction)`.
+8. `player_answers[0]` becomes `"b"`, the next blank question is selected,
+   the ding plays and looking DOWN shows the mark. Looking sideways now shows
+   question 2, starting blurry again. SCREEN shows the teacher without your paper.
 
 Had the teacher been `WATCHING`, step 5 would instead raise the suspicion bar
-by 0.033 / 0.9, not move the copy bar, and return `["spotted"]` on the first
-such frame: the alarm.
+by 0.033 / 0.7 and return `["spotted"]` on the first such frame: the alarm.
+When tracking pauses, queued keyboard presses are discarded along with updates.
 
 ---
 
@@ -313,12 +350,12 @@ such frame: the alarm.
 
 Small changes to learn by doing. Run `./run.sh` after each one.
 
-1. **Easy:** in `settings.py`, set `COPY_TIME = 1.0`. Copying is now much faster.
+1. **Easy:** in `settings.py`, set `EXAM_TIME = 120`. You have two minutes.
 2. **Easy:** set `ANSWERS_NEEDED = 3`. Check that the answer boxes on screen
    update by themselves (look at how `render.py` uses `ANSWERS_NEEDED`).
 3. **Medium:** in `sounds.py`, change the `"answer"` sound to two notes, like
    `"won"` is built.
-4. **Medium:** in `render.py`, change the colour of the copy bar.
+4. **Medium:** in `settings.py`, change `PAPER_MARK_COLOUR` to another pen colour.
 5. **Harder:** in `game.py`, make looking DOWN drain the suspicion bar twice
    as fast as other directions. Then add a test for it in `tests/test_game.py`.
 6. **Harder:** print the yaw and pitch to the terminal in `main.py` every
