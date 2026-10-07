@@ -37,11 +37,14 @@ Every file has **one job**:
 | `head_tracker.py` | Picture → which way the head points | MediaPipe, OpenCV |
 | `teacher.py` | The teacher: busy, turning, watching; board or desk | nothing! |
 | `game.py` | The rules (bars, answers, warnings, clock, win/lose) | nothing! |
+| `menu.py` | Menus: which item is selected; head angles → menu actions | nothing! |
+| `disclaimer.py` | The opening notice: typed, signed, stamped | nothing! |
+| `glitch_intro.py` | Our team's intro, shown first | pygame (NumPy for its sound) |
 | `sounds.py` | Makes the beeps, loads the sound files, plays them | pygame, NumPy |
 | `render.py` | Draws everything on the window | pygame, OpenCV |
 | `main.py` | Runs the loop and connects the others | all of the above |
 
-`game.py` and `teacher.py` use **no** camera or graphics library. That is on
+`game.py`, `teacher.py` and `menu.py` use **no** camera or graphics library. That is on
 purpose: the rules can be tested on their own (`tests/`), and the art can
 change without touching the rules.
 
@@ -80,15 +83,24 @@ and `main.py` plays the sound with that name. The rules say *what happened*;
 someone else decides *how to show it*.
 
 ### Screens (a "state machine")
-The game is always on one screen, stored in the variable `screen_name` in
+The game is always on one screen, stored in `self.screen_name` in
 `main.py`:
 
 ```
-DISCLAIMER ──Space/click──►
-START ──Space/click──► CALIBRATING ──2 s──► GAME ──win/lose──► END
-  ▲                                           │                  │
-  └─────────────────── r ─────────────────────┴──────── r ───────┘
+(glitch_intro.play() first, before the loop)
+DISCLAIMER ──signed + stamped──► START ──Space/click──► CALIBRATING ──2 s──► MENU
+                                                                         │
+     HELP ◄── "How to play" ── MENU ── "Settings" ──► SETTINGS ──"Recalibrate"──► CALIBRATING
+                                │                                                      (back to SETTINGS)
+                              "Play"
+                                ▼
+                             LOADING ──3 s──► GAME ──win/lose──► END ── "Play again" ──► LOADING
+                                ▲  k: CALIBRATING        └── "Main menu" ──► MENU
+                                └──┘
 ```
+
+`App.go_to(name)` changes the screen. MENU, HELP, SETTINGS and END are the
+"menu screens": each has a `Menu` (a list of items) in `self.menus`.
 
 "Face not found" is not a separate screen: it's the GAME screen while the rules
 are not updated (paused).
@@ -191,7 +203,24 @@ nothing read. 5 written → `WON`. `answers` is just `len(written)`;
   plays each time a glance starts.
 - **Staring** (SCREEN while the teacher looks at the class): grows by
   `dt / WARNING_TIME`, full after 5 s → one more warning, `"warning"` event,
-  a popup for 2 s, and the bar starts again from 0. 3 warnings → `LOST`.
+  and the bar starts again from 0. 3 warnings → `LOST`.
+- **Scenes:** short moments where the game is frozen and something is
+  shown. `game.scene` says which (`WARNING_SCENE`, `CAUGHT_SCENE`,
+  `GAME_OVER_SCENE`) and `scene_time` how long it still lasts. While
+  `in_scene()` is True, `update()` only counts `scene_time` down and
+  returns: the clock, the bars and copying stop, and `main.py` stops the
+  teacher too. This check comes *before* the game-over check, so scenes
+  still play after losing.
+  - `warn()` starts the warning scene.
+  - `lose()` starts the caught scene (if caught) or the game over scene
+    (time up). After the last warning the warning scene is already playing.
+  - When a scene ends and the game is lost, `update()` starts the game
+    over scene; when that ends, `main.py` shows the end menu.
+  - The caught scene sends a `"rip"` event at the moment the paper is torn;
+    the game over scene starts with `"nooo"`.
+  - `skip_scene()` (Space) only works after losing. (`render.py`'s `draw_warning_scene` zooms into the teacher's
+  picture, as if they walk up to you, then cuts to `classroom_warning.jpeg`
+  under a white flash, shakes the screen and pulses red.)
 - Both add to the **same** bar: after being seen, staring carries on from
   there.
 - Otherwise it **drains slowly** (`SUSPICION_DRAIN_TIME`, 8 s for a full bar).
@@ -224,6 +253,52 @@ BUSY ──► TURNING ──► WATCHING ──► BUSY ...
 - It takes a `random.Random` so the tests can use a fixed seed and get the
   same "random" teacher every run.
 
+### `menu.py` — menus and head control
+- `Menu(items)`: a list of item names and `selected`, the index of the
+  chosen one. `move(-1)` / `move(1)` moves up/down and wraps around.
+- `HeadMenuInput` turns the head angles of each frame into one of four
+  actions: `UP`, `DOWN` (tilt the head past `MENU_PITCH_THRESHOLD`),
+  `SELECT` (turn right past `MENU_YAW_THRESHOLD`), `BACK` (turn left).
+  - A tilt moves after `MENU_MOVE_HOLD`, then again every
+    `MENU_REPEAT_TIME` while held, so you can scroll.
+  - A turn must be held for `MENU_SELECT_TIME`; `progress()` says how far
+    (0..1) for the bar on the screen. A short glance does nothing.
+  - After `reset()` (a new menu opened) and after every choice, nothing
+    happens until the head has been **straight** once ("armed"). Otherwise
+    one long turn right would choose on the next menu too.
+- `pause()`: a key press or click in a menu (main.py calls it) turns head
+  control off for `HEAD_PAUSE_AFTER_KEYS`; `paused_part()` (1 → 0) is
+  drawn as the "KEYBOARD" / "HEAD CONTROL" box above the webcam
+  (`render.head_indicator()`). After the pause the head must be straight
+  once again, like after opening a menu.
+- `next_choice(choices, current)`: the next exam time for the settings menu.
+- `loading_steps()` / `loading_progress()`: the loading bar's uneven fill
+  (see `draw_loading` below). Here because it is plain maths that can be
+  tested.
+- The keyboard and mouse give the same four actions (`MENU_KEYS` in
+  `main.py`), so the menu code does not care where an action came from.
+
+### `disclaimer.py` — the opening notice
+`Disclaimer` keeps track of the notice like `Game` keeps track of the rules:
+`letters()` typed so far (from `time`, `NOTICE_TYPE_DELAY` and
+`NOTICE_TYPE_SPEED`), `press()` for Space (show all, then sign, then go on
+after the stamp), `sign_progress()`, `stamp_age()` and `done()`. `update(dt)`
+returns `"type"`, `"stamp"`; `press()` returns `"sign"`. `render.draw_disclaimer()`
+draws it: a wooden desk (`make_desk()`: a gradient with wavy grain lines),
+the paper sliding in, the typed lines in a typewriter font, a signature
+drawn from two sine waves, and the red stamp (`make_stamp()`) slamming down.
+
+### `glitch_intro.py` — our team's intro
+A separate, self-contained file (only pygame, and NumPy for the sound), so it
+can be copied into any project: `glitch_intro.play(screen)` runs its own
+little loop for about 3 s and returns. The name is drawn twice, in red and
+in cyan, *added* onto the black screen (`BLEND_ADD`): where the two copies
+overlap they make white, where they are apart you see red and cyan edges
+(like a broken screen). `glitch_blit()` also cuts the picture into strips
+that jump sideways. A new random pattern each frame (`random.Random(frame)`)
+makes it flicker. Then it settles, the "GP" mark (with a strip cut out and
+moved) and "presents" fade in, and everything fades to black.
+
 ### `sounds.py` — beeps and sound files
 A sound is a long list of numbers telling the speaker where to be, 44,100 times
 a second. `tone(freq, seconds)` makes a sine wave with NumPy, which sounds like
@@ -232,6 +307,7 @@ a beep. `make_waves()` builds the beeps; their names match the events.
 Luigi "hmm" for `state:TURNING`, the MGS alert for losing by being caught or
 by warnings). A missing file keeps the beep. If the computer has no sound
 device, `Sounds` stays empty and `play()` does nothing, so the game still runs.
+`muted = True` (the Sound setting) also makes `play()` do nothing.
 
 ### `render.py` — drawing
 pygame draws onto a "surface" (the window) and `pygame.display.flip()` (in
@@ -258,11 +334,73 @@ that's also how animation will work later.
   right, red = wrong.
 - Helpers: `text()`, `bar()` (grey background + coloured part),
   `darken()` (see-through black layer, for the whole window or a strip).
+- Every screen is in a neon 80s style (like the game Hotline Miami), all
+  from code, no picture files. Things that move use `self.t`, the seconds
+  since the program started, which `main.py` sets every frame; `beat()`
+  turns it into a "thump" that is 1 on every `BEAT_TIME` and falls to 0.
+- In the game: `hud_strip()` draws the see-through purple strips with a
+  pink edge, `bar()` draws slanted bars (parallelograms), `shadow_text()`
+  puts a shadow under small text, `shout()` draws big wobbling neon text
+  (the popup, "FACE NOT FOUND", the end screen). The labels in the top strip
+  are measured (`label.right`) so the boxes after them never overlap,
+  whatever font the computer has.
+- `draw_scene()` draws whichever scene is playing:
+  - `draw_caught_scene`: the teacher frozen with the red "!" (`make_exclaim()`
+    draws it once: a black "!" moved in every direction for the outline, the
+    red one on top), then a white flash and `classroom_caught.jpeg`.
+    `scene_texts()` (shared with the warning scene) draws the red light, the
+    two strips of text and the flash.
+  - `draw_game_over`: black, "GAME OVER", then the two logos chat
+    (`GAME_OVER_CHAT`, one conversation per way of losing). The logos are
+    drawn in code, once, as pictures: Claude's burst is thick lines with
+    round tips in warm colours (`make_claude_logo()`), Gemini's star is a
+    "superellipse" shape whose colours go round its middle
+    (`make_gemini_logo()`: each pixel's angle picks the colour). Both have a
+    dark cartoon outline and a pulsing glow behind (`make_glow()`).
+    `logo_face()` puts a face on them: eyes with a shine, rosy cheeks, and a
+    mouth that talks (opens and closes), laughs (^ ^ eyes, tongue) or
+    smiles, with a blink now and then. `wrap()` splits long lines.
+- `draw_loading` is the "chapter" screen before each game: title, date, a
+  line from `LOADING_TIPS` (one, at random, for the whole loading) and a
+  bar with a percentage. The bar fills unevenly, like a real one:
+  `menu.loading_steps()` makes a random plan of jumps when the loading
+  starts, and `menu.loading_progress()` turns the time into how full the
+  bar is (stuck for `LOADING_STALL` of each gap, then a quick jump; the last
+  jump to 100 % comes right at the end).
+- `draw_menu` draws the menus:
+  - `menu_background()`: a three-colour gradient (one line per pixel row)
+    whose colours slide between `MENU_PALETTES`; light rays turning with
+    time, drawn at half size, faded outwards (`ray_fade`) and smoothly
+    stretched so their edges are soft; light film grain (hides colour
+    steps), faint "scanlines" like an old TV, and darker corners
+    (`vignette`). The layers that never change are made once in
+    `make_menu_layers()` with NumPy, which works on all pixels at once.
+  - `neon_text()`: the text drawn four times: a soft shadow, a half
+    see-through cyan and pink copy moved a few pixels, and the real colour
+    on top; titles also get a blurred pink glow behind
+    (`pygame.transform.gaussian_blur`), and so does the selected item
+    (`item_glow()`).
+  - `menu_title()` rocks the title (`math.sin(t)`) and makes it thump bigger
+    on every `BEAT_TIME`. `menu_items()` draws the selected item bigger and
+    rocking, with the select bar under it, and saves where each item is in
+    `menu_rects` (for mouse clicks).
+  - `pygame.transform.rotozoom` turns and scales a picture; that is all the
+    "animation" is.
+- `draw_end` draws the result and a small menu on top of the frozen game.
 - The draw functions only **read** `game` and `teacher`; they never change them.
 
 ### `main.py` — the loop
-Setup: open the window, sounds, camera, tracker, calibration and game. Then
-each frame:
+Everything is inside one class, `App`, so the methods can share the game,
+the screen name and the settings (`self.…`) without passing them around:
+`go_to()`, `start_game()` (shows the loading screen), `begin_playing()`
+(resets the game when loading is done), `calibrate_then(next_screen)`; `menu_action()` and
+`choose(item)` for the menus; `handle_key()` and `handle_click()` for input;
+`start_screen()`, `loading_screen()`, `menu_screen()` and `game_screen()`
+draw one screen each;
+`run()` is the loop.
+
+Setup (`App.__init__`): open the window, sounds, camera, tracker,
+calibration, game and the menus. Then each frame:
 
 (The window: `open_window()` always gives a 960×600 surface to draw on. The
 `pygame.SCALED` flag stretches it to the real window size with black bars and
@@ -276,7 +414,14 @@ desktop, not a real video-mode change. F11 just calls `open_window()` again.)
 2. **Camera**: `camera.read()`, then `tracker.read(frame, now)`.
 3. **Per screen**:
    - DISCLAIMER: the warning screen, shown once when the game opens.
-   - START / CALIBRATING: big preview, feed `calibration.add()`.
+   - START / CALIBRATING: big preview, feed `calibration.add()`; when done,
+     go to `after_calibration` (the main menu, the game, or settings).
+   - GAME during a scene: `draw_scene()` on top. After losing, the scenes
+     run even if the face is lost (nothing to pause), and Space skips them.
+   - LOADING: count `loading_time` up to `LOADING_TIME`, then
+     `begin_playing()`. Nothing in the game moves yet.
+   - MENU / HELP / SETTINGS: `head_input.update(yaw, pitch, dt, ...)` may
+     give an action → `menu_action()`; then `draw_menu`.
    - GAME: `direction = tracker.current_direction(...)`. If not `None`:
      `teacher.update(dt)`, filtered by `teacher.sounds()` (silence while
      looking down), and `game.update(direction, dt, teacher)`; play a sound
@@ -284,14 +429,16 @@ desktop, not a real video-mode change. F11 just calls `open_window()` again.)
      black, 1 = shown, fading in over `FADE_TIME`). Draw; on top, either the
      pause layer or the popup. Paused = nothing is updated, so the teacher
      and the clock freeze too.
-   - END: the same branch as GAME, but nothing is updated: draw the game
-     with the classroom always shown, and the end layer on top.
+   - END: a menu screen too: `game_screen(..., over=True)` draws the frozen
+     game with the classroom always shown, and `draw_end` the result and
+     menu on top.
 4. `pygame.display.flip()` shows the frame; `clock.tick(FPS)` waits so we don't
    run faster than 30 fps.
 
 ### `tests/`
-`test_game.py`, `test_teacher.py` and `test_head_tracker.py` check the rules,
-the teacher and the direction logic **without a camera**, by calling the
+`test_game.py`, `test_teacher.py`, `test_head_tracker.py` and `test_menu.py`
+check the rules, the teacher, the direction logic and the menus **without a
+camera**, by calling the
 functions with made-up angles and times. `test_game.py` uses a `FakeTeacher`
 whose watching/facing the test sets by hand. Run them:
 

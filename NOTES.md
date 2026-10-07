@@ -768,3 +768,502 @@ is shown, so the answer cannot be seen early.
 ### Next
 
 Same as commit #13.
+
+---
+
+## Commit #15 — Neon main menu controlled by the head
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The game now has menus in a neon 80s style, like the game Hotline Miami: a
+main menu (Play, How to play, Settings, Quit), a how-to-play screen, a
+settings menu and a menu on the end screen (Play again, Main menu, Quit).
+They are controlled with the head: tilt up/down to move the selection, turn
+right and hold to choose, turn left and hold to go back. Arrow keys, Enter,
+Esc and the mouse work too. After calibrating, the game opens the main menu
+instead of starting straight away.
+
+### Added
+
+| File | Change |
+|---|---|
+| `menu.py` | `Menu` (items and the selected one, wraps around), `HeadMenuInput` (head angles → `UP` / `DOWN` / `SELECT` / `BACK`, with hold times and a "straight first" rule), `next_choice()`. No pygame, so it is tested. |
+| `render.py` | `draw_menu()`, and the helpers `menu_background()` (gradient, turning rays, scanlines), `neon_text()`, `blit_turned()`, `menu_title()`, `menu_items()`, `menu_footer()`, `menu_font()`, `mix()`. `HELP_LINES`, the menu colours and the animation numbers (`BEAT_TIME`, `TITLE_WOBBLE`, ...). |
+| `settings.py` | `MENU_PITCH_THRESHOLD`, `MENU_YAW_THRESHOLD`, `MENU_MOVE_HOLD`, `MENU_REPEAT_TIME`, `MENU_SELECT_TIME`, `EXAM_TIME_CHOICES`. |
+| `sounds.py` | `"menu_move"` (blip) and `"menu_select"` (two notes) beeps; `muted`. |
+| `tests/test_menu.py` | 14 tests: moving and wrapping, the poses, hold times, repeating, a glance does not choose, one long turn chooses once, nothing before the head was straight, `next_choice()`. |
+| `tests/test_game.py` | `test_exam_time_from_the_settings_menu`. 85 tests now. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | The loop is now inside a class `App` with one method per job (`go_to`, `start_game`, `calibrate_then`, `menu_action`, `choose`, `handle_key`, `handle_click`, `start_screen`, `menu_screen`, `game_screen`, `run`), because the menus need to share a lot of state. New screens `MENU`, `HELP`, `SETTINGS`. Calibrating leads to `after_calibration`: the main menu at the start, the game after `k`, settings after "Recalibrate". `r` starts a new game straight away (no recalibrating); `m` goes to the main menu. Esc goes back in the menus and quits on the main menu and in the game. |
+| `game.py` | `Game(rng, exam_time)`: `self.exam_time` is used by `reset()`, so the settings menu can change it. |
+| `render.py` | `draw_end()` takes the menu labels and draws the result higher up with the menu under it. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The menus, the new screens, the keys, `menu.py`. |
+
+### Details worth knowing
+
+- The head needs calibration to know what "straight" is, so the main menu
+  comes after the start screen, not before it.
+- Tilting up uses a smaller angle (12°) than looking down in the game (23°):
+  tilting the head up far is uncomfortable and makes the face harder to
+  track.
+- After a choice, and when a menu opens, the head must come back straight
+  before the next action. Without that, being caught while looking sideways
+  would start choosing on the end menu at once.
+- The menu font: Impact if the computer has it (Windows), else Arial Black,
+  else DejaVu Sans Bold (most Linux), slanted by pygame. It is not shipped
+  with the game, so it can look a bit different on each computer.
+- The settings are not saved: they go back to `settings.py`'s values when
+  the game restarts. The exam time chosen is used from the next game on.
+- The uncommitted `EXAM_TIME = 200` in `settings.py` was left as it was.
+- Drawing one menu frame takes about 2 ms, so 30 fps is easy.
+- Tests: all 85 pass. Drew the main, how-to-play, settings and end menus
+  without a window and checked them by eye. Ran the real loop with a fake
+  camera and keys: disclaimer → start → main menu → how to play → back →
+  settings (exam time, sound) → back → play → game over → main menu → quit.
+  A person should check, with the webcam: tilting up/down moves the
+  selection one step at a time and repeats when held; turning right fills
+  the bar and chooses; turning left goes back; a quick glance chooses
+  nothing; entering the end menu while turned sideways does not choose by
+  itself; the mouse hover and clicks hit the right items; fullscreen and
+  sound settings work; the title does not get cut off on your screen.
+
+### Next
+
+- Menu music (a synthwave loop would fit), needs `loop()`/`stop()` in
+  `sounds.py`.
+- Save the settings to a file so they are kept between runs.
+- Maybe a sensitivity setting for the head thresholds.
+- Then the rest of `PLAN.md` section 8.
+
+---
+
+## Commit #16 — Loading screen and a neon game interface
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+Choosing Play no longer drops the player straight into the exam: a
+3-second "chapter" screen comes first, like the ones in Hotline Miami
+("ME461 - CHAPTER 1", "THE MIDTERM", today's date, a funny loading line and
+a bar). The rest of the interface now matches the menus: the disclaimer and
+start screens have the neon background, and in the game the strips, bars,
+texts, warning popup, pause screen and end screen are in the same neon
+style.
+
+### Added
+
+| File | Change |
+|---|---|
+| `render.py` | `draw_loading()`, `LOADING_CHAPTER`, `LOADING_TITLE`, `LOADING_TIPS`, `TIPS_PER_LOADING`. Helpers `shadow_text()`, `hud_strip()`, `shout()`, `beat()`. `self.t`, the animation time. Colours `NEON_GREEN`, `NEON_RED`, `HUD_PURPLE`; `HUD_ALPHA`, `HUD_LINE`, `FOOTER_HEIGHT`, `TEXT_SHADOW`, `TEXT_WOBBLE`, `CLOCK_PULSE`. |
+| `main.py` | Screen `LOADING`; `loading_screen()`, `begin_playing()`. |
+| `settings.py` | `LOADING_TIME` (3 s). |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `render.py` | Disclaimer and start screens: neon background, slanted Calibrate button. Game: purple strips with a pink edge, slanted bars (`bar()` draws a parallelogram), bold slanted labels, neon answer boxes and warning circles, a neon clock that turns pink and thumps every second under 15 s. Popup: a band across the screen with wobbling text. Pause and end screens: big neon text. `draw_menu()` and `draw_end()` no longer take `t` (they use `self.t`). `menu_footer()` is now `footer(hint)`, used by every neon screen. Removed the colours nothing used any more (`BACKGROUND`, `DARK_GREY`, `GREEN`, `RED`, `BLUE`). |
+| `main.py` | `start_game()` shows the loading screen; `begin_playing()` does what `start_game()` did. Sets `renderer.t` every frame. |
+| `render.py` | While looking down, the text strip is centred left of the webcam preview, which covered the end of the line. |
+| `render.py` | The Calibrate button is sized from its text (`BUTTON_TEXT`, `BUTTON_PADDING`, `BUTTON_HEIGHT`) instead of a fixed 300 px, so the text no longer touches its slanted ends. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The loading screen and the neon style. |
+
+### Details worth knowing
+
+- The loading screen is shown for Play, Play again and `r`, but not after
+  `k` (recalibrating in the middle of a game goes straight back to it).
+- During loading the game, the teacher and the clock do not move; the game
+  is reset only when loading ends.
+- The top strip measures its labels (`ANSWERS`, `WARNINGS`) and places the
+  boxes, circles and clock after them, because the menu font differs
+  between computers (Impact, Arial Black or DejaVu Sans Bold).
+- The yaw/pitch/fps numbers stay in the plain font: they are for testing.
+- Tests: all 85 pass (no rule changed). Drew every screen without a window
+  (disclaimer, start, calibrating, loading, game, popup, looking left and
+  down, paused, won, lost) and checked them by eye; ran the real loop with
+  a fake camera from the disclaimer through loading, a game, the end menu
+  and quit. A person should check: the loading screen feels the right
+  length; the game texts are readable on top of every classroom picture;
+  the clock's thumping in the last 15 s is not too distracting; the
+  warning banner does not hide something important.
+
+### Next
+
+Same as commit #15.
+
+---
+
+## Commit #17 — The teacher comes over after a warning
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+A warning is no longer just a red box: the teacher walks up to your desk
+and points at you angrily. The screen zooms into the teacher's picture
+(faster and faster, like someone walking at you), then shows them at your
+desk pointing their index finger at you, the screen shakes and flashes red,
+and "WARNING 1/3" and "STOP STARING AT ME!" appear. The game is frozen for
+the 2.5 s of the scene. The picture (`classroom_warning.jpeg`) was made by
+the team with Gemini.
+
+### Added
+
+| File | Change |
+|---|---|
+| `game.py` | `scene_time` and `in_scene()`: while the scene plays, `update()` only counts it down. `can_write()` is False during it. |
+| `assets/images/classroom_warning.jpeg` | The teacher (with his camouflage bandana) two metres in front of your desk, pointing at you angrily. Made with Gemini from the two "watching" originals; the prompt is in `PLAN.md` section 5. |
+| `render.py` | `draw_warning_scene()`, `zoomed()`. `POINTING_IMAGE` (the picture above; optional), `POINTING_TOP` (its own top cut), `TEACHER_FACE` (where the teacher's face is in each watching picture), `APPROACH_ZOOM`, `FLASH_TIME`, `SHAKE_PIXELS`, `SHAKE_TIME`. `load_classroom()` takes a `top`. |
+| `settings.py` | `WARNING_SCENE_TIME` (2.5 s), `TEACHER_APPROACH_TIME` (0.8 s). |
+| `tests/test_game.py` | `test_warning_scene_freezes_the_game`, `test_last_warning_scene_plays_before_game_over`. 87 tests now. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | The teacher does not move during the scene; the scene is drawn instead of the popup; the end screen waits until the last warning's scene is over; the classroom fades in again after it. |
+| `game.py` | The scene check comes before the game-over check in `update()`, so the scene of the last warning plays. |
+| `tests/test_game.py` | The three-warnings tests stare for `ALL_WARNINGS_TIME` (from `settings.py`) instead of a fixed 15 s, which would break when the scene time is tuned. `test_popup_disappears` waits for the scene. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The warning scene and the picture to make. |
+
+### Details worth knowing
+
+- Freezing the game is on purpose: during the scene you cannot see the
+  classroom, so the clock and the bars must not run against you.
+- The zoom uses the "watching" picture of wherever the teacher is (board
+  or desk); `TEACHER_FACE` holds the pixel spots of their faces, measured on
+  the 960×600 window. If the pictures change, measure them again.
+- The pointing picture is cut less at the top (`POINTING_TOP` 120 instead
+  of `CLASSROOM_TOP` 250): with the normal cut the bandana touched the top
+  of the window and the "WARNING" strip covered the face.
+- First tries: the picture faded in over the end of the zoom, but for a
+  moment two teachers were seen on top of each other. Now it is a hard cut
+  at the moment of arrival, hidden by a white flash (`FLASH_TIME`), like
+  the cuts in Hotline Miami. `APPROACH_ZOOM` is 3.5 so the zoomed teacher is
+  about as big as in the picture.
+- The first Gemini picture was too close and had a cap instead of the
+  bandana; the prompt in `PLAN.md` now says both.
+- The "warning" buzz still plays when the scene starts. An angry voice file
+  could replace it in `SOUND_FILES`.
+- Tests: all 87 pass. Drew the scene at several moments (walking, arrived,
+  at the board and at the desk, with a placeholder pointing picture) and
+  checked them by eye. Ran the real loop: after the last warning the screen
+  stays on the scene, the teacher does not move, and the end screen comes
+  after it. A person should check: the zoom feels like the teacher walking
+  over; 2.5 s is not too long to wait; the shake and the white flash are
+  not too strong.
+
+### Next
+
+- An angry voice for the warning (in `SOUND_FILES`, replacing the buzz).
+- Then the list of commit #15.
+
+---
+
+## Commit #18 — Caught scene and a game over screen with two talking logos
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+Getting caught now plays a scene: the teacher freezes with a big red Metal
+Gear "!" over his head (the MGS alert was already playing), then a white
+flash, a paper-ripping sound, and the teacher tears up your exam ("CAUGHT
+COPYING!" / "YOUR EXAM: 0/5 - SEE YOU NEXT SEMESTER"). After every loss a
+GAME OVER screen follows: on black, the Gemini and Claude logos, drawn in
+code with cartoon faces, make fun of you in a two-line chat that depends on
+how you lost (e.g. "Maybe try looking at the teacher during class, not
+during the quiz."), with a "nooo" sound. Space skips it. The
+loading screen now says "THE QUIZ" instead of "THE MIDTERM".
+
+### Added
+
+| File | Change |
+|---|---|
+| `game.py` | `scene` (`WARNING_SCENE`, `CAUGHT_SCENE`, `GAME_OVER_SCENE`), `start_scene()`, `skip_scene()`, `start_game_over()`. Events `"rip"` and `"nooo"`. |
+| `render.py` | `draw_scene()`, `draw_caught_scene()`, `make_exclaim()`, `scene_texts()`, `scene_shake()`, `draw_game_over()`, `chat_line()`, `wrap()`, `make_gemini_logo()`, `claude_logo()`, `logo_face()`. `CAUGHT_IMAGE` (optional `classroom_caught.jpeg`), `CAUGHT_TEXTS`, `GAME_OVER_CHAT` and the chat/logo constants. |
+| `sounds.py` | `rip()` (crackly noise) and `nooo()` (a voice-like sound sliding down) made in code; `"nooo"` can be replaced by `assets/sounds/noooo.mp3`. |
+| `settings.py` | `CAUGHT_SCENE_TIME` (4 s), `CAUGHT_EXCLAIM_TIME` (1.2 s), `GAME_OVER_TIME` (8 s). |
+| `tests/test_game.py` | `test_caught_scene_then_game_over`, `test_time_up_goes_straight_to_game_over`, `test_skip_only_after_losing`; the last-warning test checks the game over scene follows. 90 tests now. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `game.py` | `lose()` starts the caught or game over scene; when a scene ends after losing, the game over scene starts. |
+| `render.py` | The end of the warning scene (red light, texts, flash) is `scene_texts()`, shared with the caught scene. `POINTING_TOP` is now `SCENE_PICTURE_TOP`, used by both scene pictures. `LOADING_TITLE` is "THE QUIZ". |
+| `main.py` | Draws any scene with `draw_scene()`. After losing nothing pauses when the face is lost. Space, Enter or a click skips the scenes after losing. |
+| `sounds.py` | A sound file that does not exist is skipped silently (the beep stays); only a broken file prints a message. Needed for the optional `noooo.mp3`. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The scenes, the game over screen, "The Quiz". |
+
+### Details worth knowing
+
+- The logos are drawn in code, not copied as picture files: simple shapes
+  like the real ones (Claude's orange burst, Gemini's blue-purple
+  four-pointed star) that can have faces and move. The joke: Gemini drew
+  the game's pictures and Claude wrote its code.
+- The chat lines are in `GAME_OVER_CHAT` in `render.py`; change them
+  freely. When both lines are typed, both logos laugh. Lines longer than
+  `BUBBLE_MAX_WIDTH` wrap.
+- Order after losing: caught → caught scene → game over → end menu; last
+  warning → warning scene → game over → end menu; time up → game over →
+  end menu.
+- `classroom_caught.jpeg` does not exist yet; until it does, the caught
+  scene stays on the "!" picture with the texts. It is cut like
+  `classroom_warning.jpeg` (`SCENE_PICTURE_TOP`).
+- Tests: all 90 pass. Drew the "!" (popping, at the board and at the desk),
+  the caught texts, and the game over chat for all three ways of losing
+  (while typing and at the end) and checked them by eye. Ran the real loop
+  with the face lost: caught scene → game over scene → Space → end menu.
+  A person should check: the "!" pops at the same moment as the MGS sound;
+  the rip and nooo sounds are funny, not annoying; the chat is readable and
+  not too slow; Space skips.
+
+### Next
+
+- `classroom_caught.jpeg` (the prompt is in `PLAN.md` section 5; then
+  check its cut).
+- The team's own `noooo.mp3`.
+- Then the list of commit #15.
+
+---
+
+## Commit #19 — A loading bar that fills like a real one, chat without "haha"
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The loading screen shows one funny line (picked at random) instead of
+changing it while loading, and its bar no longer fills at an even speed: it
+gets stuck, jumps, gets stuck again and makes the last jump to 100 % right
+at the end, with the percentage next to it. On the game over screen the
+"hahahaha" at the end of the chat lines is gone; instead both logos laugh
+once the second line is typed.
+
+### Added
+
+| File | Change |
+|---|---|
+| `menu.py` | `loading_steps(rng)` (a random plan of jumps) and `loading_progress(time, steps)` (how full the bar is). |
+| `settings.py` | `LOADING_JUMPS` (5), `LOADING_STALL` (0.6). |
+| `tests/test_menu.py` | `LoadingTests`: starts at 0, ends at 1, never goes back, gets stuck and jumps, not full before the end. 94 tests now. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `render.py` | `draw_loading()`: one line for the whole loading, the percentage next to the bar. `TIPS_PER_LOADING` removed. The chat lines lose their "hahahaha"; `chat_line()` takes `laughing`, which `draw_game_over()` turns on for both logos when the chat is over. |
+| `main.py` | `start_game()` makes a new `loading_plan`; `loading_screen()` uses `loading_progress()`. |
+| `render.py` | More colourful logos (the team found them dull): Gemini's star in blue, green, yellow and red going round it, lighter in the middle (`GEMINI_COLOURS`); Claude's rays in warm colours in turn (`CLAUDE_COLOURS`); both with a dark outline (`OUTLINE`) and a pulsing glow behind (`make_glow()`, `LOGO_GLOW`, `GLOW_ALPHA`). Faces: eyes with a shine, rosy cheeks (`CHEEKS`), a tongue when laughing. `make_claude_logo()` replaces `claude_logo()`: the logo is made once, as a picture. |
+| `LEARN.md`, `PLAN.md`, `NOTES.md` (#18) | The new loading bar; no "haha" in the chat. |
+
+### Details worth knowing
+
+- Between two points of the plan the bar is stuck for the first 60 %
+  (`LOADING_STALL`) of the time and then moves quickly, so it looks like
+  real loading. Each loading gets a new random plan.
+- The team will pick the sound files themselves (`noooo.mp3` and others).
+- Tests: all 94 pass. Printed one plan (0% 0% 6% 8% 10% 10% 26% 38% ...
+  51% 51% 51% 51% 51% 54% 69% 84% 100%) and drew the loading screen at 26 %
+  and 90 % and the end of the chat, and checked them by eye; same for the
+  new logos (talking and laughing). A person should check: the uneven fill
+  feels like loading, not like a bug; the logos look good on your screen.
+- The Gemini star is coloured pixel by pixel when the game starts; it adds
+  a fraction of a second to the start, once.
+
+### Next
+
+Same as commit #18.
+
+---
+
+## Commit #20 — The tearing picture shows, a line per warning, keys pause the head
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+Three smaller changes. The caught scene now shows the team's picture of the
+teacher tearing up the exam: it had been saved as `.png`, and the game only
+looked for `.jpeg`. The warning scene shows a different line for each
+warning. In the menus, a key press or a click turns head control off for
+1 s, so the head and the keys do not fight; a box above the webcam shows
+"KEYBOARD", then "HEAD CONTROL".
+
+### Added
+
+| File | Change |
+|---|---|
+| `assets/images/classroom_caught.png` | The teacher tearing your exam in half, the class shocked and laughing. Made by the team with Gemini (prompt in `PLAN.md`). |
+| `render.py` | `image_file(name)`: finds a picture as `.jpeg`, `.jpg` or `.png` (`IMAGE_TYPES`). `WARNING_LINES`: 1 "DO NOT STARE AT ME! LOOK AT YOUR DAMN PAPER!", 2 "YOU WANNA FAIL, YOU LITTLE RACCOON?", 3 "IT IS OVER FOR YOU, YOU CHEATING NOODLE!" (chosen by the team). `head_indicator()`, `INDICATOR_HEIGHT`. |
+| `menu.py` | `HeadMenuInput.pause()` and `paused_part()`. |
+| `settings.py` | `HEAD_PAUSE_AFTER_KEYS` (1 s). |
+| `tests/test_menu.py` | `test_keys_pause_head_control`. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `render.py` | `SCENE_PICTURE_TOP` is a dict, one cut per picture (warning 120, caught 60): in the caught picture the teacher stands higher. `draw_menu()` and `draw_end()` take `head_pause`. |
+| `main.py` | A key press or a left click on a menu screen calls `head_input.pause()`. |
+
+### Details worth knowing
+
+- Only the menus pause the head. In the game the A-D keys are pressed while
+  looking down, so pausing the head there would break the game.
+- Moving the mouse does not pause the head (a mouse that moves a little on
+  the desk would keep it off all the time); clicks do.
+- After the pause the head must be straight once, like after opening a
+  menu, so a head still tilted from before does not move the selection.
+- There is a `assets/images/Antigravity_CLI.webp` the game does not use; it
+  was left alone.
+
+### Next
+
+Same as commit #18.
+
+---
+
+## Commit #21 — "Glitch Please" intro
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The game now opens with our team's intro, like a studio logo before a film:
+on black, "GLITCH PLEASE" glitches in (red and cyan copies sliding apart,
+slices jumping sideways, flickering, TV static lines), settles, the "GP"
+mark with a glitched slice appears above it and "presents" below, and it
+fades to black. About 3.4 s with a sound made in code (chopped digital
+buzzes, then a low hit). Any key or click skips it. It is one file that
+only needs pygame, meant to be copied into all our projects.
+
+### Added
+
+| File | Change |
+|---|---|
+| `glitch_intro.py` | `play(screen, clock)`, `draw_frame()`, `glitch_blit()`, `static_lines()`, `make_mark()`, `make_pictures()`, `make_sound()`, `find_font()`. All its numbers at its top. |
+| `main.py` | `run()` plays the intro before the loop; closing the window during it quits. |
+
+### Details worth knowing
+
+- The two coloured copies are blitted with `BLEND_ADD` on black: where they
+  overlap they add up to white. They are rendered on a black background:
+  rendered see-through, the colour hidden in the see-through pixels was
+  added too, and the name showed as a white box.
+- The settings of the intro are in `glitch_intro.py`, not in `settings.py`,
+  on purpose: then it stays a single file that works in any project.
+- Without numpy or a sound device it is silent.
+- Tests: none (it only draws). Drew it at six moments and checked them by
+  eye. A person should check: it feels like a studio intro, not too long;
+  the sound is not too loud; a key skips it.
+
+### Next
+
+Same as commit #18.
+
+---
+
+## Commit #22 — The disclaimer as an official notice
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The disclaimer no longer looks like the menus. A cream paper slides in onto
+a wooden desk: "OFFICIAL NOTICE — ACADEMIC INTEGRITY DEPARTMENT - ME461".
+The six lines are typed out in a typewriter font with a key sound and a
+blinking cursor (Space shows them all at once). Space signs it (a blue
+scribbled signature, a pencil sound), then a red "APPROVED" stamp slams
+down with a thump and shakes the paper, and the game goes on by itself
+(or at once with Space).
+
+### Added
+
+| File | Change |
+|---|---|
+| `disclaimer.py` | `Disclaimer`: `letters()`, `typed()`, `press()`, `update()`, `sign_progress()`, `stamp_time()`, `stamp_age()`, `done()`. No drawing, so it is tested. |
+| `tests/test_disclaimer.py` | 5 tests: typing, no going on without a signature, Space while typing, sign → stamp → go on, Space after the stamp. 100 tests now. |
+| `render.py` | `draw_disclaimer(notice)`, `make_desk()`, `make_stamp()`, `signature()`, `mono_font()`. `DISCLAIMER_LETTERS`, `NOTICE_TITLE`, `NOTICE_FROM`, the paper/ink/stamp/desk colours, `PAPER_RECT`, `PAPER_SLIDE`, `STAMP_ANGLE`, `STAMP_SLAM`, `MONO_FONTS`. |
+| `sounds.py` | `"type"` (a short click), `"sign"` (pencil scribble), `"stamp"` (a low thump). |
+| `settings.py` | `NOTICE_TYPE_DELAY`, `NOTICE_TYPE_SPEED`, `NOTICE_SIGN_TIME`, `NOTICE_STAMP_HOLD`. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `render.py` | `DISCLAIMER_LINES` have ink colours for the paper (dark, faded, blue for the serious last line). |
+| `main.py` | `self.notice`; Space, Enter or a click on the disclaimer call `press_notice()`; the disclaimer goes on to the start screen when `notice.done()`. |
+
+### Details worth knowing
+
+- The typewriter font is the first of Courier New, Courier, Nimbus Mono PS
+  (a Courier copy on Linux), DejaVu Sans Mono, Liberation Mono.
+- The stamp is a bit see-through, like ink, and slightly over the paper's
+  edge, like a real one.
+- Tests: all 100 pass. Drew the paper sliding in, half typed, signing,
+  the stamp slamming and landing, and checked them by eye. Ran the real
+  loop: Space finished the typing, Space signed, the stamp came, then the
+  start screen. A person should check: the typing speed; the stamp sound.
+
+### Next
+
+Same as commit #18.
+
+---
+
+## Commit #23 — Softer, smoother menus
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The menus keep the Hotline Miami look but are softer and have many more
+tones: a three-colour sunset gradient drawn one pixel row at a time instead
+of 4-pixel strips, light rays with soft edges that fade outwards, very
+light film grain that hides colour steps, fainter scanlines, darker
+corners, half see-through pink/cyan copies of the text and a blurred glow
+behind the titles and the selected item. On big screens the 960×600
+picture is now stretched smoothly instead of pixel by pixel.
+
+### Added
+
+| File | Change |
+|---|---|
+| `render.py` | `make_menu_layers()` (ray fade, vignette and grain, made once with NumPy), `item_glow()`. `VIGNETTE_ALPHA`, `GRAIN_ALPHA`, `GLOW_BLUR`, `GHOST_ALPHA`. `neon_text(..., glow=True)`. |
+| `settings.py` | `SMOOTH_SCALING` (True). |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `render.py` | `MENU_PALETTES` are (top, middle, bottom) sunset colours, a little less saturated. `menu_background()` draws the rays at half size, fades them, stretches them smoothly. `SCANLINE_ALPHA` 45 → 20 (the scanlines were the main source of hard contrast; they also show in the game's scenes, softer now too). `RAY_ALPHA` 28 → 60 in the middle, fading outwards. `GRADIENT_STEP` removed. `render.py` now imports NumPy (it comes with MediaPipe). |
+| `main.py` | With `SMOOTH_SCALING`, sets `SDL_RENDER_SCALE_QUALITY=linear` before the window opens. |
+
+### Details worth knowing
+
+- A menu frame takes about 3.7 ms to draw (it was about 2 ms), still far
+  under the 33 ms of a frame at 30 fps.
+- Really sharp "HD" would mean drawing everything at e.g. 1920×1200; every
+  pixel position in `render.py` would change, so that is left for later.
+- Smooth stretching only shows on a real window bigger than 960×600; it
+  could not be checked without a screen. If the game looks blurry instead,
+  set `SMOOTH_SCALING = False`.
+- Tests: all 100 pass. Drew the main menu at two moments (pink and violet
+  palettes) and checked them by eye; ran the whole start of the game in the
+  real loop (intro, notice, start, menu, loading). A person should check:
+  the menus look softer but still neon; text is sharp; on a big screen the
+  game is smooth, not blurry.
+
+### Next
+
+- The team's sounds (they will pick them from a sound library).
+- Then the list of commit #15.

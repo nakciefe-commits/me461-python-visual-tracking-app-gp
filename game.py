@@ -24,10 +24,16 @@ import random
 
 from head_tracker import DOWN, SCREEN, LEFT, RIGHT
 from settings import (ANSWERS_NEEDED, COPY_TIME, STARE_GRACE_TIME, STARE_FILL_TIME,
-                      MAX_WARNINGS, POPUP_TIME, TICK_INTERVAL, EXAM_TIME,
+                      MAX_WARNINGS, POPUP_TIME, TICK_INTERVAL, EXAM_TIME, WARNING_SCENE_TIME,
+                      CAUGHT_SCENE_TIME, CAUGHT_EXCLAIM_TIME, GAME_OVER_TIME,
                       STARE_ONLY_WHEN_FACING, CAUGHT_TIME, SUSPICION_DRAIN_TIME)
 
 PLAYING, WON, LOST = "PLAYING", "WON", "LOST"
+# The scenes: short moments where the game is frozen and something is shown.
+#   WARNING_SCENE  the teacher comes over and points at you (after a warning)
+#   CAUGHT_SCENE   a Metal Gear "!", then the teacher tears up your exam
+#   GAME_OVER_SCENE  after losing, before the end menu (render.py: two logos talk)
+WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE = "WARNING_SCENE", "CAUGHT_SCENE", "GAME_OVER_SCENE"
 LETTERS = "ABCD"   # the choices of every question
 UNKNOWN = "?"      # what the neighbour who does not know the answer shows
 
@@ -41,17 +47,18 @@ FULL = 1 - 1e-9
 
 
 class Game:
-    def __init__(self, rng=None):
+    def __init__(self, rng=None, exam_time=EXAM_TIME):
         # Tests pass a random.Random with a fixed seed, so the "random"
         # answers are the same every run.
         self.rng = rng or random.Random()
+        self.exam_time = exam_time   # seconds; the settings menu can change it
         self.reset()
 
     def reset(self):
         """Put everything back to the start of a new game."""
         self.state = PLAYING
         self.lose_reason = None   # "warnings", "caught" or "time" once lost
-        self.time_left = EXAM_TIME
+        self.time_left = self.exam_time
         self.warnings = 0
 
         # The answer key: the right letter of each question, and which
@@ -77,6 +84,11 @@ class Game:
 
         self.popup_text = None    # warning message on screen, or None
         self.popup_timer = 0.0    # seconds until the popup disappears
+        # The scene playing (see WARNING_SCENE etc. above), or None, and its
+        # seconds left. While one plays, nothing else moves: not the bars,
+        # not the clock. main.py also stops the teacher.
+        self.scene = None
+        self.scene_time = 0.0
 
     @property
     def answers(self):
@@ -99,7 +111,7 @@ class Game:
 
     def can_write(self):
         """True once the current question's answer has been read."""
-        return (self.state == PLAYING
+        return (self.state == PLAYING and not self.in_scene()
                 and self.knowing_side[self.question()] in self.read_sides)
 
     def correct_count(self):
@@ -130,13 +142,38 @@ class Game:
         """How full the suspicion bar is, 0..1."""
         return self.suspicion_level
 
+    def in_scene(self):
+        """True while a scene plays and the game is frozen."""
+        return self.scene_time > 0
+
+    def start_scene(self, name, seconds):
+        self.scene = name
+        self.scene_time = seconds
+
+    def skip_scene(self):
+        """
+        The player pressed Space: end the scene on the next update(). Only
+        after losing; a warning scene in the middle of the game can't be skipped.
+        """
+        if self.state == LOST and self.in_scene():
+            self.scene_time = 1e-9   # update() finishes it and starts the next one
+
+    def start_game_over(self, events):
+        self.start_scene(GAME_OVER_SCENE, GAME_OVER_TIME)
+        events.append("nooo")
+
     def warn(self, events):
-        """Staring filled the bar: one more warning, and the bar starts over."""
+        """
+        Staring filled the bar: one more warning, and the bar starts over.
+        The teacher comes over to your desk (the warning scene); the last
+        warning also ends the game, but the scene still plays first.
+        """
         self.warnings += 1
         events.append("warning")
         self.popup_text = (f"The teacher noticed you staring! "
                            f"Warning {self.warnings}/{MAX_WARNINGS}")
         self.popup_timer = POPUP_TIME
+        self.start_scene(WARNING_SCENE, WARNING_SCENE_TIME)
         self.suspicion_level = 0.0
         self.seen_copying = False
         if self.warnings == MAX_WARNINGS:
@@ -149,6 +186,13 @@ class Game:
         # "lost_caught" so each way of losing can have its own sound.
         events.append("lost")
         events.append("lost_" + reason)
+        # Then a scene: the caught scene, or straight to game over. After
+        # the last warning the warning scene is already playing; the game over
+        # scene follows it (see update()).
+        if reason == "caught":
+            self.start_scene(CAUGHT_SCENE, CAUGHT_SCENE_TIME)
+        elif not self.in_scene():
+            self.start_game_over(events)
 
     def update(self, direction, dt, teacher=None):
         """
@@ -157,6 +201,23 @@ class Game:
         Returns a list of events, e.g. ["tick", "answer"].
         """
         events = []
+        # A scene: only its own clock runs. It is checked before game over,
+        # so the scenes after losing still play out.
+        if self.scene_time > 0:
+            before = self.scene_time
+            self.scene_time = max(0.0, self.scene_time - dt)
+            # The moment the teacher tears up your exam: a ripping sound.
+            rip_at = CAUGHT_SCENE_TIME - CAUGHT_EXCLAIM_TIME   # seconds left at that moment
+            if self.scene == CAUGHT_SCENE and before > rip_at >= self.scene_time:
+                events.append("rip")
+            if self.scene_time == 0:
+                self.popup_text = None   # the scene showed the message already
+                # Lost, and the warning or caught scene is over: game over.
+                if self.state == LOST and self.scene != GAME_OVER_SCENE:
+                    self.start_game_over(events)
+                else:
+                    self.scene = None
+            return events
         if self.state != PLAYING:
             return events
 

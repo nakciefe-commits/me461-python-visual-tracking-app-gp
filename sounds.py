@@ -23,6 +23,7 @@ SOUND_FILES = {
     "state:TURNING": "luigi-hmm.mp3",   # the teacher is about to look up: stop copying!
     "lost_caught": "mgs-alert-sound.mp3",     # game over: caught copying
     "lost_warnings": "mgs-alert-sound.mp3",   # game over: too many warnings
+    "nooo": "noooo.mp3",                      # the game over screen (optional file)
 }
 
 
@@ -41,6 +42,32 @@ def scribble(seconds):
     return 0.5 * noise * np.linspace(1.0, 0.0, len(noise))
 
 
+def rip(seconds):
+    """
+    Paper tearing: noise in short crackly bursts that get louder, then stop.
+    Each 10 ms chunk gets a random loudness, which makes it crackle.
+    """
+    rng = np.random.default_rng(1)
+    count = int(SAMPLE_RATE * seconds)
+    noise = rng.uniform(-1.0, 1.0, count)
+    chunk = SAMPLE_RATE // 100                          # 10 ms
+    crackle = np.repeat(rng.uniform(0.3, 1.0, count // chunk + 1), chunk)[:count]
+    return noise * crackle * np.linspace(0.4, 1.0, count)
+
+
+def nooo(seconds):
+    """
+    A cartoon "nooooo": a low voice-like sound sliding down in pitch with a
+    wobble (vibrato). Made of a few harmonics, loudest low ones, so it sounds
+    more like an "o" than a beep.
+    """
+    t = np.arange(int(SAMPLE_RATE * seconds)) / SAMPLE_RATE
+    freq = np.linspace(260, 110, len(t)) * (1 + 0.03 * np.sin(2 * np.pi * 6 * t))
+    phase = 2 * np.pi * np.cumsum(freq) / SAMPLE_RATE   # adding up the frequency = the phase
+    wave = sum(np.sin(k * phase) / k for k in range(1, 6))
+    return 0.6 * wave * np.minimum(1.0, 6 * (1 - t / seconds))   # fades out at the end
+
+
 def make_waves():
     """Sound name -> wave. Names match the events from game.update() and teacher.update()."""
     return {
@@ -56,12 +83,23 @@ def make_waves():
         # TURNING is the danger cue, so it is loud and clear: two quick high beeps
         # (replaced by a file in SOUND_FILES, if it loads).
         "state:TURNING": np.concatenate([tone(1200, 0.08), tone(0, 0.05), tone(1200, 0.08)]),
+        # Menus: a short blip when the selection moves, two notes when chosen.
+        "menu_move": tone(660, 0.05),
+        "menu_select": np.concatenate([tone(880, 0.06), tone(1320, 0.12)]),
+        # Scenes: the teacher tears up your exam; the game over screen.
+        "rip": rip(0.45),
+        # The disclaimer notice: typewriter keys, the signature, the stamp.
+        "type": 0.5 * tone(2600, 0.012, fade=True),
+        "sign": scribble(0.65),
+        "stamp": np.concatenate([0.9 * tone(70, 0.28) + 0.4 * scribble(0.28)]),
+        "nooo": nooo(1.8),
     }
 
 
 class Sounds:
     def __init__(self):
         self.sounds = {}
+        self.muted = False   # the settings menu can turn sound off
         try:
             pygame.mixer.init(SAMPLE_RATE, -16, 1)
         except pygame.error as error:
@@ -77,13 +115,15 @@ class Sounds:
             self.sounds[name] = pygame.sndarray.make_sound(samples)
 
         for name, file_name in SOUND_FILES.items():
+            if not os.path.exists(os.path.join(SOUND_FOLDER, file_name)):
+                continue   # not added (yet): keep the beep, nothing to complain about
             try:
                 self.sounds[name] = pygame.mixer.Sound(os.path.join(SOUND_FOLDER, file_name))
             except (pygame.error, FileNotFoundError) as error:
-                # Missing or broken file: keep the beep instead.
+                # Broken file: keep the beep instead.
                 print(f"Could not load {file_name} ({error}); using a beep instead.")
 
     def play(self, name):
-        """Play a sound once. Unknown names (and no sound device) do nothing."""
-        if name in self.sounds:
+        """Play a sound once. Unknown names, no sound device or muted: nothing."""
+        if name in self.sounds and not self.muted:
             self.sounds[name].play()

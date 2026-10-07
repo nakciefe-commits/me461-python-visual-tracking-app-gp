@@ -8,13 +8,19 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from game import Game, PLAYING, WON, LOST, WARNING_TIME, LETTERS, UNKNOWN
+from game import (Game, PLAYING, WON, LOST, WARNING_TIME, LETTERS, UNKNOWN,
+                  WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE)
 from head_tracker import DOWN, SCREEN, LEFT, RIGHT
-from settings import EXAM_TIME, ANSWERS_NEEDED, CAUGHT_TIME, COPY_TIME, SUSPICION_DRAIN_TIME
+from settings import (EXAM_TIME, ANSWERS_NEEDED, CAUGHT_TIME, COPY_TIME, SUSPICION_DRAIN_TIME,
+                      MAX_WARNINGS, WARNING_SCENE_TIME, CAUGHT_SCENE_TIME, CAUGHT_EXCLAIM_TIME,
+                      GAME_OVER_TIME)
 
 # 1/8 s per step: adds up exactly in floating point, so 20 steps are exactly 2.5 s.
 # Times come from settings.py, so tuning them does not break the tests.
 DT = 0.125
+# Staring this long is enough for every warning, with the warning scene
+# (frozen time) after each one.
+ALL_WARNINGS_TIME = MAX_WARNINGS * (WARNING_TIME + WARNING_SCENE_TIME) + 1
 
 
 def run(game, direction, seconds):
@@ -161,13 +167,39 @@ class StaringTests(unittest.TestCase):
 
     def test_popup_disappears(self):
         game = Game()
-        run(game, SCREEN, 5.0)
-        run(game, DOWN, 2.0)
+        run(game, SCREEN, WARNING_TIME)
+        run(game, DOWN, WARNING_SCENE_TIME + DT)
         self.assertIsNone(game.popup_text)
+
+    def test_warning_scene_freezes_the_game(self):
+        # While the teacher comes over, nothing moves: the clock, the bars.
+        game = Game()
+        run(game, SCREEN, WARNING_TIME)
+        self.assertTrue(game.in_scene())
+        time_left = game.time_left
+        self.assertEqual(run(game, LEFT, WARNING_SCENE_TIME - DT), [])
+        self.assertEqual(game.time_left, time_left)
+        self.assertEqual(game.copy_time[LEFT], 0)
+        self.assertEqual(game.suspicion(), 0)
+        run(game, LEFT, DT)
+        self.assertFalse(game.in_scene())
+        run(game, LEFT, DT)
+        self.assertGreater(game.copy_time[LEFT], 0)   # moving again
+
+    def test_last_warning_scene_plays_before_game_over(self):
+        game = Game()
+        for _ in range(MAX_WARNINGS - 1):
+            run(game, SCREEN, WARNING_TIME + WARNING_SCENE_TIME)
+        run(game, SCREEN, WARNING_TIME)
+        self.assertEqual(game.state, LOST)
+        self.assertEqual(game.scene, WARNING_SCENE)   # main.py waits for it before the end screen
+        events = run(game, SCREEN, WARNING_SCENE_TIME)
+        self.assertEqual(game.scene, GAME_OVER_SCENE)  # then the game over scene
+        self.assertIn("nooo", events)
 
     def test_three_warnings_lose(self):
         game = Game()
-        events = run(game, SCREEN, 15.0)
+        events = run(game, SCREEN, ALL_WARNINGS_TIME)
         self.assertEqual(game.state, LOST)
         self.assertIn("lost", events)
 
@@ -184,22 +216,30 @@ class StaringTests(unittest.TestCase):
 class GameOverTests(unittest.TestCase):
     def test_nothing_happens_after_game_over(self):
         game = Game()
-        run(game, SCREEN, 15.0)
+        run(game, SCREEN, ALL_WARNINGS_TIME)
         self.assertEqual(run(game, LEFT, 5.0), [])
         self.assertEqual(game.answers, 0)
 
     def test_reset(self):
         game = Game()
-        run(game, SCREEN, 15.0)
+        run(game, SCREEN, ALL_WARNINGS_TIME)
         game.reset()
         self.assertEqual(game.state, PLAYING)
         self.assertEqual((game.answers, game.warnings), (0, 0))
         self.assertEqual(game.time_left, EXAM_TIME)
         self.assertIsNone(game.lose_reason)
 
+    def test_exam_time_from_the_settings_menu(self):
+        # The settings menu changes exam_time; the next reset() uses it.
+        game = Game(exam_time=EXAM_TIME + 30)
+        self.assertEqual(game.time_left, EXAM_TIME + 30)
+        game.exam_time = EXAM_TIME + 60
+        game.reset()
+        self.assertEqual(game.time_left, EXAM_TIME + 60)
+
     def test_three_warnings_reason(self):
         game = Game()
-        events = run(game, SCREEN, 15.0)
+        events = run(game, SCREEN, ALL_WARNINGS_TIME)
         self.assertEqual(game.lose_reason, "warnings")
         self.assertIn("lost_warnings", events)
 
@@ -234,6 +274,39 @@ class TeacherRuleTests(unittest.TestCase):
         self.assertIn("caught", events)
         self.assertIn("lost", events)
         self.assertIn("lost_caught", events)
+
+    def test_caught_scene_then_game_over(self):
+        # Caught: the "!" and the torn exam, a rip sound, then game over.
+        game = Game()
+        teacher = FakeTeacher(watching=True, facing=True)
+        run_with(game, LEFT, CAUGHT_TIME, teacher)
+        self.assertEqual(game.scene, CAUGHT_SCENE)
+        self.assertNotIn("rip", run_with(game, LEFT, CAUGHT_EXCLAIM_TIME - DT, teacher))
+        events = run_with(game, LEFT, CAUGHT_SCENE_TIME - CAUGHT_EXCLAIM_TIME + DT, teacher)
+        self.assertEqual(events.count("rip"), 1)
+        self.assertEqual(game.scene, GAME_OVER_SCENE)
+        self.assertIn("nooo", events)
+        run_with(game, LEFT, GAME_OVER_TIME, teacher)
+        self.assertFalse(game.in_scene())   # now main.py shows the end menu
+
+    def test_time_up_goes_straight_to_game_over(self):
+        game = Game()
+        events = run(game, DOWN, EXAM_TIME)
+        self.assertEqual(game.lose_reason, "time")
+        self.assertEqual(game.scene, GAME_OVER_SCENE)
+        self.assertIn("nooo", events)
+
+    def test_skip_only_after_losing(self):
+        game = Game()
+        run(game, SCREEN, WARNING_TIME)        # a warning scene, game still on
+        game.skip_scene()
+        self.assertEqual(game.scene, WARNING_SCENE)
+        self.assertGreater(game.scene_time, DT)  # not skipped
+        game = Game()
+        run(game, DOWN, EXAM_TIME)             # lost: game over scene
+        game.skip_scene()
+        run(game, DOWN, DT)
+        self.assertFalse(game.in_scene())
 
     def test_seen_copying_fills_suspicion_fast(self):
         game = Game()

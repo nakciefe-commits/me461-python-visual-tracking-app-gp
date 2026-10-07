@@ -23,11 +23,30 @@ SMOOTHING = 0.8             # 0..1, lower = steadier but slower
 HOLD_TIME = 0.1             # seconds a new direction must last before it counts
 CALIBRATION_TIME = 2.0      # seconds the player looks at the screen at the start
 
+# --- Menus (head control; degrees are measured from the calibrated screen angle) ---
+MENU_PITCH_THRESHOLD = 12   # degrees; tilt up/down this far → move the selection up/down
+MENU_YAW_THRESHOLD = 18     # degrees; turn right → select, turn left → back
+MENU_MOVE_HOLD = 0.15       # seconds a tilt must last before the selection moves
+MENU_REPEAT_TIME = 0.6      # seconds between moves while the tilt is held
+MENU_SELECT_TIME = 0.8      # seconds a turn must be held to select / go back
+HEAD_PAUSE_AFTER_KEYS = 1.0 # seconds head control is off in the menus after a key press or click
+EXAM_TIME_CHOICES = (60, 90, 120, 200)  # seconds; the exam times the settings menu cycles through
+LOADING_TIME = 3.0          # seconds the "get ready" screen is shown before each game (above 0)
+LOADING_JUMPS = 5           # how many times the loading bar jumps forward (it is stuck in between)
+LOADING_STALL = 0.6         # 0..1; part of the time between two jumps the bar is stuck
+
+# --- Disclaimer (the "official notice" when the game opens) ---
+NOTICE_TYPE_DELAY = 0.6     # seconds before the typing starts (the paper slides in first)
+NOTICE_TYPE_SPEED = 45      # letters per second the notice is typed
+NOTICE_SIGN_TIME = 0.7      # seconds the signature takes to write; then the stamp comes down
+NOTICE_STAMP_HOLD = 1.3     # seconds the stamped paper stays before the game goes on
+
 # --- Window ---
 WINDOW_WIDTH = 960          # pixels
 WINDOW_HEIGHT = 600         # pixels
 FULLSCREEN = False          # True = start as a borderless window covering the screen (F11 toggles)
 MAXIMIZED = True            # True = the normal window starts maximized (title bar and taskbar stay visible)
+SMOOTH_SCALING = True       # True = stretch the 960x600 picture to the window smoothly (less blocky on big screens)
 FPS = 30                    # frames per second the game tries to run at
 
 # --- Rules ---
@@ -37,8 +56,13 @@ STARE_GRACE_TIME = 2.0      # seconds you may look at the screen for free
 STARE_FILL_TIME = 1.0       # seconds after the grace time until a warning
 MAX_WARNINGS = 3            # this many warnings = game over
 POPUP_TIME = 2.0            # seconds a popup stays on screen
+WARNING_SCENE_TIME = 2.5    # seconds the teacher comes over and points at you after a warning; the game is frozen
+TEACHER_APPROACH_TIME = 0.8 # seconds of that scene the teacher takes to walk up to your desk
+CAUGHT_SCENE_TIME = 4.0     # seconds of the "caught" scene: the "!", then the teacher tears up your exam
+CAUGHT_EXCLAIM_TIME = 1.2   # seconds of that scene the "!" is shown before he tears the paper
+GAME_OVER_TIME = 8.0        # seconds of the game over screen (the two logos talking); Space skips it
 TICK_INTERVAL = 0.3         # seconds between tick sounds while copying
-EXAM_TIME = 80              # seconds; run out before all answers are filled = lose
+EXAM_TIME = 200              # seconds; run out before all answers are filled = lose
 
 # --- Teacher ---
 # (min, max) seconds for each teacher state; each time a random value in between is used.
