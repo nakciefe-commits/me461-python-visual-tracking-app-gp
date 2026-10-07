@@ -8,14 +8,27 @@ The game takes a copy of the newest picture without waiting. Missing or stale
 pictures pause the game while this worker retries, instead of closing it.
 """
 
+import sys
 import threading
 import time
 
 import cv2
 
-from settings import (CAMERA_FALLBACK_INDICES, CAMERA_WARMUP_TIME, CAMERA_STALE_TIME,
-                      CAMERA_RECONNECT_TIME, CAMERA_RETRY_INTERVAL,
+from settings import (WINDOWS_DIRECTSHOW, CAMERA_FALLBACK_INDICES, CAMERA_WARMUP_TIME,
+                      CAMERA_STALE_TIME, CAMERA_RECONNECT_TIME, CAMERA_RETRY_INTERVAL,
                       CAMERA_READ_RETRY, CAMERA_STOP_TIMEOUT)
+
+
+def open_device(index):
+    """
+    Open webcam number `index` with OpenCV. On Windows the default camera
+    system (Media Foundation) can take 10+ seconds to open a webcam;
+    DirectShow opens it much faster. If a webcam does not work with it, set
+    WINDOWS_DIRECTSHOW = False in settings.py.
+    """
+    if sys.platform == "win32" and WINDOWS_DIRECTSHOW:
+        return cv2.VideoCapture(index, cv2.CAP_DSHOW)
+    return cv2.VideoCapture(index)
 
 
 class Camera:
@@ -57,7 +70,7 @@ class Camera:
             self.next_index = (self.next_index + 1) % len(self.indices)
         capture = None
         try:
-            capture = cv2.VideoCapture(index)
+            capture = open_device(index)
             if not capture.isOpened():
                 capture.release()
                 self.set_status(f"Camera {index} could not open; retrying. Check other camera apps.")

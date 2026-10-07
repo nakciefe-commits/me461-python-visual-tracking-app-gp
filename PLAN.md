@@ -683,8 +683,9 @@ under 8.5 minutes.
 
 ### 11.10 Where things stand (for whoever picks this up)
 
-- **Branch:** `dont-get-caught`. NOTES #25–#31 are in one commit (after
-  `9c91a49`, NOTES #24): guessing and blanks, the code in folders, the
+- **Branch:** `main`. `dont-get-caught` (the game), `windows` and
+  `windows-support` were merged into it (NOTES #32). NOTES #25–#31 are in one
+  commit (after `9c91a49`, NOTES #24): guessing and blanks, the code in folders, the
   Balatro-style count, the three-exam run with moods, top scores, the
   gossip slot machine, music, crossfades, the hidden suspicion point, the
   ninja and sharp-eye bonuses. All 179 tests pass.

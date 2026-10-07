@@ -16,11 +16,19 @@ glances), see `PLAN.md` section 11.
 
 ## Requirements
 
-- Linux or Windows with Python 3 (developed on Ubuntu 26.04, Python 3.14;
-  on Windows, Python 3.12 is the safest choice, see below)
+- **Linux** (developed on Ubuntu 26.04, Python 3.14) or **Windows 10/11**
+  with **64-bit** Python 3 (3.12 is the safest choice on Windows, see below)
 - A webcam
 
-## Setup
+## Setup and run
+
+The start script creates the `.venv` environment and installs the libraries
+from `requirements.txt` the first time it runs, and again whenever
+`requirements.txt` changes (for example after a `git pull`). After that it
+starts the game right away. The first start needs internet and takes a few
+minutes.
+
+### Linux
 
 ```
 git clone https://github.com/nakciefe-commits/me461-python-visual-tracking-app-gp.git
@@ -32,11 +40,21 @@ That's all: `run.sh` creates the `.venv` environment and installs the
 libraries from `requirements.txt` the first time it runs, and again whenever
 `requirements.txt` changes (for example after a `git pull`).
 
-**Windows:** install Python from [python.org](https://www.python.org/downloads/)
-(tick "Add python.exe to PATH") and clone the repository; `python3-venv` is
-not needed. `run.bat` does the same job as `run.sh`. If installing the
-libraries fails because MediaPipe has no package for your Python version,
-install Python 3.12, delete the `.venv` folder and run `run.bat` again.
+**Windows:**
+
+1. Install **64-bit Python 3** from <https://www.python.org/downloads/>
+   (3.12 is the safest). In the installer, tick **"Add python.exe to PATH"**.
+2. Get the code: `git clone` as above (or GitHub → Code → Download ZIP, and
+   unzip it). `python3-venv` is not needed.
+3. Double-click **`run.bat`**. It does the same job as `run.sh`, and stops
+   with a clear message on 32-bit Python (MediaPipe needs 64-bit). If
+   installing the libraries fails because MediaPipe has no package for your
+   Python version, install Python 3.12, delete the `.venv` folder and run
+   `run.bat` again.
+
+Run the game natively on Windows, not in WSL or a Linux virtual machine: the
+webcam does not work there without extra setup. **Webcam not working?** See
+"If the webcam doesn't work" below.
 
 ## Run
 
@@ -163,6 +181,40 @@ move the teacher (`logic/teacher.py`) and the game rules (`logic/game.py`)
 forward, play sounds for what happened (`ui/sounds.py`), and draw the screen
 with pygame (`ui/render.py`). `main.py` runs the loop. `LEARN.md` explains
 every file.
+
+## If the webcam doesn't work
+
+Go through these in order. After each change, start the game again.
+
+1. **Another program is using the webcam.** Only one program can use it at a
+   time. Close Zoom, Teams, Discord, OBS, the Camera app, and browser tabs with
+   video calls. (The game waits on "WAITING FOR CAMERA" and reconnects by
+   itself once the camera is free.)
+2. **Windows blocks camera access.** Settings → Privacy & security → Camera:
+   turn on **Camera access** and **Let desktop apps access your camera**.
+3. **The camera is switched off or covered.** Many laptops have a sliding
+   cover, a privacy switch, or a camera key (often one of F1–F12 with a
+   camera icon).
+4. **The wrong camera opens** (e.g. a laptop's infrared camera, a virtual
+   camera from OBS, or a phone used as a webcam). In `settings.py` change
+   `CAMERA_INDEX = 0` to `1`, then `2`. To see which numbers work, run this in
+   the project folder; it prints `True` for each camera that opens:
+   - Windows: `.venv\Scripts\python -c "import cv2; [print(i, cv2.VideoCapture(i, cv2.CAP_DSHOW).isOpened()) for i in range(4)]"`
+   - Linux: `.venv/bin/python -c "import cv2; [print(i, cv2.VideoCapture(i).isOpened()) for i in range(4)]"`
+5. **Windows only: the picture is black or frozen, or the game keeps waiting
+   for the camera.** In `settings.py` set `WINDOWS_DIRECTSHOW = False`. The
+   game then uses Windows' default camera system (Media Foundation). It can
+   take 10+ seconds to open, so wait a bit.
+6. **The picture works but the face is not found, or the game is slow.**
+   Turn on a light in front of you. A dark room makes webcams send fewer
+   frames per second and hides the face. Avoid a bright window behind you.
+7. **Linux only: no camera found.** Run `ls /dev/video*`. If nothing is
+   listed, the system doesn't see the webcam (check the cable / USB port). If
+   it is listed but won't open, add yourself to the `video` group:
+   `sudo usermod -aG video $USER`, then log out and in.
+
+If none of this helps, write down the exact error text from the terminal (on
+Windows the `run.bat` window stays open after a crash) and the steps you tried.
 
 ## Tests
 

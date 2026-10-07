@@ -43,8 +43,13 @@ class HeadTracker:
         # direction logic without a camera or model file.
         self.detector = None
         if load_model:
+            # We read the model file ourselves and hand MediaPipe the bytes.
+            # Giving it the file name instead fails on Windows when the folder
+            # path has letters like ç, ş or ı in it.
+            with open(FACE_MODEL_FILE, "rb") as model_file:
+                model = model_file.read()
             options = vision.FaceLandmarkerOptions(
-                base_options=mp.tasks.BaseOptions(model_asset_path=FACE_MODEL_FILE),
+                base_options=mp.tasks.BaseOptions(model_asset_buffer=model),
                 running_mode=vision.RunningMode.VIDEO,
                 num_faces=1,
                 output_facial_transformation_matrixes=True,  # we need the head rotation

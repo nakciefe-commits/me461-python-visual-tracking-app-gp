@@ -155,13 +155,18 @@ straight away.
   with the clock stopped, instead of closing the game.
   `tests/test_camera.py` checks all of that with a fake camera.
 - `release()` stops the thread; the thread gives the webcam back itself.
+- **Windows:** `open_device()` opens the webcam with DirectShow
+  (`cv2.CAP_DSHOW`), which is much quicker there than Windows' default
+  (Media Foundation); `WINDOWS_DIRECTSHOW = False` switches it off.
 
 ### `tracking/head_tracker.py` — where is the head pointing?
 The hardest file. Three parts:
 
 **a) `read(frame, now)`: find the face, compute angles**
 1. Give the frame to MediaPipe's **Face Landmarker** (the model file
-   `face_landmarker.task`). It returns 478 points on the face (`landmarks`) and a
+   `face_landmarker.task`, read into memory by us and handed over as bytes:
+   given a file name, MediaPipe fails on Windows when the folder's path has
+   letters like ç, ş or ı). It returns 478 points on the face (`landmarks`) and a
    **transformation matrix**: a 4×4 table of numbers describing how the head is
    turned.
 2. The matrix's third column is the direction the **nose points**, as an

@@ -58,5 +58,6 @@ explains the code for beginners.
    number, today's date.
 3. Update `README.md` if running or playing changed, `LEARN.md` if how the
    code works changed, `PLAN.md` if the design or the to-do list changed.
-4. Commit or push only when the team asks. The game is on the
-   `dont-get-caught` branch.
+4. Commit or push only when the team asks. The game is on the `main`
+   branch (the `dont-get-caught`, `windows` and `windows-support` branches
+   were merged into it).

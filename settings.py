@@ -14,6 +14,7 @@ CAMERA_RECONNECT_TIME = 1.0  # seconds without a good picture before reopening t
 CAMERA_RETRY_INTERVAL = 0.5  # seconds between open/reconnect attempts
 CAMERA_READ_RETRY = 0.05     # seconds between failed frame reads (avoid a busy loop)
 CAMERA_STOP_TIMEOUT = 1.0    # seconds to wait for the reader on exit; some drivers block in read()
+WINDOWS_DIRECTSHOW = True   # Windows only: False = use Windows' default camera system instead
 FACE_MODEL_FILE = "face_landmarker.task"
 
 # --- Face finding ---

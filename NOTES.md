@@ -1764,3 +1764,57 @@ a real one. Today's mood stops in the middle in red.
   stopped; tests (179) pass; the real `main.py` starts.
   A person should check: does the crossfade feel smooth; is the silence in
   the exam better than quiet music.
+
+---
+
+## Commit #32 — The Windows branches merged into main; main is the working branch
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The team wanted every branch in `main`. `dont-get-caught` (the game, NOTES
+#25–#31) was already in it (fast-forward). The two Windows branches were
+merged with real merges: `windows` (NOTES "#8 — Windows launcher" there,
+3 Oct) and `windows-support` (NOTES "#7 — Windows support" there, 1 Oct).
+Both started before the code was moved into folders, so their changes were
+carried over by hand. Emre's branch was **not** merged: his ideas (gradual
+focus, camera reconnecting) were brought in earlier (NOTES #24), and the
+team chose not to take the rest. From now on the game is developed on
+`main`.
+
+### Added
+
+| File | Change |
+|---|---|
+| `run.bat` | The Windows launcher, from `windows-support` (the fuller one of the two): creates `.venv` with `py -3` (or `python`), refuses 32-bit Python with a clear message (MediaPipe needs 64-bit), installs `requirements.txt` when it changed, starts the game, keeps the window open after a crash. |
+| `.gitattributes` | `*.bat` with Windows line endings (CRLF), `*.sh` with Linux ones (LF), on every computer. |
+| `tracking/camera.py` | `open_device()`: DirectShow on Windows (Media Foundation can take 10+ s to open a webcam). |
+| `settings.py` | `WINDOWS_DIRECTSHOW = True`. |
+| `README.md` | Windows in Requirements and Setup (64-bit Python, 3.12 safest, not in WSL), `run.bat` in Run, "If the webcam doesn't work" (7 steps, from `windows-support`'s NOTES, updated for the camera that now waits and reconnects). |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `tracking/head_tracker.py` | The face model is read by us and given to MediaPipe as bytes (`model_asset_buffer`): with a file name it fails on Windows in folders with letters like ç, ş, ı. |
+| `CLAUDE.md`, `PLAN.md` | The working branch is `main`. |
+| `LEARN.md` | DirectShow and the model as bytes. |
+
+### Removed
+
+| Item | Why |
+|---|---|
+| `STEPS.md`, the root `camera.py` from `windows-support` | Already gone or moved (`tracking/camera.py`); the change was carried over by hand. |
+| The two Windows NOTES entries numbered #7 and #8 | They clashed with this file's #7 and #8; they are summed up in this entry instead (the originals stay in the branches' history). |
+
+### Details worth knowing
+
+- `git log` keeps both Windows commits, so their original notes can still
+  be read (`git show f56b2b9`, `git show 9c73a4b`).
+- This computer only fetched `dont-get-caught` from GitHub, so its copy of
+  `origin/main` was old; `remote.origin.fetch` now fetches every branch.
+- Tests: 179 pass. The real game starts on Linux with the model loaded as
+  bytes. **Not tried on Windows**: a person should double-click `run.bat`
+  on a fresh clone on Windows, check that it installs, that the webcam
+  opens quickly (DirectShow) and that the game runs.
