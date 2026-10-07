@@ -364,7 +364,8 @@ main menu and the results; tests (152).
    Final) with moods. Still: the teacher checks more often as the exam goes
    on (phase B); Easy/Normal/Hard; letter grades (11.6.5).
 6. **Final testing and README:** fresh `git clone` on another computer,
-   screenshot, credits and licences for art and sounds.
+   screenshot, credits and licences for art and sounds. Try `run.bat` on a
+   real Windows computer (written on Linux, not yet run on Windows).
 
 ---
 

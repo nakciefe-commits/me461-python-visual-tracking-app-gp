@@ -16,7 +16,8 @@ glances), see `PLAN.md` section 11.
 
 ## Requirements
 
-- Linux with Python 3 (developed on Ubuntu 26.04, Python 3.14)
+- Linux or Windows with Python 3 (developed on Ubuntu 26.04, Python 3.14;
+  on Windows, Python 3.12 is the safest choice, see below)
 - A webcam
 
 ## Setup
@@ -31,11 +32,20 @@ That's all: `run.sh` creates the `.venv` environment and installs the
 libraries from `requirements.txt` the first time it runs, and again whenever
 `requirements.txt` changes (for example after a `git pull`).
 
+**Windows:** install Python from [python.org](https://www.python.org/downloads/)
+(tick "Add python.exe to PATH") and clone the repository; `python3-venv` is
+not needed. `run.bat` does the same job as `run.sh`. If installing the
+libraries fails because MediaPipe has no package for your Python version,
+install Python 3.12, delete the `.venv` folder and run `run.bat` again.
+
 ## Run
 
 ```
 ./run.sh
 ```
+
+On Windows, double-click `run.bat` (or type `run.bat` in a terminal in the
+project folder).
 
 The game opens with our team's "Glitch Please" intro (any key skips it), then
 a (satirical) official notice on a desk: it is typed out (Space shows it all
@@ -142,7 +152,8 @@ to track.
 To tune the head tracking, watch the yaw/pitch numbers under the webcam
 preview and change the numbers in `settings.py`.
 
-The old body tracker still runs with `.venv/bin/python old/tracker.py`.
+The old body tracker still runs with `.venv/bin/python old/tracker.py`
+(Windows: `.venv\Scripts\python old\tracker.py`).
 
 ## How it works
 
@@ -158,6 +169,8 @@ every file.
 ```
 .venv/bin/python -m unittest discover -s tests -v
 ```
+
+On Windows: `.venv\Scripts\python -m unittest discover -s tests -v`
 
 ## Files
 
@@ -196,7 +209,9 @@ you see and hear. `main.py` and `settings.py` stay at the top.
 | `ui/glitch_intro.py` | Our team's "Glitch Please" intro. One file, only needs pygame: copy it into any project. |
 | `tests/` | Unit tests for the rules, the tracker and the menus. |
 | `old/tracker.py` | The first body tracker, kept for reference. |
-| `run.sh` | Launcher. |
+| `run.sh` | Launcher (Linux). |
+| `run.bat` | Launcher (Windows). |
+| `.gitattributes` | Keeps Windows line endings in `run.bat`. |
 | `face_landmarker.task` | Pre-trained MediaPipe face model. |
 | `pose_landmarker.task` | Pre-trained MediaPipe pose model, used by `old/tracker.py`. |
 | `assets/images/` | The four classroom pictures, plus the three look-away pictures (`classroom_desk_looking_down/left/right`) and each neighbour's paper with a letter (`left_A` … `left_D`, `left_unknown` = "?", same for `right_`), the teacher pointing at you after a warning (`classroom_warning`) (`original/`: as made by Gemini, before sharpening). |

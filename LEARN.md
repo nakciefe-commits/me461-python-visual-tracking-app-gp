@@ -685,7 +685,7 @@ such frame: the alarm.
 
 ## 5. Try it yourself
 
-Small changes to learn by doing. Run `./run.sh` after each one.
+Small changes to learn by doing. Run `./run.sh` (Windows: `run.bat`) after each one.
 
 1. **Easy:** in `settings.py`, set `PAPER_FOCUS_TIME = 1.0`. Copying is now much faster.
 2. **Easy:** in `QUIZZES`, give the Quiz 5 questions instead of 3. Check that

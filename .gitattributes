@@ -1,0 +1,3 @@
+# Windows batch files need Windows line endings (CRLF): with Linux line
+# endings, cmd.exe can jump to the wrong "goto" label.
+*.bat text eol=crlf
