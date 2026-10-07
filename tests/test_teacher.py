@@ -7,8 +7,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from teacher import Teacher, BUSY, TURNING, WATCHING, BOARD, DESK
-from settings import TEACHER_DURATIONS, CAUGHT_GRACE
+from logic.teacher import Teacher, BUSY, TURNING, WATCHING, BOARD, DESK
+from settings import TEACHER_DURATIONS, CAUGHT_GRACE, MOODS
 
 DT = 0.05
 
@@ -119,6 +119,60 @@ class TeacherTests(unittest.TestCase):
             for shown in ("A", "B", "C", "D", "unknown"):
                 path = os.path.join(root, f"{side}_{shown}.jpeg")
                 self.assertTrue(os.path.exists(path), path)
+
+
+class KeepWatchingTests(unittest.TestCase):
+    def watching_teacher(self):
+        teacher = Teacher(random.Random(4))
+        while teacher.state != WATCHING:
+            teacher.update(DT)
+        return teacher
+
+    def test_keeps_watching_while_suspicious(self):
+        teacher = self.watching_teacher()
+        for _ in range(round(30 / DT)):   # far longer than any watching time
+            self.assertEqual(teacher.update(DT, keep_watching=True), [])
+        self.assertEqual(teacher.state, WATCHING)
+
+    def test_goes_back_to_work_when_not(self):
+        teacher = self.watching_teacher()
+        for _ in range(round(30 / DT)):
+            teacher.update(DT, keep_watching=True)
+        self.assertEqual(teacher.update(DT), ["state:" + BUSY])
+
+    def test_busy_teacher_is_not_affected(self):
+        teacher = Teacher(random.Random(5))
+        for _ in range(round(10 / DT)):
+            teacher.update(DT, keep_watching=True)
+            if teacher.state == WATCHING:
+                break
+        self.assertEqual(teacher.state, WATCHING)   # he still turns as usual
+
+
+class MoodTests(unittest.TestCase):
+    def test_every_mood_keeps_its_durations(self):
+        # A mood only changes the numbers: each state lasts inside its range.
+        for mood, numbers in MOODS.items():
+            teacher = Teacher(random.Random(1), mood)
+            limits = {BUSY: numbers["busy"], WATCHING: numbers["watching"],
+                      TURNING: TEACHER_DURATIONS[TURNING]}
+            for state, _, lasted in ten_minutes(teacher):
+                shortest, longest = limits[state]
+                self.assertGreaterEqual(lasted, shortest - 1e-6, (mood, state))
+                self.assertLessEqual(lasted, longest + DT + 1e-6, (mood, state))
+
+    def test_moods_move_as_often_as_they_say(self):
+        # A restless mood changes place more often than a calm one.
+        def moves(mood):
+            places = [place for _, place, _ in ten_minutes(Teacher(random.Random(2), mood))]
+            return sum(a != b for a, b in zip(places, places[1:]))
+        calm = min(MOODS, key=lambda mood: MOODS[mood]["move"])
+        restless = max(MOODS, key=lambda mood: MOODS[mood]["move"])
+        self.assertGreater(moves(restless), moves(calm))
+
+    def test_no_mood_is_the_plain_teacher(self):
+        teacher = Teacher(random.Random(3))
+        self.assertEqual(teacher.durations, TEACHER_DURATIONS)
 
 
 if __name__ == "__main__":

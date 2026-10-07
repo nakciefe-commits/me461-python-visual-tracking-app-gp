@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from disclaimer import Disclaimer
+from logic.disclaimer import Disclaimer
 from settings import NOTICE_TYPE_DELAY, NOTICE_TYPE_SPEED, NOTICE_SIGN_TIME, NOTICE_STAMP_HOLD
 
 DT = 0.05

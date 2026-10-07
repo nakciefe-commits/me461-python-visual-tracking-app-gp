@@ -24,18 +24,33 @@ tested without a window (see tests/test_teacher.py).
 
 import random
 
-from settings import TEACHER_DURATIONS, MOVE_CHANCE, CAUGHT_GRACE
+from settings import TEACHER_DURATIONS, MOVE_CHANCE, CAUGHT_GRACE, MOODS
 
 BUSY, TURNING, WATCHING = "BUSY", "TURNING", "WATCHING"
 BOARD, DESK = "BOARD", "DESK"
 
 
 class Teacher:
-    def __init__(self, rng=None):
+    def __init__(self, rng=None, mood=None):
         # Tests pass a random.Random with a fixed seed, so the "random"
         # durations are the same every run.
         self.rng = rng or random.Random()
+        self.set_mood(mood)
         self.reset()
+
+    def set_mood(self, mood):
+        """
+        Today's mood (a name from MOODS in settings.py), or None for the
+        plain teacher. A mood changes how long he is busy and watching, and
+        how often he moves between the board and the desk.
+        """
+        self.mood = mood
+        self.durations = dict(TEACHER_DURATIONS)
+        self.move_chance = MOVE_CHANCE
+        if mood is not None:
+            self.durations[BUSY] = MOODS[mood]["busy"]
+            self.durations[WATCHING] = MOODS[mood]["watching"]
+            self.move_chance = MOODS[mood]["move"]
 
     def reset(self):
         self.place = BOARD
@@ -46,16 +61,21 @@ class Teacher:
         self.state = state
         self.time_in_state = 0.0
         self.turning_heard = False   # has the player heard this TURNING yet?
-        shortest, longest = TEACHER_DURATIONS[state]
+        shortest, longest = self.durations[state]
         self.duration = self.rng.uniform(shortest, longest)
 
-    def update(self, dt):
+    def update(self, dt, keep_watching=False):
         """
         Move the teacher forward by dt seconds. Returns ["state:<NEW STATE>"]
         when the state changes (main.py plays a sound for it), otherwise [].
+        keep_watching=True (the suspicion bar is above the exam's hidden
+        point, see game.under_suspicion()): his watching does not end, he
+        keeps his eyes on you.
         """
         self.time_in_state += dt
         if self.time_in_state < self.duration:
+            return []
+        if self.state == WATCHING and keep_watching:
             return []
 
         if self.state == BUSY:
@@ -64,7 +84,7 @@ class Teacher:
             self.start(WATCHING)
         else:
             # Back to work, sometimes at the other place.
-            if self.rng.random() < MOVE_CHANCE:
+            if self.rng.random() < self.move_chance:
                 self.place = DESK if self.place == BOARD else BOARD
             self.start(BUSY)
         return ["state:" + self.state]

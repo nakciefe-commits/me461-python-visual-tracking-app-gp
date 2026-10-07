@@ -10,7 +10,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from camera import Camera
+from tracking.camera import Camera
 from settings import (CAMERA_STALE_TIME, CAMERA_RECONNECT_TIME,
                       CAMERA_STOP_TIMEOUT, CAMERA_WARMUP_TIME)
 
@@ -19,14 +19,14 @@ class CameraTests(unittest.TestCase):
     def setUp(self):
         self.now = 100.0
         self.image = np.ones((2, 3, 3), dtype=np.uint8)
-        self.factory = self.start_patch('camera.cv2.VideoCapture')
-        self.start_patch('camera.threading.Thread')
-        self.start_patch('camera.time.monotonic', side_effect=lambda: self.now)
+        self.factory = self.start_patch('tracking.camera.cv2.VideoCapture')
+        self.start_patch('tracking.camera.threading.Thread')
+        self.start_patch('tracking.camera.time.monotonic', side_effect=lambda: self.now)
         self.start_patch('builtins.print')
-        self.start_patch('camera.CAMERA_FALLBACK_INDICES', (0,))
+        self.start_patch('tracking.camera.CAMERA_FALLBACK_INDICES', (0,))
         self.camera = Camera(1)
         # Run the worker synchronously with a fake clock; no sleeps or races.
-        self.start_patch('camera.threading.Event.wait', side_effect=self.advance_time)
+        self.start_patch('tracking.camera.threading.Event.wait', side_effect=self.advance_time)
 
     def start_patch(self, name, *args, **kwargs):
         patcher = patch(name, *args, **kwargs)

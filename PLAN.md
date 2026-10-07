@@ -17,14 +17,16 @@ the player's head. The player can do three things:
 
 | # | Action | Head direction | Why do it |
 |---|---|---|---|
-| 1 | Look at the exam paper | **Down** | Safe, and the only place to write an answer (keys A-D), but you see and hear nothing. |
+| 1 | Look at the exam paper | **Down** | Safe, and the only place to write an answer (keys A-D, S = blank), but you see and hear nothing. |
 | 2 | Look at the teacher | **Straight at the monitor** | The only way to *see* what the teacher is doing, but staring while they look at the class is suspicious. |
 | 3 | Copy from a neighbour | **Left or right** | The only way to read answers, but if the teacher sees it, you get caught. |
 
-**Goal:** write all 5 answers before the exam time runs out, without getting
-caught and without collecting 3 warnings. Each answer is A, B, C or D, and
-only one neighbour knows it; the other one's paper shows "?". At the end the
-exam is graded (e.g. 4/5 correct).
+**Goal:** a run is three exams (the Quiz, the Midterm, the Final; section
+11). In each, answer every question without getting caught and without
+collecting 3 warnings. Each answer is A, B, C or D, and only one neighbour
+knows it; the other one's paper shows "?". You may also guess, or leave a
+question blank. Each question is worth one point: right +1, wrong −0.5,
+blank 0. When the clock runs out the paper is collected as it is.
 
 ### Why it is fun: the information problem
 
@@ -80,10 +82,10 @@ Each webcam frame becomes one of:
 - Always safe. Nothing fills; the suspicion bar drains.
 - The screen shows your own paper (`classroom_desk_looking_down`) with the
   letters written so far on the answer lines.
-- **Writing:** press A, B, C or D to write the current answer. It only works
-  while looking down, and only after the answer has been read from the
-  neighbour who knows it. Any letter is accepted (you have to remember what
-  you read); wrong ones only show in the grade at the end. Then the next
+- **Writing:** press A, B, C or D to write the current answer, or S to leave
+  it blank. It only works while looking down. Any letter is accepted, read
+  or not: an unread letter is a guess (right +1, wrong −0.5, blank 0), so
+  copying is the safe way to points and guessing a gamble. Then the next
   question starts.
 - No sound from the teacher at all.
 
@@ -128,10 +130,16 @@ the player when the teacher looked away: it drains slowly
 
 | Outcome | Condition | Sound |
 |---|---|---|
-| **Win** (exam handed in) | 5 answers written; the end screen shows how many are right | rising notes |
-| **Lose: caught** | suspicion bar full while seen copying | MGS alert |
-| **Lose: warnings** | 3 warnings | MGS alert |
-| **Lose: time** | `EXAM_TIME` (60 s) runs out | falling notes |
+| **Handed in** (graded) | every question answered or left blank | rising notes |
+| **Collected** (graded) | the exam's time runs out: the rest count as blank | falling notes |
+| **Failed: caught** (0 points) | suspicion bar full while seen copying | MGS alert |
+| **Failed: warnings** (0 points) | 3 warnings | MGS alert |
+
+A graded exam's score is counted up part by part on the end screen, like
+in Balatro: each question (+1000 / −500 / 0), the early hand-in bonus (up to
++1000, the share of the time left), close calls (100–500, more the fuller
+the suspicion bar was when you got away, +300 above 80 %) and −300 per
+warning. A failed exam goes to the game over chat and scores 0.
 
 ---
 
@@ -261,7 +269,7 @@ safe       "hmm" sound   copying = caught
 |---|---|
 | `state:TURNING` | `luigi-hmm.mp3` |
 | `lost_caught`, `lost_warnings` | `mgs-alert-sound.mp3` |
-| `tick`, `read` (ding), `write` (pencil scratch), `warning`, `spotted`, `won`, `lost_time` | generated beeps |
+| `read` (ding), `write` (pencil scratch), `warning`, `spotted`, `won`, `time_up`, `tally0`… (the score count, a semitone higher each), `tally_done`, `new_top` (fanfare) | generated beeps |
 
 `Erasing Chalk On Chalkboard Sound Effect.mp3` is in the folder but not used
 yet (see section 8).
@@ -271,23 +279,34 @@ yet (see section 8).
 ## 6. Code structure
 
 ```
-main.py            Main loop and screens (notice, start, calibrating, menus, game, end)
-menu.py            Menus: selected item; head tilt/turn → up/down/select/back; loading bar
-disclaimer.py      The opening notice: typed, signed, stamped
-glitch_intro.py    Our team's intro (self-contained, for every project)
-camera.py          Reads the webcam in a background thread
-head_tracker.py    Webcam frame → yaw/pitch → DOWN / SCREEN / LEFT / RIGHT / None
-teacher.py         Teacher state machine; which sounds the player hears
-game.py            Rules: bars, answers, warnings, clock, win/lose. No drawing.
-render.py          All drawing
-sounds.py          Generated beeps + sound files, played by name
-settings.py        Every tuning number
-tests/             unittest tests for the rules and the tracker logic
-tracker.py         Old body tracker, kept for reference
+main.py              Main loop and screens (notice, start, calibrating, menus, game, results)
+settings.py          Every tuning number, also the exams (QUIZZES) and the moods (MOODS)
+logic/               The rules, no drawing, no camera, all tested
+  game.py            One exam: clock, warnings, caught, scenes, score
+  exam_paper.py      Answer key, what you wrote, the grade (+1 / -0.5 / 0)
+  neighbours.py      Reading a neighbour's paper (gradual focus)
+  suspicion.py       The suspicion bar and close calls
+  run.py             Three exams in a row, their moods, the total
+  teacher.py         Teacher state machine and mood; which sounds the player hears
+  tally.py           The score count, one part at a time
+  highscore.py       The top scores file
+  menu.py            Menus: selected item; head tilt/turn -> up/down/select/back; loading bar
+  disclaimer.py      The opening notice: typed, signed, stamped
+tracking/
+  camera.py          Reads the webcam in a background thread
+  head_tracker.py    Webcam frame -> yaw/pitch -> DOWN / SCREEN / LEFT / RIGHT / None
+ui/
+  render.py          The Renderer: fonts and pictures; drawing in the files below
+  style.py           Colours, fonts, the neon helpers
+  draw_game.py, draw_scenes.py, draw_results.py, draw_menus.py, draw_notice.py
+  sounds.py          Generated beeps + sound files, played by name
+  glitch_intro.py    Our team's intro (self-contained, for every project)
+tests/               unittest tests for logic/ and the tracker logic
+old/tracker.py       Old body tracker, kept for reference
 ```
 
 Each frame: read the webcam → head direction → `teacher.update(dt)` and
-`game.update(direction, dt, teacher)` return **events** (`"tick"`,
+`game.update(direction, dt, teacher)` return **events** (`"read"`,
 `"spotted"`, `"state:TURNING"`, …) → play a sound for each → draw. `dt` (time
 since the last frame) keeps the speed the same at any frame rate.
 
@@ -296,11 +315,13 @@ since the last frame) keeps the speed the same at any frame rate.
 ## 7. Open questions
 
 - **Q1 — How is an answer filled?** ✅ decided: look sideways to read the
-  letter (or "?"), then look down and press A-D to write it. Wrong letters
-  only lower the grade.
+  letter (or "?"), then look down and press A-D to write it. Guessing
+  without reading is allowed too; S leaves it blank (right +1, wrong −0.5,
+  blank 0).
 - **Q2 — Interrupted copying:** ✅ decided: progress is **kept**.
 - **Q3 — Number of warnings:** 3 (could be 2).
-- **Q4 — Exam time:** ✅ 60 s for now; tune by playtesting.
+- **Q4 — Exam time:** ✅ fixed per exam of the run (150 / 130 / 120 s); when
+  it runs out the paper is collected and graded.
 - **Q5 — Does staring count while the teacher is busy?** ✅ No.
 
 ---
@@ -315,12 +336,18 @@ neighbour and written on your paper, graded at the end; neon main menu,
 how-to-play, settings and end menus controlled by the head (the keyboard
 pauses the head for 1 s); warning, caught and game over scenes; the Glitch
 Please intro; the official notice; gradual focus instead of the copy bar;
-score, close calls and a best score; camera reconnecting; tests (121).
+score, close calls and a best score; camera reconnecting; guessing and
+leaving blank (+1 / −0.5 / 0), time up collects the paper; the score counted
+up like Balatro; the code split into `logic/`, `tracking/`, `ui/`; the
+three-exam run with moods as numbers and the gossip line (11.8 phase A);
+early bonus and close calls growing with the suspicion; top 5 scores on the
+main menu and the results; tests (152).
 
 **Next, roughly in order:**
 
-0. **The next big update: three quizzes and the teacher's moods.** Being
-   planned in section 11; it changes items 1, 2 and 5 below.
+0. **The next big update: three quizzes and the teacher's moods.** Phase A
+   is done; next is phase B, the real moods (section 11.8). It changes
+   items 1, 2 and 5 below.
 
 1. **Playtest and tune** the numbers in `settings.py` with the whole team
    (teacher durations, `PAPER_FOCUS_TIME`, `EXAM_TIME`, `CAUGHT_TIME`). Test with
@@ -333,10 +360,9 @@ score, close calls and a best score; camera reconnecting; tests (121).
 4. **Menus and polish:** ✅ main menu, how-to-play screen, settings, end
    menu, all head-controlled (commit #15). Still: end screen with
    time/warnings, readable webcam errors, menu music.
-5. **Difficulty and score:** ✅ score (right answers, time left, close
-   calls, warnings) and a best-score file. Still: the teacher checks more
-   often as the exam goes on; Easy/Normal/Hard; levels (Quiz → Midterm →
-   Final) with different teachers.
+5. **Difficulty and score:** ✅ score, top scores, levels (Quiz → Midterm →
+   Final) with moods. Still: the teacher checks more often as the exam goes
+   on (phase B); Easy/Normal/Hard; letter grades (11.6.5).
 6. **Final testing and README:** fresh `git clone` on another computer,
    screenshot, credits and licences for art and sounds.
 
@@ -354,7 +380,10 @@ score, close calls and a best score; camera reconnecting; tests (121).
 - **Hand gestures:** raise a hand to distract the teacher once per game.
 - **Two-player mode:** one cheats, the other controls the teacher.
 - **More settings:** sensitivity, volume, difficulty (the settings menu
-  has exam time, sound on/off, fullscreen and recalibrate).
+  has sound on/off, fullscreen and recalibrate).
+- **Background music:** ✅ `theme.mp3` (made by the team with Suno) loops:
+  normal in the menus, quiet in the exam (NOTES #28). Maybe later: a second,
+  tenser track for the exam.
 
 ---
 
@@ -409,15 +438,17 @@ attentive player can always notice a sign.
   result ("Quiz 1: 3200 points") → Quiz 2 → result → Quiz 3 → final screen
   (the three scores, the total, the best score).
 
-**Proposed** (waiting for a yes):
+**Built** (phase A, NOTES #26):
 
-- Losing a quiz (caught, 3 warnings, time up) scores **0 for that quiz**,
-  and the run **goes on to the next quiz**, so a run is always three quizzes
-  and its length stays predictable. The game over chat of the two logos
-  comes at the end of the run (e.g. when no quiz was passed).
-- Each quiz starts with **0 warnings**.
-- The **exam time setting goes away** (the times are fixed per quiz, so
-  best scores are fair); maybe a "difficulty" setting instead.
+- Failing an exam (caught, 3 warnings) scores **0 for that exam**, and the
+  run **goes on to the next one**, so a run is always three exams. Time up
+  is not a failure: the paper is collected and graded.
+- The game over chat comes right after a failed exam; a graded one gets
+  the Balatro-style score count.
+- Each exam starts with **0 warnings**.
+- The **exam time setting is gone** (the times are fixed per exam, so top
+  scores are fair).
+- The questions: **3 / 4 / 5**.
 
 ### 11.3 The same teacher, a different mood every day (decided)
 
@@ -426,6 +457,17 @@ different **mood**. The loading screen tells it as hallway gossip, e.g.
 **"HALLWAY GOSSIP: Someone scratched his motorcycle."** That is a joke and
 a hint at once: the player knows what kind of day it is. Each mood has its
 own behaviour and its own **sign** to learn.
+
+Before each exam a **hallway gossip** screen (built, NOTES #27, #30): a
+slot machine spins over the exam's moods and stops on today's, then a short
+story and what it means, as + and − lines. The Quiz has only good (or
+plain) moods, the Midterm moods with good and bad sides, the Final only bad
+ones; each exam picks from 4–5 (`QUIZZES`, `MOODS`). The six moods in the
+table below were the first draft.
+
+**He keeps an eye on you** (built, NOTES #30): above a hidden point on the
+suspicion bar (60 % / 45 % / 30 % for the three exams) the teacher's watching
+does not end until the bar drains back under it.
 
 Each quiz has a **pool of two moods** (decided); a run picks one of the two
 at random, so the difficulty grows quiz by quiz but no two runs are the
@@ -522,7 +564,7 @@ was the old copy bar — reading now takes `PAPER_FOCUS_TIME`, 2.5 s.)
 Proposed rules: the canteen offers **2 random cards, you take 1**; cards
 last until the end of the run, so at most 2 per run.
 
-**4. Score and adrenaline — mostly there already, one change.**
+**4. Score and adrenaline — ✅ done (NOTES #26).**
 - *Early hand-in bonus* (points per second left): already there (the time
   bonus, as a share of the exam time).
 - *Close call*: already there, but every escape gives the same +150.
@@ -555,13 +597,13 @@ share of right answers, not "5/5".)
 ### 11.7 Order of work
 
 1. **Core:** the three-quiz run with the moods and the controlled-random
-   teacher (11.2–11.4) — in two phases, see 11.8.
-2. **Cheap and strong:** letter grades; close-call bonus growing with the
+   teacher (11.2–11.4) — in two phases, see 11.8. ✅ Phase A done; phase B next.
+2. **Cheap and strong:** letter grades; ✅ close-call bonus growing with the
    suspicion.
 3. **Playing again:** the canteen and 3–4 cards.
 4. **Experiment:** looking UP.
 
-### 11.8 Plan for the three-quiz run (talked through, not built yet)
+### 11.8 Plan for the three-quiz run (phase A built in NOTES #26)
 
 **What changes in the code.** Today one "game" is one exam: `Game` holds the
 rules of one quiz, and when it ends the end menu comes. A layer goes on top:
@@ -623,33 +665,33 @@ question count and mood.
 longest one (150 + 130 + 120 s, plus loading, scenes and results) stays
 under 8.5 minutes.
 
-### 11.9 Decisions still open (with our proposals)
+### 11.9 Decisions (taken when phase A was built)
 
-| # | Question | Proposal |
+| # | Question | Decided |
 |---|---|---|
-| 1 | A quiz is lost (caught, 3 warnings, time up): then what? | **0 points for that quiz, go on to the next.** The run is always 3 quizzes. The caught scene plays; the game over chat does not (see 3). |
-| 2 | How many questions per quiz? | **3 / 4 / 5**: harder each time, and the run stays short. (5/5/5 also works, but the run gets longer.) |
-| 3 | When does the game over chat (Gemini and Claude logos) come? | **At the end of every run**, with lines depending on the result: they mock a bad run, they are jealous of a good one. |
-| 4 | Letter grades (AA–FF) already in phase A? | **Yes**: the result screens are new anyway, so a big grade instead of a number costs almost nothing. Thresholds to decide (share of right answers, warnings, close calls). |
-| 5 | The "exam time" option in Settings | **Remove it**: times are fixed per quiz, so best scores are fair. Maybe a "difficulty" option later. |
-| 6 | Warnings | **Start from 0 in every quiz.** |
-| 7 | How long is the result screen between quizzes? | **4 s, or Space.** |
-| 8 | Which moods stay (11.3)? | All six as proposed until the team says otherwise; each quiz has a pool of two (decided). |
-| 9 | Canteen and cards (11.6) | Rules proposed: 2 random cards offered, take 1, they last the run. Energy drink and earpiece only in their changed form. |
+| 1 | An exam is failed: then what? | **0 points for that exam, go on to the next.** Time up is not a failure: the paper is collected and graded. |
+| 2 | How many questions per exam? | **3 / 4 / 5.** |
+| 3 | When does the game over chat come? | **Right after a failed exam.** (The proposal was "at the end of every run"; the team chose: score count when the exam is not failed, chat when it is.) |
+| 4 | Letter grades (AA–FF) in phase A? | **Not yet.** The grade is shown as points ("2.5 / 3"); letter grades are the next cheap step (11.6.5). |
+| 5 | The "exam time" option in Settings | **Removed.** |
+| 6 | Warnings | **Start from 0 in every exam.** |
+| 7 | The result screen between exams | **The score count, then a menu:** "Next exam" / "Main menu" (not a timer). |
+| 8 | Which moods stay (11.3)? | All six, as numbers for now; each exam has a pool of two. |
+| 9 | Canteen and cards (11.6) | Still to build; rules as proposed. |
+| 10 | Best score | **Top 5 runs** on the main menu and the results, the new one lit up with "NEW HIGH SCORE!". |
 
 ### 11.10 Where things stand (for whoever picks this up)
 
-- **Branch:** `dont-get-caught`. Last commit `9db2613` (NOTES #15–#23:
-  menus, scenes, Glitch Please intro, official notice, softer menus).
-- **Not committed yet (NOTES #24):** gradual focus instead of the copy bar,
-  camera reconnecting (both taken from Emre's branch), score, close calls,
-  best score (`highscore.py`), no focus bar, and this section 11. All 121
-  tests pass.
+- **Branch:** `dont-get-caught`. NOTES #25–#31 are in one commit (after
+  `9c91a49`, NOTES #24): guessing and blanks, the code in folders, the
+  Balatro-style count, the three-exam run with moods, top scores, the
+  gossip slot machine, music, crossfades, the hidden suspicion point, the
+  ninja and sharp-eye bonuses. All 179 tests pass.
 - **Emre's branch** `me461-python-visual-tracking-app2-gp` (commit
-  `2ddf878`) started from `681fe15` and rebuilt the papers differently. It
-  was **not merged**; his gradual focus and camera code were brought over
-  (NOTES #24 lists what was and was not taken). The team decided not to
-  follow the rest of his plan.
+  `2ddf878`) was not merged; its README and parts of its `render.py` are
+  in Turkish.
 - **Sounds:** the team picks the sound files from a library themselves;
-  until then sounds made in code stand in (`sounds.py`, `SOUND_FILES`).
-- **Next step:** answer 11.9, then build phase A of 11.8.
+  until then sounds made in code stand in (`ui/sounds.py`, `SOUND_FILES`).
+  The background music is `assets/sounds/theme.mp3` (Suno).
+- **Next step:** play a whole run with the webcam and tune `QUIZZES` and
+  `MOODS`; then phase B (11.4): bluffs, sneaky glances, sign sounds.

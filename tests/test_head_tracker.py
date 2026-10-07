@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from head_tracker import HeadTracker, Calibration, DOWN, SCREEN, LEFT, RIGHT
+from tracking.head_tracker import HeadTracker, Calibration, DOWN, SCREEN, LEFT, RIGHT
 from settings import PITCH_DOWN_THRESHOLD, YAW_THRESHOLD, HOLD_TIME
 
 # Clearly past the "down" threshold, whatever it is set to in settings.py.

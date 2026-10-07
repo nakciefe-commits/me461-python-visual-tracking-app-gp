@@ -6,13 +6,21 @@ the speaker where to be at each moment, and a sine wave of those numbers is a
 beep. A sound listed in SOUND_FILES is loaded from assets/sounds/ instead,
 replacing the beep of the same name.
 
-If the computer has no working sound device, the game keeps running silently.
+The background music (MUSIC_FILE) is different: it is long, so pygame plays
+it straight from the file ("streaming", pygame.mixer.music) instead of
+loading it all, over and over. It plays only in the menus and fades out
+before an exam (main.py says when, see music()), and back in after it.
+
+If the computer has no working sound device, or a file is missing, the game
+keeps running (silently, or with a beep instead).
 """
 
 import os
 
 import numpy as np
 import pygame
+
+from settings import MUSIC_VOLUME, MUSIC_FADE_TIME
 
 SAMPLE_RATE = 44100   # numbers per second of sound
 VOLUME = 0.4          # 0.0-1.0
@@ -25,6 +33,7 @@ SOUND_FILES = {
     "lost_warnings": "mgs-alert-sound.mp3",   # game over: too many warnings
     "nooo": "noooo.mp3",                      # the game over screen (optional file)
 }
+MUSIC_FILE = "theme.mp3"   # the background music in SOUND_FOLDER (optional), looped
 
 
 def tone(freq, seconds, fade=True):
@@ -34,6 +43,20 @@ def tone(freq, seconds, fade=True):
     if fade:
         wave *= np.linspace(1.0, 0.0, len(t))
     return wave
+
+
+def synth(freq, seconds):
+    """
+    An 80s synth note for the buttons: a sine with some of its odd harmonics
+    (3x and 5x the frequency) added, which sounds brighter and "buzzier",
+    like an old synthesizer. A very short start (no click) and a quick decay.
+    """
+    t = np.arange(int(SAMPLE_RATE * seconds)) / SAMPLE_RATE
+    wave = (np.sin(2 * np.pi * freq * t) + 0.35 * np.sin(2 * np.pi * 3 * freq * t)
+            + 0.15 * np.sin(2 * np.pi * 5 * freq * t)) / 1.5
+    attack = np.minimum(1.0, t / 0.004)              # 4 ms fade in
+    decay = np.exp(-t / (seconds / 3))               # dies away quickly
+    return wave * attack * decay
 
 
 def scribble(seconds):
@@ -68,6 +91,15 @@ def nooo(seconds):
     return 0.6 * wave * np.minimum(1.0, 6 * (1 - t / seconds))   # fades out at the end
 
 
+TALLY_TICKS = 16          # how many tally ticks are made (more parts reuse the highest one)
+TALLY_BASE_PITCH = 440    # Hz, the first tally tick; each next one is a semitone higher
+
+
+def tally_sound(i):
+    """The name of the tick for the i-th part of the tally (0 = first)."""
+    return f"tally{min(i, TALLY_TICKS - 1)}"
+
+
 def make_waves():
     """Sound name -> wave. Names match the events from game.update() and teacher.update()."""
     return {
@@ -76,16 +108,23 @@ def make_waves():
         "warning": tone(150, 0.4, fade=False),                            # low buzz
         "won": np.concatenate([tone(f, 0.15) for f in (523, 659, 784)]),  # rising notes
         "close_call": np.concatenate([tone(f, 0.08) for f in (660, 990)]),  # phew: got away
-        "lost_time": np.concatenate([tone(f, 0.25) for f in (400, 300, 200)]),  # falling notes
+        "time_up": np.concatenate([tone(f, 0.25) for f in (400, 300, 200)]),  # falling notes: the paper is collected
         # Seen copying: a fast rising alarm, "look away now!"
         "spotted": np.concatenate([tone(f, 0.07, fade=False) for f in (600, 900, 1200, 1500)]),
         # The teacher: "state:..." events come from teacher.update().
         # TURNING is the danger cue, so it is loud and clear: two quick high beeps
         # (replaced by a file in SOUND_FILES, if it loads).
         "state:TURNING": np.concatenate([tone(1200, 0.08), tone(0, 0.05), tone(1200, 0.08)]),
-        # Menus: a short blip when the selection moves, two notes when chosen.
-        "menu_move": tone(660, 0.05),
-        "menu_select": np.concatenate([tone(880, 0.06), tone(1320, 0.12)]),
+        # Buttons, as 80s synth notes: a short tick when the selection moves,
+        # three notes up when something is chosen, two notes down for back.
+        "menu_move": 0.6 * synth(1320, 0.05) + 0.2 * scribble(0.05)[:int(SAMPLE_RATE * 0.05)],
+        "menu_select": np.concatenate([synth(f, 0.07) for f in (659, 988)] + [synth(1319, 0.22)]),
+        "menu_back": np.concatenate([synth(784, 0.07), synth(523, 0.16)]),
+        # The gossip slot machine: a click per mood rolling past, a ding when it stops.
+        "slot_tick": 0.5 * synth(1760, 0.03),
+        "slot_stop": sum(synth(f, 0.6) for f in (784, 988, 1175)) / 2,
+        # Reading the right neighbour first: a quick sparkle.
+        "sharp_eye": np.concatenate([synth(f, 0.06) for f in (1319, 1568, 2093)]),
         # Scenes: the teacher tears up your exam; the game over screen.
         "rip": rip(0.45),
         # The disclaimer notice: typewriter keys, the signature, the stamp.
@@ -93,13 +132,22 @@ def make_waves():
         "sign": scribble(0.65),
         "stamp": np.concatenate([0.9 * tone(70, 0.28) + 0.4 * scribble(0.28)]),
         "nooo": nooo(1.8),
+        # The score tally on the end screen (tally.py): a chip-like tick per
+        # part, a semitone higher each time like in Balatro, then a chord.
+        **{f"tally{i}": tone(TALLY_BASE_PITCH * 2 ** (i / 12), 0.09) for i in range(TALLY_TICKS)},
+        "tally_done": sum(tone(f, 0.5) for f in (523, 659, 784)) / 3,
+        # A new top score: a fast run up the notes, then a big chord.
+        "new_top": np.concatenate([tone(f, 0.07) for f in (523, 659, 784, 1047, 1319)]
+                                  + [sum(tone(f, 0.8) for f in (523, 784, 1047, 1319)) / 4]),
     }
 
 
 class Sounds:
     def __init__(self):
         self.sounds = {}
-        self.muted = False   # the settings menu can turn sound off
+        self.muted = False   # the settings menu can turn sound off (the music too)
+        self.has_music = False
+        self.music_volume = 0.0   # 0..1, the music's volume right now (it fades)
         try:
             pygame.mixer.init(SAMPLE_RATE, -16, 1)
         except pygame.error as error:
@@ -127,3 +175,30 @@ class Sounds:
         """Play a sound once. Unknown names, no sound device or muted: nothing."""
         if name in self.sounds and not self.muted:
             self.sounds[name].play()
+
+    def start_music(self):
+        """Start the background music, looping forever. No file or no sound device: nothing."""
+        path = os.path.join(SOUND_FOLDER, MUSIC_FILE)
+        if not pygame.mixer.get_init() or not os.path.exists(path):
+            return
+        try:
+            pygame.mixer.music.load(path)
+            pygame.mixer.music.set_volume(0.0)   # music() fades it in
+            pygame.mixer.music.play(loops=-1)    # -1 = loop forever
+            self.has_music = True
+        except pygame.error as error:
+            print(f"Could not play {MUSIC_FILE} ({error}); no music.")
+
+    def music(self, on, dt):
+        """
+        Call every frame: move the music's volume towards where it should be
+        (MUSIC_VOLUME when `on`, silent when not or when muted), a little
+        each frame, so it fades in and out over MUSIC_FADE_TIME.
+        """
+        if not self.has_music:
+            return
+        target = MUSIC_VOLUME if on and not self.muted else 0.0
+        step = MUSIC_VOLUME * dt / MUSIC_FADE_TIME   # how far the volume may move this frame
+        self.music_volume = min(target, self.music_volume + step) if target > self.music_volume \
+            else max(target, self.music_volume - step)
+        pygame.mixer.music.set_volume(self.music_volume)

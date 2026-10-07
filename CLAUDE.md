@@ -33,8 +33,10 @@ explains the code for beginners.
 - All tuning numbers go in **`settings.py`** as UPPER_CASE constants with a
   comment giving the unit (seconds, degrees, pixels). No magic numbers in the
   other files.
-- Game rules (`game.py`, `teacher.py`) never import pygame or OpenCV, so they
-  can be tested without a camera or window.
+- Game rules (everything in `logic/`) never import pygame or OpenCV, so they
+  can be tested without a camera or window. Code is in `logic/` (rules),
+  `tracking/` (webcam, head) and `ui/` (drawing, sounds); `main.py` and
+  `settings.py` stay at the top.
 
 ## Tests
 

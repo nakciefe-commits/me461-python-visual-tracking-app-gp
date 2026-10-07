@@ -1361,3 +1361,406 @@ moods, controlled randomness. And after losing, the end menu now appears
 under the finished game over chat instead of on a different screen
 (`chat_screen()` in `render.py`; the chat moved up to make room:
 `CHAT_TOP`, `CHAT_ROW`, `CHAT_MENU_TOP`, `CHAT_MENU_GAP`).)
+
+---
+
+## Commit #25 — Guessing and blank answers, the paper collected at time up, a Balatro-style score count, the code in folders
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+A player reported that after the first question the next answers could
+not be written. The rules, the real loop (with a fake head direction) and
+the pictures were all checked and worked; the bug could not be reproduced
+without a webcam. The cause is most likely the rule "write only after the
+knowing neighbour's paper was read" together with the real head tracking
+(one jittery frame restarts the 2.5 s focus, and the "?" side does not
+count). The team wanted that rule gone anyway: **any letter can be written
+at any time**, read or not. A question can also be left **blank** (S).
+Grading: right **+1**, wrong **−0.5**, blank **0**, so a blind guess is a
+gamble. **When the clock runs out the paper is collected** and graded
+(blanks for the rest) instead of being a loss. After a graded exam the
+score is **counted up part by part like in Balatro**; a failed one (caught,
+3 warnings) still gets the game over chat.
+
+The code had grown long: `game.py` (323 lines) and `render.py` (1456 lines)
+were split into small files with one job each, and the files were sorted
+into folders: `logic/` (rules, no drawing), `tracking/` (webcam, head),
+`ui/` (drawing, sounds). The game itself did not change in that part.
+
+### Added
+
+| File | Change |
+|---|---|
+| `logic/exam_paper.py` | `ExamPaper`: answer key, `written` (letters or `BLANK`), `says()`, `results()` (`CORRECT` / `WRONG` / `EMPTY`), `count()`, `points()`. From `game.py`. |
+| `logic/neighbours.py` | `NeighbourPapers`: `focus_time`, `read_sides`, `clarity()`, `has_read()`, `reset_focus()`, `new_question()`, `update()`. From `game.py`. |
+| `logic/suspicion.py` | `SuspicionBar`: `level`, `seen_copying`, close calls, `update()`, `is_full()`, `start_over()`; `WARNING_TIME`, `GRACE_PART`, `FULL`. From `game.py`. |
+| `logic/tally.py` | The score count: `appear_time()`, `parts_shown()`, `running_score()`, `is_done()`. |
+| `logic/game.py` | `leave_blank()`, `knows_answer()`, `collect_paper()`, `time_ran_out`, `update_scene()`, `show_popup()`. |
+| `ui/style.py` | Colours, fonts, `NeonStyle` (text, shadow text, bars, neon text, shout, wrap, preview). From `render.py`. |
+| `ui/draw_game.py`, `ui/draw_scenes.py`, `ui/draw_menus.py`, `ui/draw_notice.py` | The drawing of each kind of screen, as mixin classes of `Renderer`. From `render.py`. |
+| `ui/draw_menus.py` | `draw_tally()` (moved to `draw_results.py` in #26): the question cards pop in with their points, the grade, the bonuses, the score counting up and thumping. |
+| `ui/sounds.py` | `tally0` … `tally15` (a semitone higher each), `tally_done`, `tally_sound()`. |
+| `main.py` | S key (`BLANK_KEY`), `count_score()` (a tick per new part), Space skips the count. |
+| `settings.py` | `POINTS_CORRECT` (1), `POINTS_WRONG` (−0.5), `POINTS_BLANK` (0), `SCORE_PER_POINT` (1000), `TALLY_START` (0.8 s), `TALLY_STEP_TIME` (0.45 s), `TALLY_COUNT_TIME` (0.3 s). |
+| `logic/__init__.py`, `tracking/__init__.py`, `ui/__init__.py`, `old/__init__.py` | The folders, with a docstring saying what is in each. |
+| `tests/test_exam_paper.py`, `tests/test_tally.py` | 7 + 5 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `logic/game.py` | Half as long: uses the three files above. `write()` only needs DOWN (and no scene), not a read paper. Time up → `collect_paper()`, `WON`, `"time_up"` event (not a loss). `score_parts()` lists every question (`Q1`…) so the count can show them one by one. |
+| `ui/render.py` | Only the `Renderer` (fonts, pictures, layers); it inherits the drawing from the `draw_*.py` files. |
+| Everything | Moved into `logic/`, `tracking/`, `ui/` (with `git mv`, history kept); imports are `from logic.game import Game` etc. `tracker.py` → `old/tracker.py`. |
+| `ui/draw_game.py` | Blank answers show as "-" (grey). Looking down: "Answer 2: guess with A-D, or S = blank" / "Press A-D to write answer 2 (S = blank)", "Wrong -0.5, blank 0". |
+| `ui/sounds.py` | `lost_time` → `time_up`. |
+| `tests/test_game.py` | For the split, guessing, blanks, the collected paper. |
+
+### Removed
+
+| Item | Why |
+|---|---|
+| "Read before you write" (`can_write()` needing the read paper) | Guessing is part of the game now; also the likely cause of the reported bug. |
+| Losing by time (`lost_time`, the "time" game over chat) | The paper is collected and graded instead. |
+| `correct_count()`, `paper_says()`, `paper_clarity()`, `reset_paper_focus()`, `suspicion()` on `Game` | Now `game.paper.count(CORRECT)`, `game.paper.says()`, `game.neighbours.clarity()`, `game.neighbours.reset_focus()`, `game.suspicion.level`. |
+
+### Details worth knowing
+
+- `Renderer` inherits from `NeonStyle, NoticeDrawing, MenuDrawing,
+  GameDrawing, SceneDrawing` (and `ResultsDrawing`, #26): one object, its
+  methods spread over files; any method can still call any other with
+  `self.`.
+- The split was done by moving the code as it was (line ranges), then
+  checked with a small script for names used but never defined, and by
+  drawing every screen with a fake camera (`SDL_VIDEODRIVER=dummy`).
+- The first tries of that check wrote a test score into the real
+  `highscore.json` (1979 points); it was deleted. Checks now use a
+  temporary file.
+- Tests: 138, all pass.
+
+### Next
+
+- With the webcam: the reported bug should be gone (any letter is written
+  while looking down). If it ever happens again, check whether the game
+  thinks you look down (your paper is shown) when you press the key.
+
+---
+
+## Commit #26 — Three exams per run (phase A), early bonus and close calls, top scores
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+Phase A of PLAN.md 11.8. A run is now **three exams**: the Quiz (3
+questions, 150 s), the Midterm (4, 130 s), the Final (5, 120 s). Each exam
+the teacher is in a **mood**, picked from two per exam; for now a mood is
+only numbers (how long he is busy and watching, how often he moves), and
+the loading screen tells it as **hallway gossip** ("He is on his third
+coffee."). A failed exam scores 0 and the run goes on. The run's score is
+the total; after the Final the **results** count it up next to the **top 5
+scores**, which are also on the main menu. A new top score lights up with
+"NEW HIGH SCORE! #2", confetti and a fanfare. Scoring: the time bonus is
+now the **early bonus**, and a **close call** is worth more the fuller the
+suspicion bar was when you got away (100–500, +300 above 80 %: "RAZOR
+CLOSE!"). The open decisions of PLAN.md 11.9 were taken (see there).
+
+### Added
+
+| File | Change |
+|---|---|
+| `logic/run.py` | `Run`: the exams in order, each exam's mood, `new_game()`, `finish_quiz()`, `is_over()`, `total()`, `score_parts()`, `gossip()`. |
+| `logic/teacher.py` | `Teacher(rng, mood)`, `set_mood()`: a mood's busy/watching durations and move chance. |
+| `logic/suspicion.py` | `close_call_points(level)`, `close_call_score`, `last_close_call`. |
+| `logic/highscore.py` | `load_top()`, `add_score()`, `save_top()`: the best 5 runs with their dates; an old `{"best": …}` file still loads. |
+| `ui/draw_results.py` | `ResultsDrawing`: `draw_end()` and `draw_tally()` (from `draw_menus.py`), `draw_run_end()` (each exam, the total counted up, the top scores), `top_scores()`, `confetti()`, `thumped()`. |
+| `ui/style.py` | `panel()`: the dark purple box with a pink edge, used by every box. |
+| `ui/sounds.py` | `new_top` (a run up the notes and a chord). |
+| `main.py` | `RUN_END` screen, `start_run()`, `start_exam()`, `record_run()`, `counted_parts()`, `count_done()`. |
+| `settings.py` | `QUIZZES`, `MOODS`, `CLOSE_CALL_MIN` (100), `CLOSE_CALL_PER_BAR` (400), `CLOSE_CALL_EDGE` (0.8), `CLOSE_CALL_EDGE_BONUS` (300), `TOP_SCORES_KEPT` (5). |
+| `tests/test_run.py` | 7 tests. `tests/test_teacher.py`: 3 mood tests. `tests/test_highscore.py`: rewritten for the top list (9). `tests/test_game.py`: close calls, fewer questions. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `logic/game.py`, `logic/exam_paper.py` | `Game(rng, exam_time, questions)`; `ExamPaper(rng, questions)`, `size()`. `"TIME"` → `"EARLY BONUS"`, close calls from the bar. |
+| `ui/draw_menus.py` | Loading: "Chapter 1/3", the exam's title, "HALLWAY GOSSIP:" and the mood's line (instead of a random funny line). Main menu: the top scores box (instead of "BEST SCORE"). How to play: the run and the grading. |
+| `ui/draw_results.py` | After an exam: "RUN TOTAL" under the score; the menu is "Next exam" / "Main menu", or "See results" after the Final. |
+| `ui/draw_game.py` | The answer boxes follow the exam's number of questions. |
+| `main.py` | Play starts a run; R restarts the run; Settings has no exam time. |
+
+### Removed
+
+| Item | Why |
+|---|---|
+| The "Exam time" setting, `EXAM_TIME_CHOICES`, `menu.next_choice()` | Each exam has a fixed time, so top scores are fair. |
+| `LOADING_TIPS`, `LOADING_CHAPTER`, `LOADING_TITLE` | The loading screen shows the exam and the gossip. |
+| `load_best()`, `save_best()`, `check_best()`, "NEW BEST!" | Replaced by the top scores. |
+
+### Details worth knowing
+
+- `QUIZZES` and `MOODS` are only data: a new exam or mood is a few lines in
+  `settings.py`. An exam may have at most `ANSWERS_NEEDED` (5) questions,
+  because the paper picture has 5 lines (a test checks it).
+- A close call is worth what the bar showed at the end of being seen (the
+  frame before getting away), so escaping just before being caught pays
+  the most.
+- The new top score stays hidden in the list while the total is still
+  counting, then appears lit up, so the count is not given away.
+- A tie with an older top score goes under it.
+- The run is kept in `App.current_run`, not `App.run`: an attribute called
+  `run` hid the main loop `App.run()`, and the game closed at once
+  ("'Run' object is not callable"). The fake-camera checks drove the
+  screens directly and never called `App.run()`, so they missed it; the
+  real `main.py` was started afterwards and runs.
+- Tests: all 152 pass. Played a whole run with a fake camera and drew
+  every new screen (loading with gossip, the count after each exam, a
+  failed exam, a collected paper, the results with a new top score, the
+  main menu with the list) and checked them by eye. A person should try,
+  with the webcam: a whole run (does it take 4–8 minutes?); do the moods
+  feel different; is the count too slow or too fast (`TALLY_STEP_TIME`);
+  is guessing too cheap or too expensive (`POINTS_WRONG`); is the close
+  call bonus worth the risk.
+
+### Next
+
+- Phase B (PLAN.md 11.4): bluffs, sneaky glances, sign sounds, fairness
+  rules, the teacher getting faster within an exam.
+- Letter grades (AA–FF), the canteen and the cards (11.6).
+- Background music (Suno) once the file is in `assets/sounds/`.
+
+---
+
+## Commit #27 — The hallway gossip gets its own screen, button sounds
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The team wanted the teacher's mood told on a real screen, not as one line
+on the loading screen. Before each exam there is now a **hallway gossip**
+screen: the gossip, a short story of what happened to the teacher, and
+**what it means** for the exam, then "I'M READY", chosen like any menu item
+(turn right and hold, or Enter). Only then comes the loading screen. The
+buttons also got **sounds** in an 80s synth style: a tick when the
+selection moves (also when the mouse moves onto another item), three notes
+up when something is chosen (also the Calibrate button), two notes down
+for back.
+
+### Added
+
+| File | Change |
+|---|---|
+| `settings.py` | `"story"` (up to 3 lines) and `"hint"` for every mood in `MOODS`. |
+| `ui/draw_menus.py` | `draw_briefing()`; `BRIEFING_CHAPTER_Y`, `BRIEFING_TITLE_Y`, `BRIEFING_PANEL`, `BRIEFING_ITEM_Y`. A long gossip line is shrunk to fit the box. |
+| `ui/sounds.py` | `synth()` (a sine with its 3rd and 5th harmonics, quick decay); `menu_back`. |
+| `main.py` | `BRIEFING` screen (a menu screen with "I'M READY"), `start_loading()`. Sounds for mouse hover, Calibrate, back. |
+| `tests/test_run.py` | Every mood has a gossip, 1–3 story lines and a hint, each at most 70 letters. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | "Play" / "Next exam" → BRIEFING → (I'm ready) → LOADING → GAME. Turning left on the gossip screen goes back to the main menu. |
+| `logic/run.py` | `gossip()` returns the whole mood entry (gossip, story, hint). |
+| `ui/draw_menus.py` | The loading screen: chapter, title, date, "Sharpening pencils..." and the bar (no gossip). |
+| `ui/sounds.py` | `menu_move`, `menu_select` are synth notes now (were plain beeps). |
+
+### Details worth knowing
+
+- The story and hint texts are data in `settings.py`, next to each mood's
+  numbers: a new mood is still only new settings.
+- The hints say what the numbers do today (e.g. "long angry stares" = long
+  watching times); when phase B adds bluffs and signs, the hints should
+  name the sign to listen for.
+- Tests: all 153 pass. Drew the gossip screen for all six moods and checked
+  that nothing leaves the box; ran the whole run with a fake camera, and
+  the real `main.py` for a few seconds. A person should try: do the sounds
+  feel right (not too loud next to the teacher's "hmm"); is the gossip
+  screen read, or skipped at once.
+
+### Next
+
+- Phase B (PLAN.md 11.4), then hints that name each mood's sign.
+
+---
+
+## Commit #28 — Background music
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The team made an 80s Miami theme with Suno (`theme.mp3`, 190 s). It loops
+in the background from the moment the official notice is stamped and
+signed (not during the intro or the notice, which have their own sounds): normal volume in
+the menus and between exams, quiet during an exam, so the teacher's "hmm"
+and the alarm are still heard. Sound OFF in the settings turns it off too.
+
+### Added
+
+| File | Change |
+|---|---|
+| `assets/sounds/theme.mp3` | The music (uploaded as `theme_[cut_190sec].mp3`, renamed). 7.6 MB. |
+| `ui/sounds.py` | `MUSIC_FILE`, `start_music()` (streamed with `pygame.mixer.music`, looping), `music(in_exam, dt)` (fades the volume to where it should be). |
+| `settings.py` | `MUSIC_VOLUME_MENU` (0.6), `MUSIC_VOLUME_GAME` (0.2), `MUSIC_FADE_TIME` (1.0 s). |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | Starts the music when the notice is done; every frame tells it whether an exam is being played (not its scenes, not after it). |
+
+### Details worth knowing
+
+- Streaming: the file is read while it plays, so the 7.6 MB do not slow
+  down the start. The other sounds stay as they were.
+- No sound device, no file or a broken file: no music, and the game runs
+  as before (checked with a missing file).
+- While the camera is reconnecting the volume stays where it was.
+- Checked with a dummy sound driver: the music loads and plays, the volume
+  fades to 0.6 in the menus, 0.2 in an exam and 0 when muted; tests (153)
+  pass; the real `main.py` starts. A person should listen: is 0.2 quiet
+  enough to hear the "hmm" over it, is 0.6 too loud next to the buttons.
+
+### Next
+
+- Maybe a second, tenser track for the exam.
+
+---
+
+## Commit #29 — Music only in the menus, smooth screen changes, new game over jokes
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The music now plays only in the menus: it fades out (1.5 s) on the loading
+screen, the exam is silent, and it fades back in on the results. Every
+screen change is a 0.4 s crossfade (the old screen's last picture fades out
+over the new one), so menus appear smoothly. The game over chat has 8
+conversations per way of failing instead of 1, drawn from a `Bag` (every
+joke once before any repeats, never the same twice in a row).
+
+### Added
+
+| File | Change |
+|---|---|
+| `logic/bag.py`, `tests/test_bag.py` | `Bag`: Tetris-style random order (4 tests). Also planned for phase B's teacher moves. |
+| `ui/draw_scenes.py` | `GAME_OVER_CHAT`: 8 + 8 conversations; `{exam}` becomes the exam's name. |
+| `main.py` | `SILENT_SCREENS`, `pick_chat()`, `crossfade()`. |
+| `settings.py` | `MUSIC_VOLUME` (0.6), `SCREEN_FADE_TIME` (0.4 s); `MUSIC_FADE_TIME` 1.0 → 1.5 s. |
+
+### Removed
+
+| Item | Why |
+|---|---|
+| `MUSIC_VOLUME_MENU`, `MUSIC_VOLUME_GAME` | No music during the exam any more. |
+
+### Details worth knowing
+
+- Also fixed on the way: a "How to play" line ran past its box, and the
+  "HEAD CONTROL" box covered a line there (it now sits low when the screen
+  has no webcam preview).
+- Tests: 157 pass. Every chat line fits in two bubble lines (measured).
+
+---
+
+## Commit #30 — A slot machine for the mood, moods with good and bad sides, the teacher keeps an eye on you, ninja and sharp-eye bonuses
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The team's ideas after playing:
+- The mood is drawn on the gossip screen by a **slot machine** ("Spin" with
+  the head), so the player sees it is random. Each exam has 4–5 moods now
+  (13 in all). The **Quiz's are good days** (or a plain one), the
+  **Midterm's have good and bad sides**, the **Final's are bad days**; the
+  screen lists them as green + and red − lines.
+- **He keeps an eye on you:** above a hidden point on the suspicion bar
+  (60 % / 45 % / 30 %), the teacher keeps watching until the bar drains
+  back under it, so you must look at your paper.
+- Bonuses: **NINJA!** +1500 (every answer right, no warning), **ALMOST
+  NINJA** +500 (one warning), **SHARP EYE** +100 (the first paper read for
+  a question is the one that knows; a popup at once).
+- The caught scene says **"SO... YOU'RE CHEATING, HUH?"** instead of "Your
+  exam: 0/5 - see you next semester".
+
+### Added
+
+| File | Change |
+|---|---|
+| `logic/slot.py`, `tests/test_slot.py` | The reel: `reel_position()`, `mood_in_middle()`, `has_stopped()`, `passed()` (5 tests). |
+| `ui/draw_briefing.py` | `BriefingDrawing` (moved out of `draw_menus.py`): the slot window and reel, the story, the +/− lines. |
+| `logic/game.py` | `suspicious_at`, `under_suspicion()`, `sharp_eyes` (`"sharp_eye"` event, popup), `ninja_bonus()`. |
+| `logic/teacher.py` | `update(dt, keep_watching)`. |
+| `logic/run.py` | `pool()`, `chosen()`. |
+| `main.py` | `spin_time`, `spinning()`, `reel()`, `turn_reel()`; "SPIN" then "I'M READY"; `keep_watching` passed to the teacher. |
+| `ui/sounds.py` | `slot_tick`, `slot_stop`, `sharp_eye`. |
+| `settings.py` | 7 new moods (`birthday`, `new_phone`, `normal_day`, `diet`, `traffic`, `dean_visit`, `lost_bet`); `"suspicious"` per exam, `SUSPICIOUS_AT`; `SCORE_NINJA`, `SCORE_ALMOST_NINJA`, `SCORE_SHARP_EYE`; `SLOT_SPIN_TIME` (2.5 s), `SLOT_TURNS` (3). |
+| Tests | Bonuses, the hidden point, keeping watching, moods per exam (good / mixed / bad), the chosen mood in the pool. 177 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `settings.py` | `MOODS`: `"hint"` → `"good"` and `"bad"` lists; the numbers of the old moods adjusted so they match their lines. |
+| `logic/game.py` | `score_parts()` lists only the bonuses you got (no row of zeros). |
+| `ui/draw_results.py` | More than three bonuses go on two rows; the score, run total and menu moved down a little. |
+| `ui/draw_scenes.py` | `CAUGHT_TEXTS`. |
+
+### Details worth knowing
+
+- The mood is still picked by `Run` at the start; the reel only shows it
+  (it is built to stop on it).
+- Sharp eye is a coin flip (nothing tells which side knows), so it is kept
+  small: +100.
+- The hidden point is not drawn on the bar on purpose. A warning empties
+  the bar, so staring through it ends the watching too, with a warning.
+- Checked: a teacher whose watching should end after 0.5 s kept watching
+  for 3 s, until the bar drained from 90 % to under 60 %. Drew the slot
+  spinning, every exam's gossip, five bonuses at once, the caught text.
+  A person should try: is 2.5 s of spinning too long the third time; do
+  the hidden points feel fair (`"suspicious"` in `QUIZZES`).
+
+### Next
+
+- Phase B (PLAN.md 11.4): bluffs, sneaky glances, sign sounds.
+
+---
+
+## Commit #31 — The slot machine looks like a slot machine
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The gossip screen's reel is now a real-looking slot machine, the
+"MOOD-O-MATIC": a gold cabinet with bulbs that blink while waiting, chase
+round while spinning and flash when it stops; a paper-white drum, darker at
+the top and bottom, with the moods smaller away from the middle and blurred
+while spinning fast; a lever with a red ball that the head pulls down (it
+follows the "turn right and hold" bar) and that springs back when the
+spin starts; and a reel that goes a little too far and settles back, like
+a real one. Today's mood stops in the middle in red.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `ui/draw_briefing.py` | Rewritten: `slot_cabinet()`, `bulb_spots()`, `slot_reel()` (drum, blur), `drum_shade()` (made once), `slot_lever()`. `draw_briefing()` takes `spin_time` instead of the reel position. |
+| `logic/slot.py` | The overshoot (`SETTLE_PART`, `SLOT_BOUNCE`), `reel_speed()`. 2 more tests. |
+| `settings.py` | `SLOT_BOUNCE` (0.35 moods), `SLOT_LEVER_TIME` (0.4 s). |
+
+### Details worth knowing
+
+- The overshoot stays under half a mood, so the mood in the middle never
+  changes while it settles, and no extra tick plays.
+- Drew it waiting (lever half pulled), spinning fast (blur), slowing, and
+  stopped; tests (179) pass; the real `main.py` starts.
+  A person should check: does the crossfade feel smooth; is the silence in
+  the exam better than quiet music.

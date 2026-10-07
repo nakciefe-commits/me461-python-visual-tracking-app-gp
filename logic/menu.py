@@ -140,17 +140,6 @@ class HeadMenuInput:
         return min(1.0, self.held_time / MENU_SELECT_TIME)
 
 
-def next_choice(choices, current):
-    """
-    The choice after `current` in a list of numbers, going back to the first
-    after the last. If `current` is not in the list, the first bigger one.
-    """
-    for choice in choices:
-        if choice > current:
-            return choice
-    return choices[0]
-
-
 def loading_steps(rng):
     """
     A random plan for the loading bar, so it fills like a real one: stuck,

@@ -8,13 +8,15 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from game import (Game, PLAYING, WON, LOST, WARNING_TIME, LETTERS, UNKNOWN,
-                  WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE)
-from head_tracker import DOWN, SCREEN, LEFT, RIGHT
+from logic.exam_paper import LETTERS, UNKNOWN, BLANK, CORRECT
+from logic.game import Game, PLAYING, WON, LOST, WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE
+from logic.suspicion import WARNING_TIME
+from tracking.head_tracker import DOWN, SCREEN, LEFT, RIGHT
 from settings import (EXAM_TIME, ANSWERS_NEEDED, CAUGHT_TIME, PAPER_FOCUS_TIME, SUSPICION_DRAIN_TIME,
                       MAX_WARNINGS, WARNING_SCENE_TIME, CAUGHT_SCENE_TIME, CAUGHT_EXCLAIM_TIME,
-                      GAME_OVER_TIME, SCORE_PER_CORRECT, SCORE_TIME_BONUS, SCORE_PER_CLOSE_CALL,
-                      SCORE_PER_WARNING)
+                      GAME_OVER_TIME, SCORE_PER_POINT, SCORE_TIME_BONUS, SCORE_PER_WARNING,
+                      POINTS_WRONG, CLOSE_CALL_MIN, CLOSE_CALL_PER_BAR, CLOSE_CALL_EDGE_BONUS,
+                      SCORE_NINJA, SCORE_ALMOST_NINJA, SCORE_SHARP_EYE, SUSPICIOUS_AT)
 
 # 1/8 s per step: adds up exactly in floating point, so 20 steps are exactly 2.5 s.
 # Times come from settings.py, so tuning them does not break the tests.
@@ -35,8 +37,8 @@ def run(game, direction, seconds):
 def known_game(side=LEFT, letter="B"):
     """A game where the given neighbour knows every answer, and it is `letter`."""
     game = Game()
-    game.knowing_side = [side] * ANSWERS_NEEDED
-    game.right_letters = [letter] * ANSWERS_NEEDED
+    game.paper.knowing_side = [side] * ANSWERS_NEEDED
+    game.paper.right_letters = [letter] * ANSWERS_NEEDED
     return game
 
 
@@ -53,13 +55,13 @@ class CopyingTests(unittest.TestCase):
         events = run(game, LEFT, PAPER_FOCUS_TIME)
         self.assertEqual(events.count("read"), 1)
         self.assertEqual(game.paper_shows(LEFT), "C")
-        self.assertEqual(game.answers, 0)   # read, but not written yet
+        self.assertEqual(len(game.paper.written), 0)   # read, but not written yet
 
     def test_other_side_shows_question_mark(self):
         game = known_game(LEFT)
         run(game, RIGHT, PAPER_FOCUS_TIME)
         self.assertEqual(game.paper_shows(RIGHT), UNKNOWN)
-        self.assertFalse(game.can_write())
+        self.assertFalse(game.knows_answer())
 
     def test_nothing_shown_before_reading(self):
         game = known_game(LEFT)
@@ -76,19 +78,19 @@ class CopyingTests(unittest.TestCase):
 
     def test_paper_gets_sharper(self):
         game = Game()
-        self.assertEqual(game.paper_clarity(RIGHT), 0.0)
+        self.assertEqual(game.neighbours.clarity(RIGHT), 0.0)
         run(game, RIGHT, PAPER_FOCUS_TIME / 2)
-        self.assertAlmostEqual(game.paper_clarity(RIGHT), 0.5)
-        self.assertEqual(game.paper_clarity(LEFT), 0.0)
+        self.assertAlmostEqual(game.neighbours.clarity(RIGHT), 0.5)
+        self.assertEqual(game.neighbours.clarity(LEFT), 0.0)
         run(game, RIGHT, PAPER_FOCUS_TIME)
-        self.assertEqual(game.paper_clarity(RIGHT), 1.0)   # no sharper than sharp
+        self.assertEqual(game.neighbours.clarity(RIGHT), 1.0)   # no sharper than sharp
 
     def test_looking_away_blurs_it_again(self):
         # Each look starts blurry: the focus is not kept (Emre's rule).
         game = known_game(LEFT)
         run(game, LEFT, PAPER_FOCUS_TIME - DT)
         run(game, DOWN, DT)
-        self.assertEqual(game.paper_clarity(LEFT), 0.0)
+        self.assertEqual(game.neighbours.clarity(LEFT), 0.0)
         run(game, LEFT, DT)
         self.assertIsNone(game.paper_shows(LEFT))   # not read: it started over
 
@@ -97,13 +99,13 @@ class CopyingTests(unittest.TestCase):
         for _ in range(4):
             run(game, LEFT, PAPER_FOCUS_TIME / 2)
             run(game, SCREEN, DT)
-        self.assertNotIn(LEFT, game.read_sides)
+        self.assertNotIn(LEFT, game.neighbours.read_sides)
 
     def test_what_the_paper_says_before_reading(self):
         # render.py draws the real paper, only blurred: it is there, not yet readable.
         game = known_game(LEFT, "D")
-        self.assertEqual(game.paper_says(LEFT), "D")
-        self.assertEqual(game.paper_says(RIGHT), UNKNOWN)
+        self.assertEqual(game.paper.says(LEFT), "D")
+        self.assertEqual(game.paper.says(RIGHT), UNKNOWN)
         self.assertIsNone(game.paper_shows(LEFT))
 
     def test_read_paper_gives_nothing_more(self):
@@ -111,22 +113,41 @@ class CopyingTests(unittest.TestCase):
         run(game, LEFT, PAPER_FOCUS_TIME)
         events = run(game, LEFT, 1.0)
         self.assertEqual(events, [])
-        self.assertEqual(game.paper_clarity(LEFT), 1.0)   # but it stays sharp
+        self.assertEqual(game.neighbours.clarity(LEFT), 1.0)   # but it stays sharp
 
     def test_read_paper_gets_sharp_again_when_looking_back(self):
         game = known_game(LEFT)
         run(game, LEFT, PAPER_FOCUS_TIME)
         run(game, DOWN, DT)
         run(game, LEFT, PAPER_FOCUS_TIME)
-        self.assertEqual(game.paper_clarity(LEFT), 1.0)
+        self.assertEqual(game.neighbours.clarity(LEFT), 1.0)
         self.assertEqual(game.paper_shows(LEFT), "B")
 
-    def test_write_needs_the_answer_read(self):
+    def test_guessing_without_reading(self):
+        # Any letter can be written at any time, read or not.
         game = known_game(LEFT)
-        self.assertEqual(game.write("A", DOWN), [])   # nothing read yet
+        self.assertEqual(game.write("A", DOWN), ["write"])
         run(game, RIGHT, PAPER_FOCUS_TIME)                   # only the "?" side
+        self.assertEqual(game.write("C", DOWN), ["write"])
+        self.assertEqual(game.paper.written, ["A", "C"])
+
+    def test_reading_the_knowing_side_tells_the_answer(self):
+        game = known_game(LEFT)
+        self.assertFalse(game.knows_answer())
+        run(game, LEFT, PAPER_FOCUS_TIME)
+        self.assertTrue(game.knows_answer())
+
+    def test_leave_blank(self):
+        game = known_game(LEFT)
+        self.assertEqual(game.leave_blank(SCREEN), [])   # only while looking down
+        self.assertEqual(game.leave_blank(DOWN), ["write"])
+        self.assertEqual(game.paper.written, [BLANK])
+        self.assertEqual(game.paper.question(), 1)
+
+    def test_no_writing_during_a_scene(self):
+        game = Game()
+        run(game, SCREEN, WARNING_TIME)   # the warning scene starts
         self.assertEqual(game.write("A", DOWN), [])
-        self.assertEqual(game.answers, 0)
 
     def test_write_only_while_looking_down(self):
         game = known_game(LEFT)
@@ -134,20 +155,20 @@ class CopyingTests(unittest.TestCase):
         self.assertEqual(game.write("B", LEFT), [])
         self.assertEqual(game.write("B", SCREEN), [])
         self.assertEqual(game.write("B", DOWN), ["write"])
-        self.assertEqual(game.written, ["B"])
+        self.assertEqual(game.paper.written, ["B"])
 
     def test_writing_starts_the_next_question(self):
         game = known_game(LEFT)
         copy_and_write(game, LEFT, "B")
-        self.assertEqual(game.question(), 1)
+        self.assertEqual(game.paper.question(), 1)
         self.assertIsNone(game.paper_shows(LEFT))
-        self.assertEqual(game.focus_time, {LEFT: 0.0, RIGHT: 0.0})
+        self.assertEqual(game.neighbours.focus_time, {LEFT: 0.0, RIGHT: 0.0})
 
     def test_wrong_letter_is_written_and_graded(self):
         game = known_game(LEFT, "B")
         copy_and_write(game, LEFT, "D")
-        self.assertEqual(game.written, ["D"])
-        self.assertEqual(game.correct_count(), 0)
+        self.assertEqual(game.paper.written, ["D"])
+        self.assertEqual(game.paper.count(CORRECT), 0)
 
     def test_all_answers_written_wins(self):
         game = known_game(RIGHT, "A")
@@ -156,13 +177,13 @@ class CopyingTests(unittest.TestCase):
             events += copy_and_write(game, RIGHT, letter)
         self.assertEqual(game.state, WON)
         self.assertIn("won", events)
-        self.assertEqual(game.correct_count(), 3)
+        self.assertEqual(game.paper.count(CORRECT), 3)
 
     def test_answer_key_is_random(self):
         game = Game(random.Random(1))
-        self.assertEqual(len(game.right_letters), ANSWERS_NEEDED)
-        self.assertTrue(set(game.right_letters) <= set(LETTERS))
-        self.assertTrue(set(game.knowing_side) <= {LEFT, RIGHT})
+        self.assertEqual(len(game.paper.right_letters), ANSWERS_NEEDED)
+        self.assertTrue(set(game.paper.right_letters) <= set(LETTERS))
+        self.assertTrue(set(game.paper.knowing_side) <= {LEFT, RIGHT})
 
 
 class StaringTests(unittest.TestCase):
@@ -170,7 +191,7 @@ class StaringTests(unittest.TestCase):
         game = Game()
         run(game, SCREEN, WARNING_TIME - DT)
         self.assertEqual(game.warnings, 0)
-        self.assertAlmostEqual(game.suspicion(), (WARNING_TIME - DT) / WARNING_TIME)
+        self.assertAlmostEqual(game.suspicion.level, (WARNING_TIME - DT) / WARNING_TIME)
 
     def test_warning_after_grace_plus_fill(self):
         game = Game()
@@ -178,7 +199,7 @@ class StaringTests(unittest.TestCase):
         self.assertEqual(game.warnings, 1)
         self.assertIn("warning", events)
         self.assertIsNotNone(game.popup_text)
-        self.assertEqual(game.suspicion(), 0)   # a warning starts the bar over
+        self.assertEqual(game.suspicion.level, 0)   # a warning starts the bar over
 
     def test_popup_disappears(self):
         game = Game()
@@ -194,12 +215,12 @@ class StaringTests(unittest.TestCase):
         time_left = game.time_left
         self.assertEqual(run(game, LEFT, WARNING_SCENE_TIME - DT), [])
         self.assertEqual(game.time_left, time_left)
-        self.assertEqual(game.focus_time[LEFT], 0)
-        self.assertEqual(game.suspicion(), 0)
+        self.assertEqual(game.neighbours.focus_time[LEFT], 0)
+        self.assertEqual(game.suspicion.level, 0)
         run(game, LEFT, DT)
         self.assertFalse(game.in_scene())
         run(game, LEFT, DT)
-        self.assertGreater(game.focus_time[LEFT], 0)   # moving again
+        self.assertGreater(game.neighbours.focus_time[LEFT], 0)   # moving again
 
     def test_last_warning_scene_plays_before_game_over(self):
         game = Game()
@@ -223,9 +244,9 @@ class StaringTests(unittest.TestCase):
         game = Game()
         run(game, SCREEN, WARNING_TIME / 2)   # half full, no warning yet
         run(game, DOWN, 1.0)
-        self.assertAlmostEqual(game.suspicion(), 0.5 - 1.0 / SUSPICION_DRAIN_TIME)
+        self.assertAlmostEqual(game.suspicion.level, 0.5 - 1.0 / SUSPICION_DRAIN_TIME)
         run(game, DOWN, SUSPICION_DRAIN_TIME)
-        self.assertEqual(game.suspicion(), 0)
+        self.assertEqual(game.suspicion.level, 0)
 
 
 class GameOverTests(unittest.TestCase):
@@ -233,14 +254,14 @@ class GameOverTests(unittest.TestCase):
         game = Game()
         run(game, SCREEN, ALL_WARNINGS_TIME)
         self.assertEqual(run(game, LEFT, 5.0), [])
-        self.assertEqual(game.answers, 0)
+        self.assertEqual(len(game.paper.written), 0)
 
     def test_reset(self):
         game = Game()
         run(game, SCREEN, ALL_WARNINGS_TIME)
         game.reset()
         self.assertEqual(game.state, PLAYING)
-        self.assertEqual((game.answers, game.warnings), (0, 0))
+        self.assertEqual((len(game.paper.written), game.warnings), (0, 0))
         self.assertEqual(game.time_left, EXAM_TIME)
         self.assertIsNone(game.lose_reason)
 
@@ -257,6 +278,24 @@ class GameOverTests(unittest.TestCase):
         events = run(game, SCREEN, ALL_WARNINGS_TIME)
         self.assertEqual(game.lose_reason, "warnings")
         self.assertIn("lost_warnings", events)
+
+
+class SuspicionPointTests(unittest.TestCase):
+    def test_under_suspicion_above_the_hidden_point(self):
+        game = Game(suspicious_at=0.5)
+        game.suspicion.level = 0.49
+        self.assertFalse(game.under_suspicion())
+        game.suspicion.level = 0.5
+        self.assertTrue(game.under_suspicion())
+
+    def test_default_point_comes_from_settings(self):
+        self.assertEqual(Game().suspicious_at, SUSPICIOUS_AT)
+
+    def test_looking_down_ends_it(self):
+        game = Game(suspicious_at=0.3)
+        game.suspicion.level = 0.6
+        run(game, DOWN, (0.6 - 0.3) * SUSPICION_DRAIN_TIME + DT)
+        self.assertFalse(game.under_suspicion())
 
 
 class FakeTeacher:
@@ -304,12 +343,17 @@ class TeacherRuleTests(unittest.TestCase):
         run_with(game, LEFT, GAME_OVER_TIME, teacher)
         self.assertFalse(game.in_scene())   # now main.py shows the end menu
 
-    def test_time_up_goes_straight_to_game_over(self):
-        game = Game()
+    def test_time_up_collects_the_paper(self):
+        # Not a loss: the unanswered questions are blank, and it is graded.
+        game = known_game(LEFT, "B")
+        game.write("B", DOWN)
         events = run(game, DOWN, EXAM_TIME)
-        self.assertEqual(game.lose_reason, "time")
-        self.assertEqual(game.scene, GAME_OVER_SCENE)
-        self.assertIn("nooo", events)
+        self.assertEqual(game.state, WON)
+        self.assertTrue(game.time_ran_out)
+        self.assertIn("time_up", events)
+        self.assertEqual(game.paper.written, ["B"] + [BLANK] * (ANSWERS_NEEDED - 1))
+        self.assertEqual(game.paper.points(), 1)
+        self.assertFalse(game.in_scene())   # no game over scene
 
     def test_skip_only_after_losing(self):
         game = Game()
@@ -318,7 +362,10 @@ class TeacherRuleTests(unittest.TestCase):
         self.assertEqual(game.scene, WARNING_SCENE)
         self.assertGreater(game.scene_time, DT)  # not skipped
         game = Game()
-        run(game, DOWN, EXAM_TIME)             # lost: game over scene
+        run_with(game, LEFT, CAUGHT_TIME, FakeTeacher(watching=True))   # lost: caught scene
+        game.skip_scene()
+        run(game, DOWN, DT)
+        self.assertEqual(game.scene, GAME_OVER_SCENE)
         game.skip_scene()
         run(game, DOWN, DT)
         self.assertFalse(game.in_scene())
@@ -328,7 +375,7 @@ class TeacherRuleTests(unittest.TestCase):
         events = run_with(game, LEFT, 2 * DT, FakeTeacher(watching=True, facing=True))
         self.assertEqual(game.state, PLAYING)
         self.assertEqual(events.count("spotted"), 1)   # the alarm plays once
-        self.assertAlmostEqual(game.suspicion(), 2 * DT / CAUGHT_TIME)
+        self.assertAlmostEqual(game.suspicion.level, 2 * DT / CAUGHT_TIME)
 
     def test_looking_away_in_time_escapes(self):
         game = Game()
@@ -341,13 +388,13 @@ class TeacherRuleTests(unittest.TestCase):
     def test_bar_drains_slowly_after_being_seen(self):
         game = Game()
         run_with(game, LEFT, 2 * DT, FakeTeacher(watching=True, facing=True))
-        self.assertTrue(game.seen_copying)   # drawn red
+        self.assertTrue(game.suspicion.seen_copying)   # drawn red
         run_with(game, LEFT, 1.0, FakeTeacher(watching=False))   # teacher busy again
-        self.assertAlmostEqual(game.suspicion(),
+        self.assertAlmostEqual(game.suspicion.level,
                                2 * DT / CAUGHT_TIME - 1.0 / SUSPICION_DRAIN_TIME)
         run_with(game, DOWN, SUSPICION_DRAIN_TIME, FakeTeacher())
-        self.assertEqual(game.suspicion(), 0)
-        self.assertFalse(game.seen_copying)
+        self.assertEqual(game.suspicion.level, 0)
+        self.assertFalse(game.suspicion.seen_copying)
 
     def test_glances_add_up(self):
         # The bar only drains slowly, so quick risky glances in a row can
@@ -356,7 +403,7 @@ class TeacherRuleTests(unittest.TestCase):
         teacher = FakeTeacher(watching=True, facing=True)
         run_with(game, LEFT, 2 * DT, teacher)
         run_with(game, DOWN, 1.0, teacher)
-        self.assertGreater(game.suspicion(), 0)
+        self.assertGreater(game.suspicion.level, 0)
         events = run_with(game, RIGHT, CAUGHT_TIME, teacher)
         self.assertIn("spotted", events)   # the alarm plays again on each glance
         self.assertEqual(game.lose_reason, "caught")
@@ -365,9 +412,9 @@ class TeacherRuleTests(unittest.TestCase):
         game = Game()
         teacher = FakeTeacher(watching=True, facing=True)
         run_with(game, LEFT, 2 * DT, teacher)
-        before = game.suspicion()
+        before = game.suspicion.level
         run_with(game, SCREEN, 1.0, teacher)
-        self.assertAlmostEqual(game.suspicion(), before + 1.0 / WARNING_TIME)
+        self.assertAlmostEqual(game.suspicion.level, before + 1.0 / WARNING_TIME)
 
     def test_staring_fills_the_bar_to_a_warning_not_caught(self):
         game = Game()
@@ -380,7 +427,7 @@ class TeacherRuleTests(unittest.TestCase):
     def test_no_copying_while_seen(self):
         game = Game()
         events = run_with(game, LEFT, CAUGHT_TIME / 2, FakeTeacher(watching=True, facing=True))
-        self.assertEqual(game.focus_time[LEFT], 0)
+        self.assertEqual(game.neighbours.focus_time[LEFT], 0)
         self.assertNotIn("read", events)
 
     def test_copying_while_busy_is_safe(self):
@@ -398,7 +445,7 @@ class TeacherRuleTests(unittest.TestCase):
         game = Game()
         run_with(game, SCREEN, 1.0, FakeTeacher(facing=True))
         run_with(game, SCREEN, 10.0, FakeTeacher(facing=False))
-        self.assertEqual(game.suspicion(), 0)   # drained, never filled
+        self.assertEqual(game.suspicion.level, 0)   # drained, never filled
         self.assertEqual(game.warnings, 0)
 
     def test_staring_while_facing_gives_warning(self):
@@ -410,10 +457,18 @@ class TeacherRuleTests(unittest.TestCase):
         game = Game()
         events = run_with(game, DOWN, EXAM_TIME, FakeTeacher())
         self.assertEqual(game.time_left, 0)
+        self.assertEqual(game.state, WON)   # collected, graded
+        self.assertNotIn("lost", events)
+
+    def test_last_warning_is_a_loss_even_on_the_last_second(self):
+        game = Game()
+        for _ in range(MAX_WARNINGS - 1):
+            run(game, SCREEN, WARNING_TIME + WARNING_SCENE_TIME)
+        run(game, SCREEN, WARNING_TIME - DT)   # one frame before the last warning
+        game.time_left = DT                    # ... which is also the exam's last frame
+        run(game, SCREEN, DT)
+        self.assertEqual(game.lose_reason, "warnings")
         self.assertEqual(game.state, LOST)
-        self.assertEqual(game.lose_reason, "time")
-        self.assertIn("lost", events)
-        self.assertIn("lost_time", events)
 
     def test_clock_counts_down(self):
         game = Game()
@@ -431,7 +486,7 @@ class TeacherRuleTests(unittest.TestCase):
 
     def test_win_on_last_second_is_a_win(self):
         game = known_game(LEFT)
-        game.written = ["B"] * (ANSWERS_NEEDED - 1)
+        game.paper.written = ["B"] * (ANSWERS_NEEDED - 1)
         run_with(game, LEFT, PAPER_FOCUS_TIME, FakeTeacher())
         game.time_left = DT          # the last frame of the exam
         game.write("B", DOWN)
@@ -447,16 +502,24 @@ class ScoreTests(unittest.TestCase):
         return game
 
     def test_score_parts(self):
-        game = self.won_game("BBBBA")   # 4 right
+        game = self.won_game("BBBB")    # 4 right
+        game.leave_blank(DOWN)          # 1 blank
         time_share = game.time_left / game.exam_time
-        parts = dict(game.score_parts())
-        self.assertEqual(parts["CORRECT"], 4 * SCORE_PER_CORRECT)
-        self.assertEqual(parts["TIME"], int(SCORE_TIME_BONUS * time_share))
-        self.assertEqual(game.score(), sum(parts.values()))
+        parts = game.score_parts()
+        self.assertEqual(parts[:ANSWERS_NEEDED],
+                         [("Q1", SCORE_PER_POINT), ("Q2", SCORE_PER_POINT), ("Q3", SCORE_PER_POINT),
+                          ("Q4", SCORE_PER_POINT), ("Q5", 0)])
+        self.assertEqual(dict(parts)["EARLY BONUS"], int(SCORE_TIME_BONUS * time_share))
+        self.assertEqual(game.score(), sum(points for _, points in parts))
+
+    def test_wrong_answer_costs_points(self):
+        game = self.won_game("BBBBA")   # 4 right, 1 wrong
+        self.assertEqual(game.paper.points(), 4 + POINTS_WRONG)
+        self.assertEqual(dict(game.score_parts())["Q5"], int(POINTS_WRONG * SCORE_PER_POINT))
 
     def test_lost_scores_nothing(self):
         game = Game()
-        run(game, DOWN, EXAM_TIME)
+        run(game, SCREEN, ALL_WARNINGS_TIME)
         self.assertEqual(game.score(), 0)
         self.assertEqual(game.score_parts(), [])
 
@@ -469,11 +532,70 @@ class ScoreTests(unittest.TestCase):
     def test_getting_away_is_a_close_call(self):
         game = Game()
         teacher = FakeTeacher(watching=True)
-        run_with(game, LEFT, CAUGHT_TIME / 2, teacher)     # seen, but not caught yet
+        run_with(game, LEFT, 2 * DT, teacher)              # seen, but not caught yet
+        level = game.suspicion.level
         events = run_with(game, DOWN, DT, teacher)         # looked away in time
         self.assertIn("close_call", events)
-        self.assertEqual(game.close_calls, 1)
-        self.assertIn(str(SCORE_PER_CLOSE_CALL), game.popup_text)
+        self.assertEqual(game.suspicion.close_calls, 1)
+        points = int(CLOSE_CALL_MIN + CLOSE_CALL_PER_BAR * level)
+        self.assertEqual(game.suspicion.close_call_score, points)
+        self.assertIn(str(points), game.popup_text)
+
+    def test_razor_close_call_is_worth_more(self):
+        game = Game()
+        teacher = FakeTeacher(watching=True)
+        almost_caught = (math.ceil(CAUGHT_TIME / DT) - 1) * DT   # last step before full
+        run_with(game, LEFT, almost_caught, teacher)
+        level = game.suspicion.level
+        run_with(game, DOWN, DT, teacher)
+        self.assertEqual(game.suspicion.close_call_score,
+                         int(CLOSE_CALL_MIN + CLOSE_CALL_PER_BAR * level + CLOSE_CALL_EDGE_BONUS))
+        self.assertIn("RAZOR", game.popup_text)
+
+    def test_exam_with_fewer_questions(self):
+        game = Game(questions=3)
+        for letter in "ABC":
+            game.write(letter, DOWN)
+        self.assertEqual(game.state, WON)
+        self.assertEqual([name for name, _ in game.score_parts()][:3], ["Q1", "Q2", "Q3"])
+
+    def test_only_bonuses_you_got_are_listed(self):
+        game = self.won_game("AAAAA")   # all wrong, no close calls, no warnings
+        names = [name for name, _ in game.score_parts()]
+        self.assertNotIn("CLOSE CALLS", names)
+        self.assertNotIn("WARNINGS", names)
+        self.assertTrue(all(points for _, points in game.score_parts()[ANSWERS_NEEDED:]))
+
+    def test_ninja_all_right_no_warning(self):
+        game = self.won_game("BBBBB")
+        self.assertEqual(dict(game.score_parts())["NINJA!"], SCORE_NINJA)
+
+    def test_almost_ninja_with_one_warning(self):
+        game = self.won_game("BBBBB")
+        game.warnings = 1
+        self.assertEqual(dict(game.score_parts())["ALMOST NINJA"], SCORE_ALMOST_NINJA)
+        game.warnings = 2
+        names = [name for name, _ in game.score_parts()]
+        self.assertNotIn("NINJA!", names)
+        self.assertNotIn("ALMOST NINJA", names)
+
+    def test_no_ninja_with_one_wrong(self):
+        game = self.won_game("BBBBA")
+        self.assertNotIn("NINJA!", dict(game.score_parts()))
+
+    def test_sharp_eye_when_the_first_paper_read_knows(self):
+        game = known_game(LEFT)
+        events = run(game, LEFT, PAPER_FOCUS_TIME)
+        self.assertIn("sharp_eye", events)
+        self.assertIn(str(SCORE_SHARP_EYE), game.popup_text)
+        self.assertEqual(game.sharp_eyes, 1)
+
+    def test_no_sharp_eye_after_reading_the_wrong_side_first(self):
+        game = known_game(LEFT)
+        run(game, RIGHT, PAPER_FOCUS_TIME)   # "?" first
+        events = run(game, LEFT, PAPER_FOCUS_TIME)
+        self.assertNotIn("sharp_eye", events)
+        self.assertEqual(game.sharp_eyes, 0)
 
 
 if __name__ == "__main__":

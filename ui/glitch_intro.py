@@ -11,7 +11,7 @@ This file is made to be copied into any of our projects: it only needs
 pygame (and numpy for the sound; without numpy it is silent). Use it with
 one line, after pygame.init() and opening the window:
 
-    import glitch_intro
+    from ui import glitch_intro
     if not glitch_intro.play(screen):   # False = the window was closed
         ...quit...
 

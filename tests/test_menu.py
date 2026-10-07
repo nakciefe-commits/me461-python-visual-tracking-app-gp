@@ -8,10 +8,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import random
 
-from menu import (Menu, HeadMenuInput, next_choice, loading_steps, loading_progress,
+from logic.menu import (Menu, HeadMenuInput, loading_steps, loading_progress,
                   UP, DOWN, SELECT, BACK)
 from settings import (MENU_PITCH_THRESHOLD, MENU_YAW_THRESHOLD, MENU_MOVE_HOLD,
-                      MENU_REPEAT_TIME, MENU_SELECT_TIME, EXAM_TIME_CHOICES,
+                      MENU_REPEAT_TIME, MENU_SELECT_TIME,
                       HEAD_PAUSE_AFTER_KEYS)
 
 DT = 0.01
@@ -119,21 +119,6 @@ class HeadMenuInputTests(unittest.TestCase):
     def test_face_lost_does_nothing(self):
         head_input = armed_input()
         self.assertEqual(hold(head_input, TURN_RIGHT, MENU_SELECT_TIME * 2, face_found=False), [])
-
-
-class NextChoiceTests(unittest.TestCase):
-    def test_cycles(self):
-        choices = (60, 90, 120)
-        self.assertEqual(next_choice(choices, 60), 90)
-        self.assertEqual(next_choice(choices, 120), 60)
-
-    def test_value_not_in_list(self):
-        self.assertEqual(next_choice((60, 90, 120), 80), 90)
-        self.assertEqual(next_choice((60, 90, 120), 500), 60)
-
-    def test_settings_choices_are_sorted(self):
-        # next_choice() needs them from small to big.
-        self.assertEqual(list(EXAM_TIME_CHOICES), sorted(EXAM_TIME_CHOICES))
 
 
 class LoadingTests(unittest.TestCase):
