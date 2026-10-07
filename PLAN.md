@@ -107,12 +107,12 @@ Each webcam frame becomes one of:
   `_right`), never the teacher.
 - Each question has a random right letter (A-D) and a random neighbour who
   knows it.
-- The **copy bar** fills; after `COPY_TIME` (5 s) you have **read** that
-  neighbour's paper (tick sound while filling, ding when done): the picture
-  changes to show the letter circled on their paper, or "?" if they don't
-  know it. Each neighbour
-  has their own progress, kept when looking away, so a paper can be read in
-  pieces. A paper already read gives nothing more for this question.
+- **Gradual focus** (Emre's idea): the neighbour's paper (the picture with
+  the letter circled, or "?") is blurry and gets sharper the longer you keep
+  looking; after `PAPER_FOCUS_TIME` (2.5 s) without looking away you have
+  **read** it (ding). Every look starts blurry again, so reading means
+  holding a risky look; the blur itself shows how far (no bar). This replaced the old
+  copy bar (5 s, kept between looks), where copying was just waiting.
 - **Seen copying** (the teacher is watching): an alarm plays, the suspicion
   bar fills fast (full in `CAUGHT_TIME`, 0.9 s), and copying does not move
   forward. Look away before it is full and you escape; full = **caught**.
@@ -180,8 +180,8 @@ safe       "hmm" sound   copying = caught
   picture, because the game cuts off the top (`CLASSROOM_TOP`).
 - **Paper pictures** (`left_A` … `left_D`, `left_unknown`, same for `right_`):
   the same look-left/right picture, edited by Gemini so the neighbour's exam
-  sheet has the letter (or "?") circled on it. Shown only once the copy bar
-  is full; before that the plain picture, so nothing gives the answer away.
+  sheet has the letter (or "?") circled on it. Shown from the start of a
+  look, but blurred until the focus is full, so it cannot be read early.
 - **The whole interface is neon 80s**, like the game Hotline Miami: in the
   game, dark purple see-through strips with a pink edge, slanted bars,
   slanted bold text with shadows, a clock that thumps every second when
@@ -314,12 +314,16 @@ pictures for looking down, left and right; A-D answers read from one
 neighbour and written on your paper, graded at the end; neon main menu,
 how-to-play, settings and end menus controlled by the head (the keyboard
 pauses the head for 1 s); warning, caught and game over scenes; the Glitch
-Please intro; the official notice; tests (100).
+Please intro; the official notice; gradual focus instead of the copy bar;
+score, close calls and a best score; camera reconnecting; tests (121).
 
 **Next, roughly in order:**
 
+0. **The next big update: three quizzes and the teacher's moods.** Being
+   planned in section 11; it changes items 1, 2 and 5 below.
+
 1. **Playtest and tune** the numbers in `settings.py` with the whole team
-   (teacher durations, `COPY_TIME`, `EXAM_TIME`, `CAUGHT_TIME`). Test with
+   (teacher durations, `PAPER_FOCUS_TIME`, `EXAM_TIME`, `CAUGHT_TIME`). Test with
    other webcams, lighting, glasses.
 2. **More sounds:** the chalk sound as a loop while the teacher erases the
    board (needs `loop()`/`stop()` in `sounds.py`), quiet classroom background,
@@ -329,9 +333,10 @@ Please intro; the official notice; tests (100).
 4. **Menus and polish:** ✅ main menu, how-to-play screen, settings, end
    menu, all head-controlled (commit #15). Still: end screen with
    time/warnings, readable webcam errors, menu music.
-5. **Difficulty and score:** the teacher checks more often as the exam goes
-   on; Easy/Normal/Hard; score from time left, warnings and close calls; a
-   high-score file.
+5. **Difficulty and score:** ✅ score (right answers, time left, close
+   calls, warnings) and a best-score file. Still: the teacher checks more
+   often as the exam goes on; Easy/Normal/Hard; levels (Quiz → Midterm →
+   Final) with different teachers.
 6. **Final testing and README:** fresh `git clone` on another computer,
    screenshot, credits and licences for art and sounds.
 
@@ -361,3 +366,290 @@ Please intro; the official notice; tests (100).
 | `mediapipe` | Face Landmarker (head angles) |
 | `pygame-ce` | Window, drawing, pictures, sound, keyboard |
 | `numpy` | Comes with MediaPipe; used to generate beeps |
+
+---
+
+## 11. The next update: three quizzes and the teacher's moods (draft)
+
+Being written together by the team. **Decided** = agreed; **proposed** = a
+suggestion waiting for a yes; the last part collects the team's new ideas.
+
+### 11.1 Why
+
+After playing, the team found two basic problems:
+
+- **The teacher is not random enough.** Always busy → "hmm" → watching →
+  busy, with durations in narrow, even ranges (busy 3.5–6.5 s, watching
+  4–7 s) and the same 0.2 s warning every time. After a few turns the
+  player feels the rhythm ("5 s passed, he turns now"). No surprises, no
+  bluffs, one way of behaving for the whole game.
+- **Nothing to come back for.** One short exam, always the same.
+
+Not the fix: a fully random teacher. Three surprise looks in a row and the
+player is caught without a chance, which is unfair, not fun. The aim is
+**controlled randomness**: the player cannot predict the teacher, but an
+attentive player can always notice a sign.
+
+### 11.2 One run = three quizzes (decided)
+
+- A run is **three quizzes in a row**; the score of the run is the **total**
+  of the three, and the best score is the best run.
+- A run takes **about 10 minutes at most**; a good run 4–6 minutes.
+
+| | Max time |
+|---|---|
+| Quiz 1 (easy mood) | 150 s |
+| Quiz 2 (medium mood) | 130 s |
+| Quiz 3 (hard mood) | 120 s |
+| 3 × loading screen with the mood gossip | 3 × ~5 s |
+| Scenes and the result between quizzes | ~1 min |
+| **Total** | **~8.5 min at worst** |
+
+- Flow: menu → Quiz 1 (loading screen shows the day's gossip) → short
+  result ("Quiz 1: 3200 points") → Quiz 2 → result → Quiz 3 → final screen
+  (the three scores, the total, the best score).
+
+**Proposed** (waiting for a yes):
+
+- Losing a quiz (caught, 3 warnings, time up) scores **0 for that quiz**,
+  and the run **goes on to the next quiz**, so a run is always three quizzes
+  and its length stays predictable. The game over chat of the two logos
+  comes at the end of the run (e.g. when no quiz was passed).
+- Each quiz starts with **0 warnings**.
+- The **exam time setting goes away** (the times are fixed per quiz, so
+  best scores are fair); maybe a "difficulty" setting instead.
+
+### 11.3 The same teacher, a different mood every day (decided)
+
+The teacher stays the same man (same pictures), but each quiz he is in a
+different **mood**. The loading screen tells it as hallway gossip, e.g.
+**"HALLWAY GOSSIP: Someone scratched his motorcycle."** That is a joke and
+a hint at once: the player knows what kind of day it is. Each mood has its
+own behaviour and its own **sign** to learn.
+
+Each quiz has a **pool of two moods** (decided); a run picks one of the two
+at random, so the difficulty grows quiz by quiz but no two runs are the
+same. The six moods below are **proposed** (which ones stay is still open):
+
+| Quiz | Mood (the gossip) | Behaviour | The sign |
+|---|---|---|---|
+| 1 | "His team won last night" | Happy, watching highlights on the phone: long busy times, always warns before turning. | He whistles; **the whistling stops** = he is about to turn. |
+| 1 | "He graded papers all night" | Yawns at the desk, sometimes **dozes off** (very long safe moments), but now and then jerks awake. | Yawning = safe; **the snoring stops** = danger. |
+| 2 | "He is on his third coffee" | Jittery: short busy times, many bluff "hmm"s, keeps moving between board and desk. Bonus: once he **goes to the toilet**, the room is empty for a few seconds: free copying. | Putting the cup down. |
+| 2 | "He is fighting with someone on the phone" | Long phone calls at the desk; now and then yells "WHAT?!" at the phone (a bluff that scares you). | Before a real look he says **"I'll call you back"**. |
+| 3 | "Someone scratched his motorcycle" | Angry and suspicious: short busy times, sneaky glances, long stares, staring gets a warning faster. A car alarm makes him look out of the window: a short chance for you. | He keeps grumbling; **silence** = he is coming. |
+| 3 | "He caught someone last week" | Paranoid: walks between the rows, sneaky glances, bluffs. | **Footsteps** coming closer or going away. |
+
+### 11.4 How the teacher picks what to do (proposed)
+
+Instead of the fixed cycle, after each busy time the teacher **draws his
+next move**, with weights set by the mood:
+
+- **Normal turn:** "hmm", then watching (today's behaviour).
+- **Bluff:** "hmm", but he does not turn; he goes on working. Turning your
+  head away in panic costs time.
+- **Sneaky glance:** no "hmm", a very short look (0.5–1 s). Never without
+  its sign (e.g. the chalk sound stops a moment before), so it stays fair.
+- **Long stare:** sometimes much longer than usual: a patience test.
+- **Moving:** board ↔ desk, more or less often depending on the mood.
+
+**Durations:** mostly normal, but now and then very short or very long,
+instead of even ranges; this breaks the rhythm.
+
+**Fairness rules:** never two sneaky glances in a row; always a few safe
+seconds after a look; moves are drawn from a "bag" (like the Tetris piece
+bag) so the same move does not come by chance again and again, but the
+order cannot be predicted.
+
+**Getting harder within a quiz:** the more answers you have written, the
+shorter his busy times; the last question is always the tensest.
+
+**In code:** every mood is only data in `settings.py` (move weights,
+duration ranges, sign sound, fairness rules); `Teacher(mood)` follows it.
+A new mood = new settings, not new code. Tests run every mood for ten
+minutes and check that bluffs happen, sneaky glances never come twice in a
+row and the safe time after a look is kept.
+
+### 11.5 What it needs
+
+- **Sounds** (the team picks them from a sound library): whistling,
+  snoring, yawning, grumbling, footsteps, a cup, a car alarm, "I'll call you
+  back", "WHAT?!". Sounds made in code stand in until the files exist.
+- **Pictures** (optional, Gemini): the teacher asleep at the desk, the
+  empty classroom (toilet break), the teacher looking out of the window.
+  Without them the moment can be told with text and sound.
+
+### 11.6 The team's new ideas, and what we think of them
+
+The team brought five ideas. Not all of them will be built. Verdicts so far
+(the order of work is in 11.7; the team chose to start with the three-quiz
+run):
+
+**1. Looking UP: "pretending to think" — maybe, last, as an experiment.**
+A fourth head direction (pitch above a threshold). While the teacher
+watches, staring at the ceiling looks innocent ("hmm, how did this go?"):
+the suspicion bar drains fast. Cost: you see neither the teacher nor the
+paper, the exam clock runs faster, and staring up too long gets suspicious.
+(Other ideas for UP: spying on the teacher in a reflection of the ceiling
+lamp; checking the wall clock.)
+- Good: fits the theme; a "panic button" when the bar is high, with a price.
+- Risk: the teacher is at the **top** of the screen, so a player looking at
+  him lifts the head a little; that may be read as UP. Only testing with a
+  real webcam can show whether a threshold works. A wrong UP here is
+  especially annoying (the clock speeds up when you only wanted to look).
+- So: after everything else, as a separate experiment.
+
+**2. A run between quizzes, with a canteen break (Balatro / Vampire
+Survivors style) — yes.** "Saving the semester": **Small Quiz → canteen →
+Midterm → canteen → Final**. It matches the three-quiz run (11.2) and the
+moods getting harder. A canteen choice takes 10–15 s, which fits the
+10-minute budget. The biggest gain for playing again.
+
+**3. Trade-off cards (picked in the canteen) — yes, 3–4 of the 5, some
+changed.** Every card is an advantage with a price. Most of them only change
+numbers that already exist (focus time, suspicion speed, escape time), so
+they are cheap to build and test. (The team's notes said "5 s copying"; that
+was the old copy bar — reading now takes `PAPER_FOCUS_TIME`, 2.5 s.)
+
+| Card | Plus | Minus | Verdict |
+|---|---|---|---|
+| **Front row** (the teacher's blind spot) | Staring fills the suspicion bar much slower. | Being seen: half the time to escape (≈0.4 s instead of `CAUGHT_TIME`). | ✅ As it is: a real dilemma. |
+| **Back row** (safe zone) | Turning the head is much harder to notice. | The paper is far: reading takes longer (2.5 s → ~4 s). | ✅ As it is. |
+| **Glasses** (binocular view) | Reading is very fast (~1.2 s). | Tunnel vision: the edges of the classroom are blurred, so the teacher is hard to see (worst when he is at the desk, near the edge). | ✅ As it is. |
+| **Energy drink** | Reading and writing twice as fast, extra exam time. | Proposed by the team: the head tracking "jitters" (more sensitive). | ⚠️ Keep the plus, **change the minus**: making the (already shaky) tracking worse on purpose feels like the game is broken, not like a price. Instead e.g. a heartbeat sound covers the teacher's sound cues, or suspicion fills faster. |
+| **Radio earpiece** (spy) | Answers whispered into your ear: no need to look sideways. | You cannot hear the teacher's cues ("hmm", chalk...). | ❌ As it is it removes the core of the game (no reason to look sideways). ✅ **Toned down**: it only whispers **which neighbour knows** the answer (no searching for the "?" side), and you still have to read it; the price stays (no teacher sounds). |
+
+Proposed rules: the canteen offers **2 random cards, you take 1**; cards
+last until the end of the run, so at most 2 per run.
+
+**4. Score and adrenaline — mostly there already, one change.**
+- *Early hand-in bonus* (points per second left): already there (the time
+  bonus, as a share of the exam time).
+- *Close call*: already there, but every escape gives the same +150.
+  **Better (the team's version):** the bonus grows with how full the
+  suspicion bar was when you got away; escaping above 80 % gives a lot.
+  That rewards exactly the risk. → do it.
+- *"Copy in one breath"* (5 s without lifting the head): with the gradual
+  focus every read already needs one unbroken look, so this adds nothing.
+  If a "greed" reward is wanted: **finish a read after hearing the "hmm"**
+  (keep looking although the teacher is about to turn).
+
+**5. A letter grade at the end (AA–FF) — yes, definitely.** Cheapest and
+funniest. ME461 is a METU course, and the AA–FF grades are exactly what the
+players know. Instead of a screen full of numbers, one huge neon grade badge:
+"EXAM HANDED IN!" with [ AA ] under it; "CAUGHT CHEATING!" with [ FF ].
+
+| Grade | Meaning | Colour | When |
+|---|---|---|---|
+| AA | Perfect | neon green / gold | 5/5 right, high score, close calls |
+| BA / BB | Good | neon blue / cyan | 4–5 right, clean |
+| CC | Pass | neon yellow | borderline (3 right) |
+| DC | Conditional pass | neon orange | 1–2 right, or many warnings |
+| FF | Fail | neon red | caught, time up, or 0 right |
+
+Each quiz gets a grade; the run ends with a **semester grade** (from the
+three). Score and best score stay, smaller, under the grade. (The exact
+thresholds are still open; with 3/4/5 questions per quiz they must use the
+share of right answers, not "5/5".)
+
+### 11.7 Order of work
+
+1. **Core:** the three-quiz run with the moods and the controlled-random
+   teacher (11.2–11.4) — in two phases, see 11.8.
+2. **Cheap and strong:** letter grades; close-call bonus growing with the
+   suspicion.
+3. **Playing again:** the canteen and 3–4 cards.
+4. **Experiment:** looking UP.
+
+### 11.8 Plan for the three-quiz run (talked through, not built yet)
+
+**What changes in the code.** Today one "game" is one exam: `Game` holds the
+rules of one quiz, and when it ends the end menu comes. A layer goes on top:
+
+- A new **`Run`** class (`run.py`): which quiz you are at, each quiz's
+  result (score, how it ended, later its grade), the mood picked for each
+  quiz, the total. The rules stay in `Game`; `Run` only puts the quizzes in
+  order. No pygame, so it is tested like `Game`.
+- The **quizzes are data** in `settings.py`, e.g.
+
+  ```
+  QUIZZES = [
+      {"title": "THE QUIZ",    "time": 150, "moods": ("team_won", "all_nighter")},
+      {"title": "THE MIDTERM", "time": 130, "moods": ("coffee", "phone_fight")},
+      {"title": "THE FINAL",   "time": 120, "moods": ("motorcycle", "paranoid")},
+  ]
+  ```
+
+  (plus the number of questions per quiz, see the decisions below).
+- At the start of each quiz `Game` is reset with that quiz's time (and
+  question count), and `Teacher` with the mood picked from its pool.
+
+**Screens:**
+
+```
+MENU → LOADING (Quiz 1 + gossip) → GAME → [scenes] → QUIZ RESULT
+     → LOADING (Quiz 2) → GAME → … → QUIZ RESULT
+     → LOADING (Quiz 3) → GAME → … → RUN END (3 results + total + best) → end menu
+```
+
+- **Loading screen:** "ME461 - CHAPTER 1/2/3", "THE QUIZ / THE MIDTERM /
+  THE FINAL", the date, and the **gossip line** of the mood, which replaces
+  today's random funny loading line.
+- **QUIZ RESULT (new):** a short screen between quizzes ("QUIZ 1: 3200
+  POINTS", or its grade). It goes on by itself, or at once with Space.
+- **RUN END (new):** the three quiz results one under the other, the total,
+  "NEW BEST!", then today's end menu (play again / main menu / quit).
+- `R` restarts the whole run; `M` leaves the run for the main menu.
+- Score: each quiz scores itself; the run's score is the sum; the best
+  score is the best run.
+- Later the canteen comes in between: … QUIZ RESULT → CANTEEN → LOADING …
+
+**Two phases:**
+
+- **Phase A — the skeleton of the run:** `Run`, three quizzes, the result
+  and run-end screens, total score, best score. The moods are only
+  **different numbers** in this phase (the teacher's busy/watching times
+  and move chance per quiz) plus the gossip line on the loading screen. A
+  playable run the team can test right away.
+- **Phase B — real moods:** bluffs, sneaky glances, sign sounds, fairness
+  rules, getting harder within a quiz (11.4). That reworks `teacher.py`, so
+  it is a step of its own.
+
+**Tests:** quizzes come in order; a lost quiz scores 0 and the run goes on;
+the total and the best score are right; each quiz gets its own time,
+question count and mood.
+
+**Time check:** with 3/4/5 questions a good run takes about 4 minutes; the
+longest one (150 + 130 + 120 s, plus loading, scenes and results) stays
+under 8.5 minutes.
+
+### 11.9 Decisions still open (with our proposals)
+
+| # | Question | Proposal |
+|---|---|---|
+| 1 | A quiz is lost (caught, 3 warnings, time up): then what? | **0 points for that quiz, go on to the next.** The run is always 3 quizzes. The caught scene plays; the game over chat does not (see 3). |
+| 2 | How many questions per quiz? | **3 / 4 / 5**: harder each time, and the run stays short. (5/5/5 also works, but the run gets longer.) |
+| 3 | When does the game over chat (Gemini and Claude logos) come? | **At the end of every run**, with lines depending on the result: they mock a bad run, they are jealous of a good one. |
+| 4 | Letter grades (AA–FF) already in phase A? | **Yes**: the result screens are new anyway, so a big grade instead of a number costs almost nothing. Thresholds to decide (share of right answers, warnings, close calls). |
+| 5 | The "exam time" option in Settings | **Remove it**: times are fixed per quiz, so best scores are fair. Maybe a "difficulty" option later. |
+| 6 | Warnings | **Start from 0 in every quiz.** |
+| 7 | How long is the result screen between quizzes? | **4 s, or Space.** |
+| 8 | Which moods stay (11.3)? | All six as proposed until the team says otherwise; each quiz has a pool of two (decided). |
+| 9 | Canteen and cards (11.6) | Rules proposed: 2 random cards offered, take 1, they last the run. Energy drink and earpiece only in their changed form. |
+
+### 11.10 Where things stand (for whoever picks this up)
+
+- **Branch:** `dont-get-caught`. Last commit `9db2613` (NOTES #15–#23:
+  menus, scenes, Glitch Please intro, official notice, softer menus).
+- **Not committed yet (NOTES #24):** gradual focus instead of the copy bar,
+  camera reconnecting (both taken from Emre's branch), score, close calls,
+  best score (`highscore.py`), no focus bar, and this section 11. All 121
+  tests pass.
+- **Emre's branch** `me461-python-visual-tracking-app2-gp` (commit
+  `2ddf878`) started from `681fe15` and rebuilt the papers differently. It
+  was **not merged**; his gradual focus and camera code were brought over
+  (NOTES #24 lists what was and was not taken). The team decided not to
+  follow the rest of his plan.
+- **Sounds:** the team picks the sound files from a library themselves;
+  until then sounds made in code stand in (`sounds.py`, `SOUND_FILES`).
+- **Next step:** answer 11.9, then build phase A of 11.8.

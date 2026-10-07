@@ -56,7 +56,7 @@ loading line) gives you time to sit straight, then the exam starts:
 |---|---|---|
 | Down | 1 - paper | Safe. You see your own paper, not the teacher, and hear nothing. Press **A, B, C or D** to write the answer you read. |
 | At the screen | 2 - teacher | The only way to see the classroom and what the teacher is doing. While the teacher looks at the class, the suspicion bar fills; after 3 s it turns red, and when it is full you get a warning: the teacher walks up to your desk and points at you angrily (the game stops for 2.5 s while this happens). 3 warnings = game over. Being seen copying fills the same bar, so staring afterwards carries on from there. The bar never jumps to empty: it drains slowly while you do nothing suspicious. |
-| Left / right | 3 - copy | Hold 5 s to read the neighbour's answer (ticking sound): a letter, or **?** if they don't know it (then the other neighbour does). Remember it, look down and write it. Write all 5 to hand in the exam; the end screen shows how many are right. You see the neighbour's paper, not the teacher. If the teacher is looking at the class, an **alarm** plays and the suspicion bar fills in 0.9 s: look away before it is full, or you are **caught**. Copying does not move forward while the teacher sees you. |
+| Left / right | 3 - copy | The neighbour's paper is blurry and gets sharper the longer you keep looking; after 2.5 s without looking away you can read it: a letter, or **?** if they don't know it (then the other neighbour does). Every look starts blurry again. Remember it, look down and write it. Write all 5 to hand in the exam; the end screen shows how many are right. You see the neighbour's paper, not the teacher. If the teacher is looking at the class, an **alarm** plays and the suspicion bar fills in 0.9 s: look away before it is full, or you are **caught**. Copying does not move forward while the teacher sees you. |
 
 The teacher erases the board or plays on the phone (safe), then looks at the
 class for a few seconds (danger). **Luigi's "hmm"** means the teacher is
@@ -69,7 +69,13 @@ Losing by being caught or by 3 warnings plays the Metal Gear alert; running
 out of time plays falling notes. When you are caught, a red Metal Gear "!"
 pops up over the teacher, then he tears up your exam. After every loss comes
 a GAME OVER screen where the Gemini and Claude logos make fun of you (Space
-skips it), then the end menu.
+skips it); when they are done, the end menu appears under the chat.
+
+**Score:** a handed-in exam scores 1000 per right answer, up to 1000 more
+for the time left (as a share of the exam time), +150 for every **close
+call** (the teacher saw you copying and you looked away in time), and −300
+per warning. Losing scores 0. The best score is kept in `highscore.json`
+and shown on the main menu and the end screen.
 
 When the game is over, the end screen shows the result and a small menu
 (Play again, Main menu, Quit), controlled the same way.
@@ -113,6 +119,7 @@ the loop. `LEARN.md` explains every file.
 | `main.py` | The game: main loop and screens. |
 | `menu.py` | Menus: the selected item, and head tilts/turns → up/down/select/back; the loading bar's uneven fill. |
 | `disclaimer.py` | The opening notice: typing, signing, the stamp (no drawing). |
+| `highscore.py` | Loads and saves the best score (`highscore.json`, not in git). |
 | `glitch_intro.py` | Our team's "Glitch Please" intro. One file, only needs pygame: copy it into any project. |
 | `head_tracker.py` | Webcam frame → head direction (DOWN / SCREEN / LEFT / RIGHT). |
 | `camera.py` | Reads the webcam in the background. |

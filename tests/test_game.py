@@ -11,9 +11,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from game import (Game, PLAYING, WON, LOST, WARNING_TIME, LETTERS, UNKNOWN,
                   WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE)
 from head_tracker import DOWN, SCREEN, LEFT, RIGHT
-from settings import (EXAM_TIME, ANSWERS_NEEDED, CAUGHT_TIME, COPY_TIME, SUSPICION_DRAIN_TIME,
+from settings import (EXAM_TIME, ANSWERS_NEEDED, CAUGHT_TIME, PAPER_FOCUS_TIME, SUSPICION_DRAIN_TIME,
                       MAX_WARNINGS, WARNING_SCENE_TIME, CAUGHT_SCENE_TIME, CAUGHT_EXCLAIM_TIME,
-                      GAME_OVER_TIME)
+                      GAME_OVER_TIME, SCORE_PER_CORRECT, SCORE_TIME_BONUS, SCORE_PER_CLOSE_CALL,
+                      SCORE_PER_WARNING)
 
 # 1/8 s per step: adds up exactly in floating point, so 20 steps are exactly 2.5 s.
 # Times come from settings.py, so tuning them does not break the tests.
@@ -41,74 +42,95 @@ def known_game(side=LEFT, letter="B"):
 
 def copy_and_write(game, side, letter):
     """Read the current answer from `side`, then look down and write `letter`."""
-    events = run(game, side, COPY_TIME)
+    events = run(game, side, PAPER_FOCUS_TIME)
     events += run(game, DOWN, DT)
     return events + game.write(letter, DOWN)
 
 
 class CopyingTests(unittest.TestCase):
-    def test_copy_time_reads_the_paper(self):
+    def test_looking_long_enough_reads_the_paper(self):
         game = known_game(LEFT, "C")
-        events = run(game, LEFT, COPY_TIME)
+        events = run(game, LEFT, PAPER_FOCUS_TIME)
         self.assertEqual(events.count("read"), 1)
         self.assertEqual(game.paper_shows(LEFT), "C")
         self.assertEqual(game.answers, 0)   # read, but not written yet
 
     def test_other_side_shows_question_mark(self):
         game = known_game(LEFT)
-        run(game, RIGHT, COPY_TIME)
+        run(game, RIGHT, PAPER_FOCUS_TIME)
         self.assertEqual(game.paper_shows(RIGHT), UNKNOWN)
         self.assertFalse(game.can_write())
 
     def test_nothing_shown_before_reading(self):
         game = known_game(LEFT)
-        run(game, LEFT, COPY_TIME / 2)
+        run(game, LEFT, PAPER_FOCUS_TIME / 2)
         self.assertIsNone(game.paper_shows(LEFT))
 
     def test_nothing_shown_until_the_bar_is_full(self):
         # One frame before the bar is full the answer must still be hidden.
         game = known_game(LEFT)
-        run(game, LEFT, COPY_TIME - DT)
+        run(game, LEFT, PAPER_FOCUS_TIME - DT)
         self.assertIsNone(game.paper_shows(LEFT))
         run(game, LEFT, DT)
         self.assertEqual(game.paper_shows(LEFT), "B")
 
-    def test_copy_time_counts_up(self):
+    def test_paper_gets_sharper(self):
         game = Game()
-        run(game, RIGHT, 1.25)
-        self.assertAlmostEqual(game.copy_time[RIGHT], 1.25)
+        self.assertEqual(game.paper_clarity(RIGHT), 0.0)
+        run(game, RIGHT, PAPER_FOCUS_TIME / 2)
+        self.assertAlmostEqual(game.paper_clarity(RIGHT), 0.5)
+        self.assertEqual(game.paper_clarity(LEFT), 0.0)
+        run(game, RIGHT, PAPER_FOCUS_TIME)
+        self.assertEqual(game.paper_clarity(RIGHT), 1.0)   # no sharper than sharp
 
-    def test_looking_away_keeps_progress(self):
-        game = Game()
-        run(game, LEFT, 1.0)
-        run(game, DOWN, 2.0)
-        self.assertAlmostEqual(game.copy_time[LEFT], 1.0)
-
-    def test_each_side_keeps_its_own_progress(self):
+    def test_looking_away_blurs_it_again(self):
+        # Each look starts blurry: the focus is not kept (Emre's rule).
         game = known_game(LEFT)
-        run(game, LEFT, COPY_TIME / 2)
-        run(game, RIGHT, COPY_TIME / 2)
-        self.assertNotIn(LEFT, game.read_sides)   # halves from two sides do not add up
-        events = run(game, LEFT, COPY_TIME / 2)
-        self.assertEqual(game.paper_shows(LEFT), "B")
-        self.assertEqual(events[0], "tick")   # ticking starts again right away
+        run(game, LEFT, PAPER_FOCUS_TIME - DT)
+        run(game, DOWN, DT)
+        self.assertEqual(game.paper_clarity(LEFT), 0.0)
+        run(game, LEFT, DT)
+        self.assertIsNone(game.paper_shows(LEFT))   # not read: it started over
+
+    def test_short_glances_do_not_add_up(self):
+        game = known_game(LEFT)
+        for _ in range(4):
+            run(game, LEFT, PAPER_FOCUS_TIME / 2)
+            run(game, SCREEN, DT)
+        self.assertNotIn(LEFT, game.read_sides)
+
+    def test_what_the_paper_says_before_reading(self):
+        # render.py draws the real paper, only blurred: it is there, not yet readable.
+        game = known_game(LEFT, "D")
+        self.assertEqual(game.paper_says(LEFT), "D")
+        self.assertEqual(game.paper_says(RIGHT), UNKNOWN)
+        self.assertIsNone(game.paper_shows(LEFT))
 
     def test_read_paper_gives_nothing_more(self):
         game = known_game(LEFT)
-        run(game, LEFT, COPY_TIME)
+        run(game, LEFT, PAPER_FOCUS_TIME)
         events = run(game, LEFT, 1.0)
         self.assertEqual(events, [])
+        self.assertEqual(game.paper_clarity(LEFT), 1.0)   # but it stays sharp
+
+    def test_read_paper_gets_sharp_again_when_looking_back(self):
+        game = known_game(LEFT)
+        run(game, LEFT, PAPER_FOCUS_TIME)
+        run(game, DOWN, DT)
+        run(game, LEFT, PAPER_FOCUS_TIME)
+        self.assertEqual(game.paper_clarity(LEFT), 1.0)
+        self.assertEqual(game.paper_shows(LEFT), "B")
 
     def test_write_needs_the_answer_read(self):
         game = known_game(LEFT)
         self.assertEqual(game.write("A", DOWN), [])   # nothing read yet
-        run(game, RIGHT, COPY_TIME)                   # only the "?" side
+        run(game, RIGHT, PAPER_FOCUS_TIME)                   # only the "?" side
         self.assertEqual(game.write("A", DOWN), [])
         self.assertEqual(game.answers, 0)
 
     def test_write_only_while_looking_down(self):
         game = known_game(LEFT)
-        run(game, LEFT, COPY_TIME)
+        run(game, LEFT, PAPER_FOCUS_TIME)
         self.assertEqual(game.write("B", LEFT), [])
         self.assertEqual(game.write("B", SCREEN), [])
         self.assertEqual(game.write("B", DOWN), ["write"])
@@ -119,7 +141,7 @@ class CopyingTests(unittest.TestCase):
         copy_and_write(game, LEFT, "B")
         self.assertEqual(game.question(), 1)
         self.assertIsNone(game.paper_shows(LEFT))
-        self.assertEqual(game.copy_time, {LEFT: 0.0, RIGHT: 0.0})
+        self.assertEqual(game.focus_time, {LEFT: 0.0, RIGHT: 0.0})
 
     def test_wrong_letter_is_written_and_graded(self):
         game = known_game(LEFT, "B")
@@ -141,13 +163,6 @@ class CopyingTests(unittest.TestCase):
         self.assertEqual(len(game.right_letters), ANSWERS_NEEDED)
         self.assertTrue(set(game.right_letters) <= set(LETTERS))
         self.assertTrue(set(game.knowing_side) <= {LEFT, RIGHT})
-
-    def test_ticks_while_copying(self):
-        game = Game()
-        events = run(game, RIGHT, 1.0)
-        # One tick right at the start, then one every 0.3 s: 3 or 4 in 1 s
-        # depending on how the frames line up.
-        self.assertIn(events.count("tick"), (3, 4))
 
 
 class StaringTests(unittest.TestCase):
@@ -179,12 +194,12 @@ class StaringTests(unittest.TestCase):
         time_left = game.time_left
         self.assertEqual(run(game, LEFT, WARNING_SCENE_TIME - DT), [])
         self.assertEqual(game.time_left, time_left)
-        self.assertEqual(game.copy_time[LEFT], 0)
+        self.assertEqual(game.focus_time[LEFT], 0)
         self.assertEqual(game.suspicion(), 0)
         run(game, LEFT, DT)
         self.assertFalse(game.in_scene())
         run(game, LEFT, DT)
-        self.assertGreater(game.copy_time[LEFT], 0)   # moving again
+        self.assertGreater(game.focus_time[LEFT], 0)   # moving again
 
     def test_last_warning_scene_plays_before_game_over(self):
         game = Game()
@@ -365,12 +380,12 @@ class TeacherRuleTests(unittest.TestCase):
     def test_no_copying_while_seen(self):
         game = Game()
         events = run_with(game, LEFT, CAUGHT_TIME / 2, FakeTeacher(watching=True, facing=True))
-        self.assertEqual(game.copy_time[LEFT], 0)
-        self.assertNotIn("tick", events)
+        self.assertEqual(game.focus_time[LEFT], 0)
+        self.assertNotIn("read", events)
 
     def test_copying_while_busy_is_safe(self):
         game = known_game(RIGHT)
-        run_with(game, RIGHT, COPY_TIME, FakeTeacher(watching=False))
+        run_with(game, RIGHT, PAPER_FOCUS_TIME, FakeTeacher(watching=False))
         self.assertEqual(game.state, PLAYING)
         self.assertEqual(game.paper_shows(RIGHT), "B")
 
@@ -417,11 +432,48 @@ class TeacherRuleTests(unittest.TestCase):
     def test_win_on_last_second_is_a_win(self):
         game = known_game(LEFT)
         game.written = ["B"] * (ANSWERS_NEEDED - 1)
-        run_with(game, LEFT, COPY_TIME, FakeTeacher())
+        run_with(game, LEFT, PAPER_FOCUS_TIME, FakeTeacher())
         game.time_left = DT          # the last frame of the exam
         game.write("B", DOWN)
         run_with(game, DOWN, DT, FakeTeacher())
         self.assertEqual(game.state, WON)
+
+
+class ScoreTests(unittest.TestCase):
+    def won_game(self, letters="BBBBB"):
+        game = known_game(LEFT, "B")
+        for letter in letters:
+            copy_and_write(game, LEFT, letter)
+        return game
+
+    def test_score_parts(self):
+        game = self.won_game("BBBBA")   # 4 right
+        time_share = game.time_left / game.exam_time
+        parts = dict(game.score_parts())
+        self.assertEqual(parts["CORRECT"], 4 * SCORE_PER_CORRECT)
+        self.assertEqual(parts["TIME"], int(SCORE_TIME_BONUS * time_share))
+        self.assertEqual(game.score(), sum(parts.values()))
+
+    def test_lost_scores_nothing(self):
+        game = Game()
+        run(game, DOWN, EXAM_TIME)
+        self.assertEqual(game.score(), 0)
+        self.assertEqual(game.score_parts(), [])
+
+    def test_warnings_cost_points_but_never_below_zero(self):
+        game = self.won_game("AAAAA")   # all wrong
+        game.warnings = 2
+        self.assertEqual(dict(game.score_parts())["WARNINGS"], -2 * SCORE_PER_WARNING)
+        self.assertGreaterEqual(game.score(), 0)
+
+    def test_getting_away_is_a_close_call(self):
+        game = Game()
+        teacher = FakeTeacher(watching=True)
+        run_with(game, LEFT, CAUGHT_TIME / 2, teacher)     # seen, but not caught yet
+        events = run_with(game, DOWN, DT, teacher)         # looked away in time
+        self.assertIn("close_call", events)
+        self.assertEqual(game.close_calls, 1)
+        self.assertIn(str(SCORE_PER_CLOSE_CALL), game.popup_text)
 
 
 if __name__ == "__main__":

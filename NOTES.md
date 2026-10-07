@@ -1267,3 +1267,97 @@ picture is now stretched smoothly instead of pixel by pixel.
 
 - The team's sounds (they will pick them from a sound library).
 - Then the list of commit #15.
+
+---
+
+## Commit #24 — Gradual focus and camera reconnecting (from Emre), score and best score
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The team found the game not fun (copying was just waiting) and with no
+reason to play it again. Two fixes. **Copying is active now**: the
+neighbour's paper is blurry and gets sharper the longer you keep looking
+(2.5 s); every look starts blurry again, so reading means holding a risky
+look. **A score**: right answers, the time left, close calls (seen copying,
+but looked away in time: +150) and warnings; the best score is saved and
+shown on the main menu and the end screen. Also the camera no longer closes
+the game when it drops out: it reconnects by itself while the game waits.
+
+The gradual focus and the camera reconnecting are Emre's work, from his
+branch `me461-python-visual-tracking-app2-gp` (commit `2ddf878`, his NOTES
+#12–#14). That branch started from commit `681fe15` and rebuilt the papers
+in a different way (drawn A-E papers, both neighbours knowing the answer),
+so it was not merged with git: the team chose to bring his ideas and his
+camera code into this branch, keeping the pictures, menus and scenes.
+
+### Added
+
+| File | Change |
+|---|---|
+| `camera.py` | Emre's reader, as it is: background start, retries, reconnecting, a camera fallback before the first picture, `read()` returns a copy or `None`. |
+| `tests/test_camera.py` | Emre's camera tests (fake camera and clock), as they are. |
+| `head_tracker.py` | `reset_tracking()` (Emre): forget old angles after a camera gap, keep the calibration. One test. |
+| `game.py` | `focus_time`, `paper_clarity()`, `reset_paper_focus()`, `paper_says()`. `close_calls`, `"close_call"` event and popup. `score_parts()`, `score()`. |
+| `highscore.py` | `load_best()`, `save_best()` (JSON file; missing/broken = 0; cannot write = only a message). |
+| `tests/test_highscore.py` | 4 tests. |
+| `render.py` | `blurred(picture, clarity)`, `BLUR_SMALLEST`, `BLUR_SOFTEN`. `draw_camera_wait()`. Score, breakdown, "NEW BEST!" / "BEST" on the end screen; "BEST SCORE" on the main menu. |
+| `settings.py` | `PAPER_FOCUS_TIME` (2.5 s); `CAMERA_FALLBACK_INDICES` (1), `CAMERA_WARMUP_TIME`, `CAMERA_STALE_TIME`, `CAMERA_RECONNECT_TIME`, `CAMERA_RETRY_INTERVAL`, `CAMERA_READ_RETRY`, `CAMERA_STOP_TIMEOUT`; `SCORE_PER_CORRECT` (1000), `SCORE_TIME_BONUS` (1000), `SCORE_PER_CLOSE_CALL` (150), `SCORE_PER_WARNING` (300), `HIGH_SCORE_FILE`. |
+| `sounds.py` | `"close_call"` (two rising notes). |
+| `.gitignore` | `highscore.json` (each computer has its own best score). |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `game.py` | Copying: the focus grows while you look at a side (not while seen), resets whenever the direction changes, and reading happens once at full focus. A side already read gets sharp again when you look back. |
+| `render.py` | The neighbour's picture with the letter (or "?") is shown from the start of a look, blurred by the focus. The copy bar is gone: the blur shows the progress, so the bottom strip only has the suspicion bar (`BOTTOM_BAR` 80 → 46 px). Texts: "Reading answer 1 from the left - keep looking". The end screen is laid out for the score. |
+| `main.py` | No frame → "WAITING FOR CAMERA" screen, tracker and focus reset, waiting time thrown away (the clock does not run). Quitting works before the first picture. The best score is checked when the end screen opens (`check_best()`), and kept next to `main.py`. `show_error()` removed (nothing closes the game any more). |
+| `tests/test_game.py` | Copying tests rewritten for the focus (sharper, blurry again after looking away, short glances do not add up, what the paper says before reading); score and close call tests. 121 tests now. |
+| `README.md`, `LEARN.md`, `PLAN.md` | Focus, score, camera. Emre is named where his ideas are described. |
+
+### Removed
+
+| Item | Why |
+|---|---|
+| `COPY_TIME`, `TICK_INTERVAL`, the tick sound, `copy_time` | The copy bar (5 s, kept between looks) was replaced by the focus. The blur shows the progress; the ticks were only noise. |
+| `show_error()` in `main.py` | Camera problems now wait and reconnect instead of closing. |
+
+### Details worth knowing
+
+- Not taken from Emre's branch: `CAMERA_INDEX = 1` (his computer's
+  camera; here it stays 0, with 1 as the fallback), the drawn A-E papers,
+  both neighbours knowing the answer, Up/Down answer revising, F2/F3 keys.
+  The team chose: every look starts blurry (his rule), one neighbour knows
+  and the other shows "?" (ours).
+- The blur shrinks the picture (to 3 % of its size when blurriest), softens
+  it and stretches it back: about 7 ms per frame. clarity² makes it stay
+  unreadable for a while and sharpen quickly at the end.
+- The time bonus is a share of the exam time, so choosing a longer exam in
+  the settings does not give more points.
+- A close call is counted whenever being seen ends without being caught
+  (also if the teacher looks away first: lucky, but still a close call).
+- Tests: all 121 pass. Drew the left neighbour at 0 %, 45 %, 75 % and 100 %
+  focus, the end screen (new best, not new best, lost), the main menu with
+  a best score and the camera waiting screen, and checked them by eye. Ran
+  the real loop: the opening, the menus, the loading; and a camera that
+  sends nothing at first, then pictures. A person should check, with the
+  webcam: 2.5 s feels right; the letter is unreadable until near the end;
+  close calls feel rewarding; the camera unplugged and plugged back in.
+
+### Next
+
+- Play it as a team: is it fun now? Then tune `PAPER_FOCUS_TIME`, the
+  teacher's times and the score numbers.
+- Levels (Quiz → Midterm → Final) and teacher personalities (PLAN.md 8.5).
+- Tell Emre what was taken from his branch, so the two branches do not
+  drift further apart.
+
+(Also in this change: the unused `assets/images/Antigravity_CLI.webp`, never
+committed, was deleted at the team's request; and `PLAN.md` got section 11,
+the draft plan of the next update: three quizzes per run, the teacher's
+moods, controlled randomness. And after losing, the end menu now appears
+under the finished game over chat instead of on a different screen
+(`chat_screen()` in `render.py`; the chat moved up to make room:
+`CHAT_TOP`, `CHAT_ROW`, `CHAT_MENU_TOP`, `CHAT_MENU_GAP`).)

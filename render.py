@@ -35,7 +35,7 @@ import pygame
 from head_tracker import DOWN, SCREEN, LEFT, RIGHT
 from game import WON, GRACE_PART, UNKNOWN, WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE
 from teacher import BOARD, DESK
-from settings import (CALIBRATION_TIME, ANSWERS_NEEDED, MAX_WARNINGS, COPY_TIME, CLASSROOM_TOP,
+from settings import (CALIBRATION_TIME, ANSWERS_NEEDED, MAX_WARNINGS, CLASSROOM_TOP,
                       WARNING_SCENE_TIME, TEACHER_APPROACH_TIME, CAUGHT_SCENE_TIME,
                       CAUGHT_EXCLAIM_TIME, GAME_OVER_TIME)
 
@@ -48,7 +48,7 @@ YELLOW = (240, 200, 60)
 PREVIEW_SIZE = (240, 180)      # webcam preview in the game, pixels
 BIG_PREVIEW_SIZE = (480, 360)  # webcam preview on the start screen, pixels
 TOP_BAR = 56                   # height of the strip at the top, pixels
-BOTTOM_BAR = 80                # height of the strip at the bottom, pixels
+BOTTOM_BAR = 46                # height of the strip at the bottom (the suspicion bar), pixels
 CLOCK_RED_BELOW = 15           # seconds; the exam clock turns red under this
 
 IMAGE_FOLDER = os.path.join("assets", "images")
@@ -116,8 +116,10 @@ GAME_OVER_CHAT = {
 CHAT_START = 1.2               # seconds of "GAME OVER" alone before the chat starts
 CHAT_LINE_TIME = 2.6           # seconds between the two chat lines
 CHAT_TYPE_SPEED = 40           # letters per second the lines are typed
-CHAT_TOP = 235                 # pixels, the middle of the first chat line
-CHAT_ROW = 165                 # pixels between the chat lines
+CHAT_TOP = 182                 # pixels, the middle of the first chat line
+CHAT_ROW = 108                 # pixels between the chat lines
+CHAT_MENU_TOP = 395            # pixels; after the chat, the end menu appears under it from here
+CHAT_MENU_GAP = 64             # pixels between those menu items (a little tighter than in the other menus)
 CHAT_LOGO_X = 105              # pixels from the side of the window to the middle of a logo
 BUBBLE_MAX_WIDTH = 560         # pixels; longer lines wrap onto the next line
 LOGO_RADIUS = 58               # pixels, the size of the logos
@@ -139,6 +141,11 @@ CLAUDE_RAYS = [(0, 1.0), (31, 0.85), (58, 1.0), (92, 0.9), (121, 1.0), (149, 0.8
                (180, 1.0), (211, 0.9), (238, 1.0), (272, 0.85), (301, 1.0), (329, 0.9)]
 BLINK_EVERY = 3.2              # seconds between blinks
 BLINK_TIME = 0.15              # seconds a blink takes
+# Blurring the neighbour's view until it is sharp (game.paper_clarity()): the
+# picture is shrunk, softened and stretched back. At clarity 0 it is shrunk to
+# this part of its size, which makes it very blurry; at 1 it is not shrunk.
+BLUR_SMALLEST = 0.03
+BLUR_SOFTEN = 2                # pixels of extra softening on the shrunk picture
 LOOK_AWAY_STRIP = 70           # height of the strip with the "Copying from..." text, pixels
 # Where each neighbour's paper is in their picture (window pixels). If a
 # paper picture is missing, the letter is drawn in a white note above it.
@@ -186,7 +193,7 @@ MONO_FONTS = [("couriernew", True), ("courier", True), ("nimbusmonops", True), (
 # The "How to play" screen: (text, colour).
 HELP_LINES = [
     ("You are in an exam. Copy all 5 answers without getting caught.", WHITE),
-    ("Turn your head LEFT or RIGHT: copy from a neighbour (fill the copy bar).", WHITE),
+    ("Turn your head LEFT or RIGHT: their paper gets sharper as you keep looking.", WHITE),
     ("One neighbour knows the letter (A-D), the other one shows \"?\".", WHITE),
     ("Look DOWN at your paper and press A, B, C or D to write it.", WHITE),
     ("Look at the SCREEN to see the teacher. Busy teacher = safe to copy.", WHITE),
@@ -444,15 +451,32 @@ class Renderer:
 
     def neighbour_picture(self, game, side):
         """
-        The picture of a neighbour. Before the copy bar is full
-        (paper_shows() is None) it is the plain one, so nothing gives the
-        answer away; after it, the one with the letter or "?" on their paper.
+        The picture of a neighbour with what is on their paper (the letter
+        circled, or "?"). It is shown from the start of a look, but blurred
+        until game.paper_clarity() reaches 1, so it cannot be read early.
+        None if that picture is missing (then the plain one and a note).
         """
-        shown = game.paper_shows(side)
-        if shown is None:
-            return LOOK_AWAY_IMAGES[side]
-        name = f"{SIDE_NAMES[side]}_{'unknown' if shown == UNKNOWN else shown}"
+        says = game.paper_says(side)
+        if says is None:
+            return LOOK_AWAY_IMAGES[side]   # after the last question
+        name = f"{SIDE_NAMES[side]}_{'unknown' if says == UNKNOWN else says}"
         return name if name in self.classroom else None
+
+    def blurred(self, picture, clarity):
+        """
+        The picture blurred: clarity 0 = very blurry, 1 = sharp. Shrinking it
+        and stretching it back loses the details (the smaller, the blurrier);
+        a small blur on the shrunk picture hides its blocks. Quick enough to
+        do every frame. The curve (clarity²) keeps it unreadable for a while,
+        then it sharpens fast at the end.
+        """
+        if clarity >= 1:
+            return picture
+        part = BLUR_SMALLEST + (1 - BLUR_SMALLEST) * clarity ** 2
+        small_size = (max(2, int(self.width * part)), max(2, int(self.height * part)))
+        small = pygame.transform.smoothscale(picture, small_size)
+        small = pygame.transform.gaussian_blur(small, BLUR_SOFTEN)
+        return pygame.transform.smoothscale(small, (self.width, self.height))
 
     def neighbour_note(self, side, shown):
         """The letter (or "?") read from a neighbour, on a white note above their paper."""
@@ -478,7 +502,7 @@ class Renderer:
             return first, "You can't see or hear the teacher"
         shown = game.paper_shows(direction)
         if shown is None:
-            first = f"Copying answer {q} {LOOK_AWAY[direction]}"
+            first = f"Reading answer {q} {LOOK_AWAY[direction]} - keep looking"
         elif shown == UNKNOWN:
             first = "They don't know this one - try the other side"
         else:
@@ -627,7 +651,7 @@ class Renderer:
             self.neon_cache[key] = pygame.transform.gaussian_blur(halo, GLOW_BLUR)
         return self.neon_cache[key]
 
-    def menu_items(self, labels, selected, top, select_progress):
+    def menu_items(self, labels, selected, top, select_progress, gap=MENU_ITEM_GAP):
         """
         The menu items, one under the other from `top`. The selected one is
         bigger, neon and rocking; under it a bar shows how long the head has
@@ -637,7 +661,7 @@ class Renderer:
         cx = self.width // 2
         self.menu_rects = []
         for i, label in enumerate(labels):
-            y = top + i * MENU_ITEM_GAP
+            y = top + i * gap
             # The clickable area: the plain text's size, a bit bigger.
             hit = pygame.Rect((0, 0), self.menu_item_font.size(label)).inflate(40, 10)
             hit.center = (cx, y)
@@ -886,12 +910,15 @@ class Renderer:
                 text_x = (self.width - PREVIEW_SIZE[0] - 12) // 2
             else:
                 picture = self.neighbour_picture(game, direction)
+                clarity = game.paper_clarity(direction)
                 if picture is not None:
-                    self.screen.blit(self.classroom[picture], (0, 0))
+                    self.screen.blit(self.blurred(self.classroom[picture], clarity), (0, 0))
                 else:
-                    # No picture with that letter: the plain one with a note.
-                    self.screen.blit(self.classroom[LOOK_AWAY_IMAGES[direction]], (0, 0))
-                    self.neighbour_note(direction, game.paper_shows(direction))
+                    # No picture with that letter: the plain one, and a note once read.
+                    plain = self.classroom[LOOK_AWAY_IMAGES[direction]]
+                    self.screen.blit(self.blurred(plain, clarity), (0, 0))
+                    if game.paper_shows(direction) is not None:
+                        self.neighbour_note(direction, game.paper_shows(direction))
                 # Just above the bars, so it does not cover the neighbour's paper.
                 strip_top = self.height - BOTTOM_BAR - LOOK_AWAY_STRIP
                 text_x = cx
@@ -950,24 +977,16 @@ class Renderer:
         top = self.height - BOTTOM_BAR
         self.hud_strip(top, BOTTOM_BAR, line_at_top=True)
         bar_x, bar_width = 140, self.width - 140 - 30
-        # The copy bar shows the neighbour you look at, or else the one you
-        # got furthest with.
-        if direction in game.copy_time:
-            copied = game.copy_time[direction]
-        else:
-            copied = max(game.copy_time.values())
-        self.shadow_text("COPYING", self.hud_small, WHITE, (16, top + 12))
-        self.bar(bar_x, top + 12, bar_width, 24, min(1.0, copied / COPY_TIME), NEON_CYAN)
-
+        # (No bar for reading a neighbour's paper: the blur itself shows it.)
         # Suspicion: yellow during the free staring time, pink after it, and pink
         # once the teacher has seen you copying (then it fills fast). The white
         # line marks where the free staring time ends.
-        self.shadow_text("SUSPICION", self.hud_small, WHITE, (16, top + 46))
+        self.shadow_text("SUSPICION", self.hud_small, WHITE, (16, top + 13))
         suspicion = game.suspicion()
         danger = suspicion >= GRACE_PART or game.seen_copying
-        self.bar(bar_x, top + 46, bar_width, 24, suspicion, NEON_PINK if danger else NEON_YELLOW)
+        self.bar(bar_x, top + 12, bar_width, 24, suspicion, NEON_PINK if danger else NEON_YELLOW)
         marker_x = bar_x + bar_width * GRACE_PART
-        pygame.draw.line(self.screen, WHITE, (marker_x, top + 42), (marker_x, top + 74), 3)
+        pygame.draw.line(self.screen, WHITE, (marker_x, top + 8), (marker_x, top + 40), 3)
 
     def zoomed(self, picture, centre, zoom):
         """
@@ -1274,13 +1293,23 @@ class Renderer:
 
     def draw_game_over(self, game):
         """
-        The game over screen: black, "GAME OVER" in big letters, then the
+        The game over scene: black, "GAME OVER" in big letters, then the
         Gemini and Claude logos chat about how you lost (GAME_OVER_CHAT).
+        When it ends, draw_end() keeps this screen and adds the menu under it.
+        """
+        self.chat_screen(game, GAME_OVER_TIME - game.scene_time, END_TEXTS[game.lose_reason])
+        self.footer("Space = skip")
+
+    def chat_screen(self, game, elapsed, subtitle):
+        """
+        "GAME OVER", a line of text under it, and the chat as it is `elapsed`
+        seconds after it started (long after = all typed, both laughing).
         """
         cx = self.width // 2
-        elapsed = GAME_OVER_TIME - game.scene_time
         self.screen.fill(BLACK)
-        self.shout("GAME OVER", self.menu_title_font, NEON_RED, (cx, 75))
+        self.shout("GAME OVER", self.menu_title_font, NEON_RED, (cx, 62))
+        # Plain (narrower) font, so it stays clear of the logos at the sides.
+        self.shadow_text(subtitle, self.medium, WHITE, (cx, 116), center=True)
         chat = GAME_OVER_CHAT[game.lose_reason]
         # The chat is over when the last line has been typed: then both laugh.
         last_start = CHAT_START + (len(chat) - 1) * CHAT_LINE_TIME
@@ -1292,7 +1321,6 @@ class Renderer:
             letters = int((elapsed - start) * CHAT_TYPE_SPEED)
             self.chat_line(who, message, letters, CHAT_TOP + i * CHAT_ROW, laughing)
         self.screen.blit(self.scanlines, (0, 0))
-        self.footer("Space = skip")
 
     def draw_popup(self, message):
         """A dark band across the screen with the message, drawn on top of the game."""
@@ -1301,6 +1329,23 @@ class Renderer:
         self.screen.fill(NEON_PINK, (0, band.top, self.width, HUD_LINE))
         self.screen.fill(NEON_PINK, (0, band.bottom - HUD_LINE, self.width, HUD_LINE))
         self.shout(message.upper(), self.hud, NEON_YELLOW, band.center, wobble=2)
+
+    def draw_camera_wait(self, message):
+        """
+        No picture from the webcam (starting or reconnecting): the game is
+        paused and the window stays responsive. `message` is the camera's
+        status (camera.py), wrapped to fit the window.
+        """
+        self.menu_background()
+        cx, cy = self.width // 2, self.height // 2
+        self.shout("WAITING FOR CAMERA", self.hud_huge, NEON_YELLOW, (cx, cy - 90))
+        for i, line in enumerate(self.wrap(message, self.medium, self.width - 120)):
+            self.shadow_text(line, self.medium, WHITE, (cx, cy - 10 + i * 34), center=True)
+        self.shadow_text("The game is paused and reconnects by itself.", self.medium, WHITE,
+                         (cx, cy + 90), center=True)
+        self.shadow_text("Close other camera apps, or check CAMERA_INDEX in settings.py.",
+                         self.small, WHITE, (cx, cy + 130), center=True)
+        self.footer("Q = quit")
 
     def draw_paused(self):
         """Drawn on top of the game screen while no face is seen."""
@@ -1328,20 +1373,24 @@ class Renderer:
                                                      int(width * (1 - head_pause)), 5))
 
     def draw_menu(self, title, labels, selected, select_progress, back_progress,
-                  camera_surface, lines=None, head_pause=0.0):
+                  camera_surface, lines=None, head_pause=0.0, best=0):
         """
         A whole menu screen in the neon style: main menu, settings, or how to
         play (with `lines`, a list of (text, colour) shown in a dark box).
         select_progress / back_progress (0..1): how long the head has been
         turned right / left, drawn as bars. camera_surface None = no
         webcam preview (the how-to-play text needs the room). head_pause:
-        see head_indicator().
+        see head_indicator(). best: the best score, shown under the title if
+        above 0 (main menu).
         """
         self.menu_background()
         if lines is None:
             # Short menus (the main menu) get a big title; longer ones move up.
             if len(labels) <= 4:
                 self.menu_title(title, 120)
+                if best > 0:
+                    self.shadow_text(f"BEST SCORE  {best}", self.hud, NEON_CYAN,
+                                     (self.width // 2, 205), center=True)
                 top = 270
             else:
                 self.menu_title(title, 75)
@@ -1364,24 +1413,44 @@ class Renderer:
         self.head_indicator(head_pause, x, y - INDICATOR_HEIGHT - 6, MENU_PREVIEW_SIZE[0])
         self.footer(MENU_HINT, back_progress)
 
-    def draw_end(self, game, labels, selected, select_progress, back_progress, head_pause=0.0):
+    def draw_end(self, game, labels, selected, select_progress, back_progress, head_pause=0.0,
+                 best=0, new_best=False):
         """
         Drawn on top of the last game screen when the game is over: the
-        result, then a small neon menu (play again, main menu, quit).
+        result and the score (with how it was made, and the best score), then
+        a small neon menu (play again, main menu, quit). After losing, it is
+        the game over chat (finished, both logos laughing) with the menu
+        under it, so the screen does not change when the chat ends.
         """
+        if game.state != WON:
+            subtitle = f"{END_TEXTS[game.lose_reason]}    SCORE 0"
+            if best > 0:
+                subtitle += f"    BEST {best}"
+            self.chat_screen(game, GAME_OVER_TIME, subtitle)
+            self.menu_items(labels, selected, CHAT_MENU_TOP, select_progress, CHAT_MENU_GAP)
+            self.head_indicator(head_pause, self.width - MENU_PREVIEW_SIZE[0] - 16,
+                                self.height - FOOTER_HEIGHT - INDICATOR_HEIGHT - 10,
+                                MENU_PREVIEW_SIZE[0])
+            self.footer(MENU_HINT, back_progress)
+            return
         self.darken(200, colour=HUD_PURPLE)
         self.screen.blit(self.scanlines, (0, 0))
         cx = self.width // 2
         if game.state == WON:
-            self.shout("EXAM HANDED IN!", self.hud_huge, NEON_GREEN, (cx, 105))
-            self.shadow_text(f"{game.correct_count()}/{ANSWERS_NEEDED} CORRECT", self.hud_big,
-                             WHITE, (cx, 175), center=True)
+            self.shout("EXAM HANDED IN!", self.hud_huge, NEON_GREEN, (cx, 80))
+            self.shadow_text(f"{game.correct_count()}/{ANSWERS_NEEDED} CORRECT", self.hud,
+                             WHITE, (cx, 135), center=True)
             # Which ones were right (green) and wrong (red).
-            self.answer_boxes(game, cx - (ANSWERS_NEEDED * 30 - 8) // 2, 210, graded=True)
-        else:
-            self.shout(END_TEXTS[game.lose_reason], self.hud_huge, NEON_RED, (cx, 115))
-            self.shadow_text("GAME OVER", self.hud_big, WHITE, (cx, 190), center=True)
-        self.menu_items(labels, selected, 320, select_progress)
+            self.answer_boxes(game, cx - (ANSWERS_NEEDED * 30 - 8) // 2, 157, graded=True)
+            # The score, how it was made, and the best one.
+            self.shout(f"SCORE  {game.score()}", self.hud_big, NEON_YELLOW, (cx, 215), wobble=1)
+            parts = "    ".join(f"{name} {points:+d}" for name, points in game.score_parts())
+            self.shadow_text(parts, self.small, WHITE, (cx, 252), center=True)
+            if new_best:
+                self.shout("NEW BEST!", self.hud_big, NEON_PINK, (cx, 290), wobble=4)
+            else:
+                self.shadow_text(f"BEST  {best}", self.hud, NEON_CYAN, (cx, 290), center=True)
+        self.menu_items(labels, selected, 355, select_progress)
         self.head_indicator(head_pause, self.width - MENU_PREVIEW_SIZE[0] - 16,
                             self.height - FOOTER_HEIGHT - INDICATOR_HEIGHT - 10, MENU_PREVIEW_SIZE[0])
         self.footer(MENU_HINT, back_progress)

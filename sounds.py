@@ -71,11 +71,11 @@ def nooo(seconds):
 def make_waves():
     """Sound name -> wave. Names match the events from game.update() and teacher.update()."""
     return {
-        "tick": tone(1500, 0.03),                                         # short click
         "read": tone(880, 0.25),                                          # ding: neighbour's paper read
         "write": scribble(0.15),                                          # pencil on paper
         "warning": tone(150, 0.4, fade=False),                            # low buzz
         "won": np.concatenate([tone(f, 0.15) for f in (523, 659, 784)]),  # rising notes
+        "close_call": np.concatenate([tone(f, 0.08) for f in (660, 990)]),  # phew: got away
         "lost_time": np.concatenate([tone(f, 0.25) for f in (400, 300, 200)]),  # falling notes
         # Seen copying: a fast rising alarm, "look away now!"
         "spotted": np.concatenate([tone(f, 0.07, fade=False) for f in (600, 900, 1200, 1500)]),

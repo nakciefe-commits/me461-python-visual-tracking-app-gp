@@ -7,6 +7,13 @@ change. Each value says its unit (seconds, degrees, pixels).
 
 # --- Webcam ---
 CAMERA_INDEX = 0            # 0 = first webcam; try 1 if the wrong one opens
+CAMERA_FALLBACK_INDICES = (1,)  # tried only before the first working camera is found; () disables fallback
+CAMERA_WARMUP_TIME = 3.0     # seconds to wait for a newly opened camera's first picture
+CAMERA_STALE_TIME = 0.5      # seconds; older pictures pause the game instead of pretending to be live
+CAMERA_RECONNECT_TIME = 1.0  # seconds without a good picture before reopening the same camera
+CAMERA_RETRY_INTERVAL = 0.5  # seconds between open/reconnect attempts
+CAMERA_READ_RETRY = 0.05     # seconds between failed frame reads (avoid a busy loop)
+CAMERA_STOP_TIMEOUT = 1.0    # seconds to wait for the reader on exit; some drivers block in read()
 FACE_MODEL_FILE = "face_landmarker.task"
 
 # --- Face finding ---
@@ -51,7 +58,7 @@ FPS = 30                    # frames per second the game tries to run at
 
 # --- Rules ---
 ANSWERS_NEEDED = 5          # questions on the exam; write all of them to hand it in
-COPY_TIME = 5.0             # seconds of looking at a neighbour to read their answer (A-D or "?")
+PAPER_FOCUS_TIME = 2.5      # seconds of looking at a neighbour, without looking away, until their paper is sharp (read)
 STARE_GRACE_TIME = 2.0      # seconds you may look at the screen for free
 STARE_FILL_TIME = 1.0       # seconds after the grace time until a warning
 MAX_WARNINGS = 3            # this many warnings = game over
@@ -61,8 +68,14 @@ TEACHER_APPROACH_TIME = 0.8 # seconds of that scene the teacher takes to walk up
 CAUGHT_SCENE_TIME = 4.0     # seconds of the "caught" scene: the "!", then the teacher tears up your exam
 CAUGHT_EXCLAIM_TIME = 1.2   # seconds of that scene the "!" is shown before he tears the paper
 GAME_OVER_TIME = 8.0        # seconds of the game over screen (the two logos talking); Space skips it
-TICK_INTERVAL = 0.3         # seconds between tick sounds while copying
 EXAM_TIME = 200              # seconds; run out before all answers are filled = lose
+
+# --- Score (only for a handed-in exam; losing scores 0) ---
+SCORE_PER_CORRECT = 1000    # points for each right answer
+SCORE_TIME_BONUS = 1000     # points if no time was used at all; less the more time used (by the share of the exam time)
+SCORE_PER_CLOSE_CALL = 150  # points each time the teacher saw you copying and you looked away in time
+SCORE_PER_WARNING = 300     # points taken off for each warning
+HIGH_SCORE_FILE = "highscore.json"  # where the best score is kept (next to main.py)
 
 # --- Teacher ---
 # (min, max) seconds for each teacher state; each time a random value in between is used.

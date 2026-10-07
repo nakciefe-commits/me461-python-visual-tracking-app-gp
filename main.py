@@ -1,5 +1,5 @@
 """
-The game: menus, the classroom, the teacher, the copy bar, the suspicion bar.
+The game: menus, the classroom, the teacher, the focus bar, the suspicion bar.
 
 Run it with:   ./run.sh      (or  .venv/bin/python main.py)
 Keys:          Space = calibrate (start screen), q = quit, F11 = fullscreen on/off,
@@ -26,6 +26,7 @@ import pygame
 import glitch_intro
 from camera import Camera
 from disclaimer import Disclaimer
+from highscore import load_best, save_best
 from game import Game, PLAYING
 from head_tracker import HeadTracker, Calibration, DOWN, SCREEN, LEFT, RIGHT
 from menu import (Menu, HeadMenuInput, next_choice, loading_steps, loading_progress,
@@ -33,11 +34,14 @@ from menu import (Menu, HeadMenuInput, next_choice, loading_steps, loading_progr
 from render import (Renderer, camera_to_surface, BIG_PREVIEW_SIZE, MENU_PREVIEW_SIZE,
                     HELP_LINES, LOADING_TIPS, DISCLAIMER_LETTERS)
 from settings import (CAMERA_INDEX, CALIBRATION_TIME, WINDOW_WIDTH, WINDOW_HEIGHT, FPS, FADE_TIME,
-                      FULLSCREEN, MAXIMIZED, EXAM_TIME_CHOICES, LOADING_TIME, SMOOTH_SCALING)
+                      FULLSCREEN, MAXIMIZED, EXAM_TIME_CHOICES, LOADING_TIME, SMOOTH_SCALING,
+                      HIGH_SCORE_FILE)
 from sounds import Sounds
 from teacher import Teacher
 
 MAX_DT = 0.1   # seconds; a slow frame must not fill a whole bar at once
+# The best score file sits next to this file, wherever the game is started from.
+HIGH_SCORE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), HIGH_SCORE_FILE)
 # Answer keys -> the letter they write on your paper.
 LETTER_KEYS = {pygame.K_a: "A", pygame.K_b: "B", pygame.K_c: "C", pygame.K_d: "D"}
 # Menu keys -> the same actions the head gives (see menu.py).
@@ -57,16 +61,6 @@ TITLES = {MENU: "DON'T GET CAUGHT", HELP: "HOW TO PLAY", SETTINGS: "SETTINGS"}
 FACE_COLOURS = {DOWN: (240, 150, 80), SCREEN: (60, 200, 240),
                 LEFT: (110, 200, 70), RIGHT: (110, 200, 70)}
 WHITE_BGR = (240, 240, 240)
-
-
-def show_error(renderer, message):
-    """Show an error on the window for a few seconds (e.g. no webcam)."""
-    renderer.screen.fill((25, 28, 35))
-    renderer.text(message, renderer.medium, (220, 60, 60),
-                  (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2), center=True)
-    pygame.display.flip()
-    print(message)
-    time.sleep(3)
 
 
 def open_window(fullscreen):
@@ -133,6 +127,8 @@ class App:
         self.head_input = HeadMenuInput()
 
         self.notice = Disclaimer(DISCLAIMER_LETTERS)   # the disclaimer screen's state
+        self.best = load_best(HIGH_SCORE_PATH)  # the best score so far (0 = none yet)
+        self.new_best = False                   # did the last game beat it?
         self.screen_name = DISCLAIMER
         self.after_calibration = MENU   # where calibrating leads to
         self.direction = SCREEN   # last known direction, kept while paused
@@ -154,6 +150,15 @@ class App:
             self.head_input.reset()
         if name == END:
             self.menus[END].selected = 0   # "PLAY AGAIN"
+            self.check_best()
+
+    def check_best(self):
+        """The game is over: if its score beats the best one, keep and save it."""
+        score = self.game.score()
+        self.new_best = score > self.best
+        if self.new_best:
+            self.best = score
+            save_best(HIGH_SCORE_PATH, score)
 
     def calibrate_then(self, next_screen):
         """Calibrate, then go to next_screen."""
@@ -362,7 +367,8 @@ class App:
         if name == END:
             self.game_screen(frame, face_found, time.time(), 0.0, over=True)
             self.renderer.draw_end(self.game, self.menu_labels(), selected,
-                                   select_progress, back_progress, head_pause)
+                                   select_progress, back_progress, head_pause,
+                                   self.best, self.new_best)
         else:
             self.tracker.draw_face(frame, WHITE_BGR)
             if name == HELP:
@@ -371,7 +377,7 @@ class App:
                 lines, camera_surface = None, camera_to_surface(frame, MENU_PREVIEW_SIZE)
             self.renderer.draw_menu(TITLES[name], self.menu_labels(), selected,
                                     select_progress, back_progress, camera_surface, lines,
-                                    head_pause)
+                                    head_pause, self.best if name == MENU else 0)
 
     def game_screen(self, frame, face_found, now, dt, over=False):
         """GAME (and, with over=True, the frozen game under the END menu)."""
@@ -424,23 +430,39 @@ class App:
     # The main loop
     # ------------------------------------------------------------------
     def run(self):
-        if not self.camera.running:
-            show_error(self.renderer, "Could not open the webcam. Try CAMERA_INDEX in settings.py.")
-            pygame.quit()
-            return
         # Our team's intro first; it returns False if the window was closed.
+        # (The camera starts in the background meanwhile, see camera.py.)
         self.running = glitch_intro.play(self.renderer.screen, self.clock)
+        camera_waiting = False
 
         previous_time = time.time()
         while self.running:
             # 1. Keys, clicks and the window's X button.
             self.handle_events()
 
+            if not self.running:
+                break   # quitting must also work before the camera has sent a picture
+
             # 2. Newest webcam frame and head angles.
             frame = self.camera.read()
             if frame is None:
-                show_error(self.renderer, "The webcam stopped sending pictures.")
-                break
+                # No (fresh) picture: the camera is starting or reconnecting (camera.py
+                # does that in the background). Everything waits, and the waiting
+                # time is thrown away, so the exam clock does not run meanwhile.
+                previous_time = time.time()
+                if not camera_waiting:
+                    self.tracker.reset_tracking()   # old angles are not true any more
+                    self.game.reset_paper_focus()   # waiting must not count as looking
+                camera_waiting = True
+                if self.screen_name == CALIBRATING:
+                    self.calibration.restart()
+                self.renderer.t = previous_time - self.start_time
+                self.renderer.draw_camera_wait(self.camera.status
+                                               or "Waiting for a fresh camera picture...")
+                pygame.display.flip()
+                self.clock.tick(FPS)
+                continue
+            camera_waiting = False
             now = time.time()
             dt = min(now - previous_time, MAX_DT)
             previous_time = now

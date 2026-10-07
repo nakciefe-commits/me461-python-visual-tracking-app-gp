@@ -5,8 +5,10 @@ winning and losing.
 How an answer gets onto your paper:
     1. Each question has a right letter (A-D), and only ONE neighbour (left or
        right, chosen at random) knows it. The other one's paper shows "?".
-    2. Look at a neighbour until the copy bar is full: you read their paper
-       (the letter, or "?" = "try the other side").
+    2. Look at a neighbour: their paper is blurry and gets sharper the
+       longer you look, without looking away (each look starts blurry again).
+       Once it is sharp you have read it (the letter, or "?" = "try the
+       other side"). Idea and first version: Emre (gradual focus).
     3. Look down at your own paper and press the letter (write()). You must
        remember it: the letter is only shown on the neighbour's paper.
        Any letter can be written, but only after the answer has been read;
@@ -14,7 +16,7 @@ How an answer gets onto your paper:
 
 This file only does the rules; it draws nothing and plays nothing. Every frame
 main.py calls update() with the head direction, and update() returns a list
-of "events" (like "tick" or "warning") so main.py knows which sounds to play.
+of "events" (like "read" or "warning") so main.py knows which sounds to play.
 
 Keeping the rules apart from the drawing means the rules can be tested without
 a camera or a window (see tests/test_game.py).
@@ -23,10 +25,11 @@ a camera or a window (see tests/test_game.py).
 import random
 
 from head_tracker import DOWN, SCREEN, LEFT, RIGHT
-from settings import (ANSWERS_NEEDED, COPY_TIME, STARE_GRACE_TIME, STARE_FILL_TIME,
-                      MAX_WARNINGS, POPUP_TIME, TICK_INTERVAL, EXAM_TIME, WARNING_SCENE_TIME,
+from settings import (ANSWERS_NEEDED, PAPER_FOCUS_TIME, STARE_GRACE_TIME, STARE_FILL_TIME,
+                      MAX_WARNINGS, POPUP_TIME, EXAM_TIME, WARNING_SCENE_TIME,
                       CAUGHT_SCENE_TIME, CAUGHT_EXCLAIM_TIME, GAME_OVER_TIME,
-                      STARE_ONLY_WHEN_FACING, CAUGHT_TIME, SUSPICION_DRAIN_TIME)
+                      STARE_ONLY_WHEN_FACING, CAUGHT_TIME, SUSPICION_DRAIN_TIME,
+                      SCORE_PER_CORRECT, SCORE_TIME_BONUS, SCORE_PER_CLOSE_CALL, SCORE_PER_WARNING)
 
 PLAYING, WON, LOST = "PLAYING", "WON", "LOST"
 # The scenes: short moments where the game is frozen and something is shown.
@@ -68,10 +71,9 @@ class Game:
         self.written = []         # letters written on your paper so far, in order
         self.read_sides = set()   # neighbours whose paper you have read for the current question
 
-        # Seconds copied from each neighbour for the current question. Each
-        # side keeps its own progress, also when you look away.
-        self.copy_time = {LEFT: 0.0, RIGHT: 0.0}
-        self.next_tick = 0.0      # copy time at which the next tick sound plays
+        # Seconds you have been looking at each neighbour in this look. It
+        # starts at 0 again every time you look somewhere else.
+        self.focus_time = {LEFT: 0.0, RIGHT: 0.0}
         self.last_direction = None
 
         # The suspicion bar, 0 (empty) to 1 (full). Staring at the teacher
@@ -81,6 +83,7 @@ class Game:
         self.suspicion_level = 0.0
         self.seen_copying = False # the bar was raised by being seen copying (drawn red)
         self.was_seen = False     # seen copying last frame? (the alarm plays when it starts)
+        self.close_calls = 0      # times you were seen copying and got away (they score points)
 
         self.popup_text = None    # warning message on screen, or None
         self.popup_timer = 0.0    # seconds until the popup disappears
@@ -99,15 +102,34 @@ class Game:
         """Index (0 = question 1) of the question you are working on."""
         return self.answers
 
-    def paper_shows(self, side):
+    def paper_says(self, side):
         """
-        What you read on that neighbour's paper for the current question: the
-        letter, "?" if they do not know it, or None if you have not read it yet.
+        What is written on that neighbour's paper for the current question:
+        the letter, or "?" if they do not know it. (Whether you can read it
+        yet is paper_clarity(); render.py blurs the picture.) None after the
+        last question.
         """
-        if side not in self.read_sides or self.answers == ANSWERS_NEEDED:
+        if self.answers == ANSWERS_NEEDED:
             return None
         q = self.question()
         return self.right_letters[q] if side == self.knowing_side[q] else UNKNOWN
+
+    def paper_shows(self, side):
+        """
+        What you have read on that neighbour's paper for the current
+        question: the letter, "?", or None if you have not read it yet.
+        """
+        if side not in self.read_sides:
+            return None
+        return self.paper_says(side)
+
+    def paper_clarity(self, side):
+        """How sharp that neighbour's paper is right now: 0 = blurry, 1 = sharp."""
+        return min(1.0, self.focus_time[side] / PAPER_FOCUS_TIME)
+
+    def reset_paper_focus(self):
+        """Both papers blurry again (a new look, or the camera was lost)."""
+        self.focus_time = {LEFT: 0.0, RIGHT: 0.0}
 
     def can_write(self):
         """True once the current question's answer has been read."""
@@ -129,14 +151,32 @@ class Game:
             return events
         self.written.append(letter)
         events.append("write")
-        # On to the next question: nothing read and nothing copied yet.
+        # On to the next question: nothing read yet.
         self.read_sides = set()
-        self.copy_time = {LEFT: 0.0, RIGHT: 0.0}
-        self.next_tick = 0.0
+        self.reset_paper_focus()
         if self.answers == ANSWERS_NEEDED:
             self.state = WON
             events.append("won")
         return events
+
+    def score_parts(self):
+        """
+        The score of a handed-in exam, as (name, points) pairs for the end
+        screen. A lost exam has none (it was torn up, or not finished).
+        """
+        if self.state != WON:
+            return []
+        time_share = self.time_left / self.exam_time   # 1 = no time used
+        return [
+            ("CORRECT", self.correct_count() * SCORE_PER_CORRECT),
+            ("TIME", int(SCORE_TIME_BONUS * time_share)),
+            ("CLOSE CALLS", self.close_calls * SCORE_PER_CLOSE_CALL),
+            ("WARNINGS", -self.warnings * SCORE_PER_WARNING),
+        ]
+
+    def score(self):
+        """The total score: 0 if lost, never below 0."""
+        return max(0, sum(points for _, points in self.score_parts()))
 
     def suspicion(self):
         """How full the suspicion bar is, 0..1."""
@@ -198,7 +238,7 @@ class Game:
         """
         Move the game forward by dt seconds. `direction` is DOWN, SCREEN, LEFT
         or RIGHT. `teacher` is a Teacher, or None for the demo without one.
-        Returns a list of events, e.g. ["tick", "answer"].
+        Returns a list of events, e.g. ["read", "warning"].
         """
         events = []
         # A scene: only its own clock runs. It is checked before game over,
@@ -253,22 +293,25 @@ class Game:
             self.suspicion_level = max(0.0, self.suspicion_level - dt / SUSPICION_DRAIN_TIME)
             if self.suspicion_level == 0:
                 self.seen_copying = False
+        if self.was_seen and not seen:
+            # The teacher saw you copying, and you got away: a close call.
+            self.close_calls += 1
+            events.append("close_call")
+            self.popup_text = f"CLOSE CALL! +{SCORE_PER_CLOSE_CALL}"
+            self.popup_timer = POPUP_TIME
         self.was_seen = seen
 
         # --- Option 3: copying from a neighbour ---
-        # While the teacher sees you, copying does not move forward: glancing
-        # sideways then is all risk and no gain. A paper already read has
-        # nothing more to give for this question.
-        if direction != self.last_direction and direction in (LEFT, RIGHT):
-            # Just turned to this side: ticking starts again right away.
-            self.next_tick = self.copy_time[direction]
+        # Every look is new: turning anywhere else makes both papers blurry
+        # again. While the teacher sees you, the paper does not get sharper:
+        # glancing sideways then is all risk and no gain.
+        if direction != self.last_direction:
+            self.reset_paper_focus()
         self.last_direction = direction
-        if direction in (LEFT, RIGHT) and not seen and direction not in self.read_sides:
-            if self.copy_time[direction] >= self.next_tick:   # first tick right at the start
-                events.append("tick")
-                self.next_tick += TICK_INTERVAL
-            self.copy_time[direction] += dt
-            if self.copy_time[direction] >= COPY_TIME:
+        if direction in (LEFT, RIGHT) and not seen:
+            self.focus_time[direction] = min(PAPER_FOCUS_TIME, self.focus_time[direction] + dt)
+            # Sharp: you have read it (only counted once per question).
+            if self.focus_time[direction] >= PAPER_FOCUS_TIME and direction not in self.read_sides:
                 self.read_sides.add(direction)
                 events.append("read")
 

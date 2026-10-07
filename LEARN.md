@@ -111,7 +111,7 @@ are not updated (paused).
 
 ### `settings.py` — the numbers
 Only constants, in UPPER_CASE, each with its unit. **Want to change how the game
-feels? Change a number here**, save, restart. Examples: `COPY_TIME = 3.0` (how
+feels? Change a number here**, save, restart. Examples: `PAPER_FOCUS_TIME = 1.5` (how
 long to copy an answer), `YAW_THRESHOLD = 18` (how far to turn for "side"),
 `TEACHER_DURATIONS` (how long the teacher stays busy or watching).
 
@@ -122,8 +122,14 @@ game. That worker (`keep_reading`) reads frames forever and saves the newest one
 in `self.frame`. When the game calls `read()`, it just gets `self.frame`
 straight away.
 
-- `running` is False if there is no webcam or it stopped.
-- `release()` stops the thread and gives the webcam back.
+- **Reconnecting** (Emre): the thread also opens the camera in the
+  background, tries again when frames are missing, reconnects after
+  `CAMERA_RECONNECT_TIME`, and before the first picture also tries
+  `CAMERA_FALLBACK_INDICES`. `read()` returns a copy of the newest frame, or
+  `None` if there is no fresh one; then main.py shows "WAITING FOR CAMERA"
+  with the clock stopped, instead of closing the game.
+  `tests/test_camera.py` checks all of that with a fake camera.
+- `release()` stops the thread; the thread gives the webcam back itself.
 
 ### `head_tracker.py` — where is the head pointing?
 The hardest file. Three parts:
@@ -171,7 +177,7 @@ frame, so you can see what the tracker sees.
 
 ### `game.py` — the rules
 `Game` holds the game's state: the answer key (`right_letters`,
-`knowing_side`), `written`, `read_sides`, `warnings`, `copy_time`,
+`knowing_side`), `written`, `read_sides`, `warnings`, `focus_time`,
 `suspicion_level`, `time_left`, `state` (`PLAYING` / `WON` / `LOST`) and the
 popup. `update(direction, dt, teacher)` runs once per frame and has three
 parts: the suspicion bar, copying, and the exam clock. `write(letter,
@@ -182,14 +188,27 @@ direction)` is called when a letter key is pressed.
 LEFT or RIGHT). Like the teacher, `Game` takes a `random.Random`, and the tests
 also set the key by hand so they know the answers.
 
-**Copying (LEFT or RIGHT): reading a neighbour's paper**
-- `copy_time` is a dictionary, one number per side: `copy_time[LEFT]` grows
-  by `dt` while you look left. A `"tick"` event every `TICK_INTERVAL` (0.3 s).
-- No progress while the teacher sees you copying (no gain, only risk).
-- At `COPY_TIME`: the side goes into `read_sides`, `"read"` event.
-  `paper_shows(side)` then gives the letter, or `"?"` for the neighbour who
-  does not know it. A paper already read gives nothing more.
-- Looking anywhere else keeps `copy_time`, so a paper can be read in pieces.
+**Copying (LEFT or RIGHT): reading a neighbour's paper** (gradual focus,
+Emre's idea)
+- `focus_time` is a dictionary, one number per side: `focus_time[LEFT]`
+  grows by `dt` while you look left, up to `PAPER_FOCUS_TIME` (2.5 s).
+  `paper_clarity(side)` turns it into 0 (blurry) … 1 (sharp); render.py
+  blurs the neighbour's picture by it.
+- Every look starts blurry: when the direction changes, `reset_paper_focus()`
+  sets both back to 0. Short glances do not add up.
+- No focus while the teacher sees you copying (no gain, only risk).
+- At full focus the side goes into `read_sides` (once), `"read"` event.
+  `paper_says(side)` is what is on the paper (the letter, or `"?"` for the
+  neighbour who does not know it), even before reading; `paper_shows(side)`
+  gives it only once read.
+
+**Close calls and the score:** being seen copying and then not being seen
+any more (you looked away in time) is a close call: `close_calls` + 1,
+`"close_call"` event and a popup. `score_parts()` lists the points of a
+handed-in exam (right answers, time bonus as a share of `exam_time`, close
+calls, warnings; numbers in `settings.py`), `score()` adds them up (0 if
+lost). main.py compares it with the best score (`highscore.py`) when the end
+screen opens (`check_best()`).
 
 **Writing (DOWN + a letter key):** `write()` does nothing unless you look
 down and `can_write()` (the knowing neighbour's paper is read). Any letter is
@@ -299,6 +318,12 @@ that jump sideways. A new random pattern each frame (`random.Random(frame)`)
 makes it flicker. Then it settles, the "GP" mark (with a strip cut out and
 moved) and "presents" fade in, and everything fades to black.
 
+### `highscore.py` — the best score
+`load_best(path)` reads the best score from a small JSON file (0 if it is
+missing or broken); `save_best(path, score)` writes it (and only prints a
+message if it can't). main.py keeps the file next to itself
+(`HIGH_SCORE_PATH`), so it works wherever the game is started from.
+
 ### `sounds.py` — beeps and sound files
 A sound is a long list of numbers telling the speaker where to be, 44,100 times
 a second. `tone(freq, seconds)` makes a sine wave with NumPy, which sounds like
@@ -326,7 +351,7 @@ that's also how animation will work later.
   clock at the top, the copy and suspicion bars at the bottom.
 - On your paper it writes `game.written` on the answer lines
   (`OWN_ANSWER_Y`). For a neighbour, `neighbour_picture()` picks the plain
-  picture until the copy bar is full, then the one with the letter circled
+  picture until the focus is full, then the one with the letter circled
   on their paper (`left_B`, `right_unknown` for "?"). If that picture is
   missing, `neighbour_note()` draws the letter in a white note instead.
   `look_away_texts()` picks the hint ("Press A, B, C or D...").
@@ -387,6 +412,9 @@ that's also how animation will work later.
   - `pygame.transform.rotozoom` turns and scales a picture; that is all the
     "animation" is.
 - `draw_end` draws the result and a small menu on top of the frozen game.
+  After losing it draws the game over chat instead (`chat_screen()`,
+  finished, both logos laughing) with the menu under it, so the screen does
+  not change when the chat ends.
 - The draw functions only **read** `game` and `teacher`; they never change them.
 
 ### `main.py` — the loop
@@ -464,19 +492,21 @@ frame in the middle of that:
    0.1 s → returns `LEFT`.
 4. `teacher.update(0.033)` → still `BUSY`, returns `[]`.
 5. `game.update(LEFT, 0.033, teacher)` → the teacher is not watching, so the
-   suspicion bar drains a little; `copy_time[LEFT]` is 1.20 s, which has
-   reached the next tick time (ticks are at 0, 0.3, 0.6, 0.9, 1.2...) → a
-   `"tick"` event; then it grows to 1.233 s. Returns `["tick"]`.
-6. `main.py` calls `sounds.play("tick")`.
+   suspicion bar drains a little; you were already looking left, so
+   `focus_time[LEFT]` grows from 1.20 to 1.233 s. Returns `[]`.
+6. Nothing to play.
 7. `classroom_view(LEFT, ...)` is 0, so `renderer.draw_game()` draws the
-   left neighbour's paper with "Copying answer 1 from the left" and fills
-   the copy bar to 1.233 / 5.0 ≈ 25%.
+   left neighbour's picture blurred by `paper_clarity(LEFT)` = 1.233 / 2.5 ≈
+   0.49 (still too blurry to read) with "Reading answer 1 from the left"
+   (there is no bar for it: the blur shows how far you are).
 8. `pygame.display.flip()`: you see it.
-9. Later, at 5.0 s, `"read"`: a note above her paper shows, say, "C". You
-   look down and press C: `game.write("C", DOWN)` writes it on your paper.
+9. Keep looking: at 2.5 s, `"read"` and the picture is sharp: her paper
+   shows, say, "C" circled. You look down and press C: `game.write("C",
+   DOWN)` writes it on your paper. (Had you looked away at 2 s, it would
+   have started blurry again.)
 
 Had the teacher been `WATCHING`, step 5 would instead raise the suspicion bar
-by 0.033 / 0.9, not move the copy bar, and return `["spotted"]` on the first
+by 0.033 / 0.9, not sharpen the paper, and return `["spotted"]` on the first
 such frame: the alarm.
 
 ---
@@ -485,12 +515,12 @@ such frame: the alarm.
 
 Small changes to learn by doing. Run `./run.sh` after each one.
 
-1. **Easy:** in `settings.py`, set `COPY_TIME = 1.0`. Copying is now much faster.
+1. **Easy:** in `settings.py`, set `PAPER_FOCUS_TIME = 1.0`. Copying is now much faster.
 2. **Easy:** set `ANSWERS_NEEDED = 3`. Check that the answer boxes on screen
    update by themselves (look at how `render.py` uses `ANSWERS_NEEDED`).
 3. **Medium:** in `sounds.py`, change the `"read"` sound to two notes, like
    `"won"` is built.
-4. **Medium:** in `render.py`, change the colour of the copy bar.
+4. **Medium:** in `render.py`, change the colour of the suspicion bar.
 5. **Harder:** in `game.py`, make looking DOWN drain the suspicion bar twice
    as fast as other directions. Then add a test for it in `tests/test_game.py`.
 6. **Harder:** print the yaw and pitch to the terminal in `main.py` every
