@@ -3,7 +3,7 @@ The game: menus, a run of three exams (the classroom, the teacher, the
 suspicion bar), the score count after each exam and the run's results.
 
 Run it with:   ./run.sh      (or  .venv/bin/python main.py)
-Keys:          Space = calibrate (start screen), q = quit, F11 = fullscreen on/off,
+Keys:          Space = calibrate (start screen), F11 = fullscreen on/off,
                menus: arrows / Enter / Esc (or the head: tilt up/down, turn right = select,
                       turn left = back), or the mouse,
                in the game: a / b / c / d = write that answer, s = leave it blank
@@ -28,23 +28,26 @@ import pygame
 from ui import glitch_intro
 from tracking.camera import Camera
 from logic.disclaimer import Disclaimer
+from logic.guide import Guide
 from logic.bag import Bag
-from logic.highscore import load_top, add_score, save_top
-from logic.game import Game, PLAYING
+from logic.highscore import load_top, add_score, save_top, set_name, load_history, remember
+from logic.grade import semester_grade, class_average, curve
+from logic.name_entry import NameEntry
+from logic.game import Game, PLAYING, GAME_OVER_SCENE
 from logic.run import Run
 from logic.slot import reel_position, has_stopped, passed
 from tracking.head_tracker import HeadTracker, Calibration, DOWN, SCREEN, LEFT, RIGHT
 from logic.menu import (Menu, HeadMenuInput, loading_steps, loading_progress,
                   UP, DOWN as MENU_DOWN, SELECT, BACK)
-from ui.draw_menus import BIG_PREVIEW_SIZE, MENU_PREVIEW_SIZE, HELP_LINES
-from ui.draw_scenes import GAME_OVER_CHAT
+from ui.draw_menus import BIG_PREVIEW_SIZE, MENU_PREVIEW_SIZE
+from ui.draw_scenes import GAME_OVER_CHAT, CHAT_BLIP_LETTERS, typed_letters
 from ui.draw_notice import DISCLAIMER_LETTERS
 from ui.render import Renderer, camera_to_surface
 from settings import (CAMERA_INDEX, CALIBRATION_TIME, WINDOW_WIDTH, WINDOW_HEIGHT, FPS, FADE_TIME,
                       FULLSCREEN, MAXIMIZED, LOADING_TIME, SMOOTH_SCALING, SCREEN_FADE_TIME,
-                      HIGH_SCORE_FILE)
-from ui.sounds import Sounds, tally_sound
-from logic.tally import parts_shown, is_done
+                      HIGH_SCORE_FILE, GAME_OVER_TIME, GRADE_STAMP_DELAY)
+from ui.sounds import Sounds, tally_sound, talk_sound, TALK_PITCHES
+from logic.tally import parts_shown, is_done, done_time
 from logic.teacher import Teacher
 
 MAX_DT = 0.1   # seconds; a slow frame must not fill a whole bar at once
@@ -68,10 +71,11 @@ DISCLAIMER, START, CALIBRATING, MENU, HELP, SETTINGS, BRIEFING, LOADING, GAME, E
     "DISCLAIMER", "START", "CALIBRATING", "MENU", "HELP", "SETTINGS", "BRIEFING", "LOADING",
     "GAME", "END", "RUN_END")
 # Screens with a list of items to choose from.
-MENU_SCREENS = (MENU, HELP, SETTINGS, BRIEFING, END, RUN_END)
-# Screens without music: it fades out while loading, so the exam is quiet.
-SILENT_SCREENS = (DISCLAIMER, LOADING, GAME)
-TITLES = {MENU: "DON'T GET CAUGHT", HELP: "HOW TO PLAY", SETTINGS: "SETTINGS"}
+MENU_SCREENS = (MENU, SETTINGS, BRIEFING, END, RUN_END)
+# Screens without music: the menu music fades out while loading, then the
+# exam music fades in (see music_track()).
+SILENT_SCREENS = (DISCLAIMER, LOADING)
+TITLES = {MENU: "DON'T GET CAUGHT", SETTINGS: "SETTINGS"}
 
 # Colour of the face drawing for each direction, (Blue, Green, Red) for OpenCV.
 FACE_COLOURS = {DOWN: (240, 150, 80), SCREEN: (60, 200, 240),
@@ -117,6 +121,10 @@ class App:
     """Everything the running program needs, and one method per job."""
 
     def __init__(self):
+        # Ctrl+C in the terminal stops the game as a normal Python
+        # KeyboardInterrupt (see run()). Without this, SDL would turn it into
+        # the same event as the window's X button, which the game ignores.
+        os.environ.setdefault("SDL_NO_SIGNAL_HANDLERS", "1")
         if SMOOTH_SCALING:
             # Tell SDL (under pygame) to stretch the picture to the window with
             # smoothing instead of copying pixels; must be set before the window opens.
@@ -136,7 +144,6 @@ class App:
         self.teacher = Teacher()
         self.menus = {
             MENU: Menu(["PLAY", "HOW TO PLAY", "SETTINGS", "QUIT"]),
-            HELP: Menu(["BACK"]),
             SETTINGS: Menu(["SOUND", "FULLSCREEN", "RECALIBRATE", "BACK"]),
             BRIEFING: Menu(["SPIN"]),   # then "I'M READY", see start_spin()
             END: Menu(["NEXT EXAM", "MAIN MENU"]),   # changed after each exam, see go_to()
@@ -145,14 +152,24 @@ class App:
         self.head_input = HeadMenuInput()
 
         self.notice = Disclaimer(DISCLAIMER_LETTERS)   # the disclaimer screen's state
+        self.guide = Guide()                           # the "How to play" guide's state
+        self.guide_direction = SCREEN                  # where the player looks in the guide
         # The three exams being played (a new one on PLAY). Not called
         # "self.run": that would hide the main loop, App.run().
         self.current_run = Run()
         self.top = load_top(HIGH_SCORE_PATH)    # the best runs so far, best first
+        # Every earlier run and exam score here (the "class"): the curve and the class averages.
+        self.history = load_history(HIGH_SCORE_PATH)
+        self.exam_average = None                # the class average of the exam just played, or None
+        self.semester = None                    # the run's grade: {"letter", "average", "curved"}
+        self.stamped = False                    # True once the run's grade has been stamped on
         self.new_place = None                   # where the last run got in the top scores (0 = first), or None
+        self.name_entry = None                  # typing the new top score's name (NameEntry), or None
+        self.last_name = ""                     # the last name typed: the next entry starts with it
         self.screen_name = DISCLAIMER
         self.after_calibration = MENU   # where calibrating leads to
         self.direction = SCREEN   # last known direction, kept while paused
+        self.paused = False       # True while the game is paused (no face)
         self.look_time = 0.0      # seconds the player has been looking at the screen in one go
         self.show_always = False  # t key: always show the classroom (for testing)
         self.loading_time = 0.0   # seconds the loading screen has been shown
@@ -181,23 +198,93 @@ class App:
         if name in MENU_SCREENS:
             # The head may still be turned from before: wait until it is straight.
             self.head_input.reset()
+        if name == HELP:
+            # How to play: the guide starts from the beginning.
+            self.guide = Guide()
+            self.guide_direction = SCREEN
         if name == END:
             # One exam is over: keep its result; the menu leads on.
             self.current_run.finish_quiz(self.game)
+            self.record_exam()
             items = ["SEE RESULTS"] if self.current_run.is_over() else ["NEXT EXAM", "MAIN MENU"]
             self.menus[END] = Menu(items)
             self.end_time = 0.0
         if name == RUN_END:
             self.menus[RUN_END].selected = 0   # "PLAY AGAIN"
+            self.stamped = False
             self.end_time = 0.0
             self.record_run()
 
+    def record_exam(self):
+        """
+        An exam is over: the class average of that exam (all the earlier
+        plays of it), then this score joins them, failed ones (0) too: a
+        real class average counts everyone.
+        """
+        result = self.current_run.results[-1]
+        scores = self.history["exams"].get(result["title"], [])
+        self.exam_average = class_average(scores)
+        self.history["exams"][result["title"]] = remember(scores, result["score"])
+        save_top(HIGH_SCORE_PATH, self.top, self.history)
+
     def record_run(self):
-        """The run is over: put its total into the top scores, and save them if it got in."""
+        """
+        The run is over: its letter grade on the curve of all the earlier
+        runs, then it joins them; and into the top scores if it is good enough.
+        """
+        run, past = self.current_run, self.history["runs"]
+        self.semester = {"letter": semester_grade(run.total(), run.share(), past),
+                         "average": class_average(past),
+                         "curved": curve(past) is not None}
+        self.history["runs"] = remember(past, run.total())
         date = time.strftime("%d %b").lstrip("0").upper()   # e.g. "7 OCT"
-        self.top, self.new_place = add_score(self.top, self.current_run.total(), date)
+        self.top, self.new_place = add_score(self.top, run.total(), date)
+        self.name_entry = None
         if self.new_place is not None:
-            save_top(HIGH_SCORE_PATH, self.top)
+            # Saved now without a name, so quitting while typing it does not lose it.
+            self.name_entry = NameEntry(self.last_name)
+        save_top(HIGH_SCORE_PATH, self.top, self.history)
+
+    def naming(self):
+        """True while the player types the new top score's name (after the count)."""
+        return (self.screen_name == RUN_END and self.name_entry is not None
+                and not self.name_entry.done and self.count_done())
+
+    def name_action(self, action):
+        """UP / DOWN roll the letter, SELECT goes to the next one, BACK to the one before."""
+        if action in (UP, MENU_DOWN):
+            self.name_entry.roll(1 if action == UP else -1)
+            self.sounds.play("menu_move")
+        elif action == SELECT:
+            self.name_entry.next()
+            self.sounds.play("menu_select")
+        else:
+            self.name_entry.back()
+            self.sounds.play("menu_back")
+        self.save_name()
+
+    def name_key(self, key):
+        """Keys while typing the name: letters type, Backspace goes back, Enter / Esc are done."""
+        if pygame.K_a <= key <= pygame.K_z:
+            self.name_entry.type(chr(key))
+            self.sounds.play("menu_select")
+        elif key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE):
+            self.name_entry.finish()
+        elif key in MENU_KEYS:
+            self.name_action(MENU_KEYS[key])
+            return
+        self.save_name()
+
+    def save_name(self):
+        """Once the name is done: put it on the score, save, and the menu appears."""
+        if not self.name_entry.done:
+            return
+        name = self.name_entry.name()
+        self.top = set_name(self.top, self.new_place, name)
+        save_top(HIGH_SCORE_PATH, self.top, self.history)
+        self.last_name = name
+        self.sounds.play("tally_done")
+        self.head_input.reset()   # the head may still be turned from the last letter
 
     def calibrate_then(self, next_screen):
         """Calibrate, then go to next_screen."""
@@ -249,6 +336,7 @@ class App:
         """The loading screen is over: a fresh exam, today's teacher, start the clock."""
         self.game = self.current_run.new_game()
         self.teacher.set_mood(self.current_run.mood())
+        self.renderer.mood = self.current_run.mood()   # its own pictures, if it has any
         self.teacher.reset()
         self.direction = SCREEN
         self.look_time = 0.0
@@ -276,6 +364,11 @@ class App:
         menu = self.menus[self.screen_name]
         if self.screen_name == BRIEFING and self.spinning():
             return   # nothing to choose while the slot machine turns
+        if self.naming():
+            self.name_action(action)
+            return
+        if self.screen_name == RUN_END and self.name_entry is not None and not self.name_entry.done:
+            return   # a new top score: no menu until its name is typed
         if action in (UP, MENU_DOWN):
             menu.move(-1 if action == UP else 1)
             self.sounds.play("menu_move")
@@ -315,13 +408,13 @@ class App:
             self.calibrate_then(SETTINGS)
 
     # ------------------------------------------------------------------
-    # 1. Keys, clicks and the window's X button
+    # 1. Keys and clicks
     # ------------------------------------------------------------------
     def handle_events(self):
+        # The window's X button does nothing (pygame.QUIT is not handled):
+        # the team wants the game left only with Esc or the menu's QUIT.
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.running = False
-            elif event.type == pygame.KEYDOWN:
+            if event.type == pygame.KEYDOWN:
                 if self.screen_name in MENU_SCREENS:
                     self.head_input.pause()   # keys in charge: the head waits a moment
                 self.handle_key(event.key)
@@ -339,8 +432,8 @@ class App:
 
     def handle_key(self, key):
         name = self.screen_name
-        if key == pygame.K_q:
-            self.running = False
+        if self.naming():
+            self.name_key(key)   # before everything: r, m, t and k are letters here
         elif key == pygame.K_F11:
             self.toggle_fullscreen()
         elif key == pygame.K_t:
@@ -354,6 +447,8 @@ class App:
                 self.calibrate_then(MENU)
             elif key == pygame.K_ESCAPE:
                 self.running = False
+        elif name == HELP:
+            self.guide_key(key)
         elif name in MENU_SCREENS:
             if key == pygame.K_ESCAPE:
                 # Esc goes back; on the main menu (nowhere to go back to) it quits.
@@ -393,6 +488,17 @@ class App:
         elif key == pygame.K_ESCAPE:
             self.running = False
 
+    def guide_key(self, key):
+        """Keys while the guide runs: Space hurries it, A-D / S write, Esc goes back."""
+        if key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
+            self.sounds.play("menu_back")
+            self.go_to(MENU)
+        elif key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
+            self.play_guide_sounds(self.guide.skip())
+        elif key in LETTER_KEYS or key == BLANK_KEY:
+            letter = "S" if key == BLANK_KEY else LETTER_KEYS[key]
+            self.play_guide_sounds(self.guide.press(letter, self.guide_direction))
+
     def press_notice(self):
         """Space on the disclaimer: read faster, sign, or go on after the stamp."""
         for sound in self.notice.press():
@@ -402,6 +508,8 @@ class App:
         name = self.screen_name
         if name == DISCLAIMER:
             self.press_notice()                      # a click anywhere does what Space does
+        elif name == HELP:
+            self.play_guide_sounds(self.guide.skip())   # a click does what Space does
         elif name == START and self.renderer.button_rect.collidepoint(pos):
             self.sounds.play("menu_select")
             self.calibrate_then(MENU)
@@ -440,7 +548,7 @@ class App:
             self.begin_playing()
 
     def menu_screen(self, frame, face_found, dt):
-        """MENU, HELP, SETTINGS and END: the head (or keys, or mouse) chooses an item."""
+        """MENU, SETTINGS and END: the head (or keys, or mouse) chooses an item."""
         yaw, pitch = self.tracker.relative_angles()
         action = self.head_input.update(yaw, pitch, dt, face_found)
         if action is not None:
@@ -459,7 +567,8 @@ class App:
             self.count_score(dt)
             self.game_screen(frame, face_found, time.time(), 0.0, over=True)
             self.renderer.draw_end(self.game, self.current_run, self.chat, self.menu_labels(), selected,
-                                   select_progress, back_progress, head_pause, self.end_time)
+                                   select_progress, back_progress, head_pause, self.end_time,
+                                   self.exam_average)
         elif name == BRIEFING:
             self.turn_reel(dt)
             run = self.current_run
@@ -472,16 +581,35 @@ class App:
             self.count_score(dt)
             self.renderer.draw_run_end(self.current_run, self.top, self.new_place,
                                        self.menu_labels(), selected, select_progress,
-                                       back_progress, head_pause, self.end_time)
+                                       back_progress, head_pause, self.end_time, self.name_entry,
+                                       self.semester)
         else:
             self.tracker.draw_face(frame, WHITE_BGR)
-            if name == HELP:
-                lines, camera_surface = HELP_LINES, None   # the text needs the room
-            else:
-                lines, camera_surface = None, camera_to_surface(frame, MENU_PREVIEW_SIZE)
             self.renderer.draw_menu(TITLES[name], self.menu_labels(), selected,
-                                    select_progress, back_progress, camera_surface, lines,
+                                    select_progress, back_progress,
+                                    camera_to_surface(frame, MENU_PREVIEW_SIZE),
                                     head_pause, self.top if name == MENU else None)
+
+    def guide_screen(self, frame, face_found, now, dt):
+        """HELP: Gemini and Claude teach, the player tries it; when they are done, the main menu."""
+        direction = self.tracker.current_direction(now, face_found)
+        if direction is not None:   # face lost: keep the last direction, no pause needed here
+            self.guide_direction = direction
+        self.play_guide_sounds(self.guide.update(dt, self.guide_direction))
+        if self.guide.finished():
+            # Nothing left to draw: the last frame fades into the main menu.
+            self.go_to(MENU)
+            return
+        self.tracker.draw_face(frame, FACE_COLOURS[self.guide_direction])
+        self.renderer.draw_guide(self.guide, self.guide_direction, camera_to_surface(frame))
+
+    def play_guide_sounds(self, events):
+        """The guide's events are sound names; "talk:GEMINI" is a talking blip in that voice."""
+        for name in events:
+            if name.startswith("talk:"):
+                who = name.split(":")[1]
+                name = talk_sound(who, random.randrange(len(TALK_PITCHES[who])))
+            self.sounds.play(name)
 
     def pick_chat(self):
         """An exam was just failed: pick the game over conversation (never the same twice in a row)."""
@@ -529,15 +657,60 @@ class App:
         if is_done(parts, self.end_time) and not was_done:
             new_top = self.screen_name == RUN_END and self.new_place is not None
             self.sounds.play("new_top" if new_top else "tally_done")
+        # The run's letter grade is stamped on a moment after the count.
+        # (A flag, not a time check: Space jumps the count straight to its end.)
+        stamp_at = done_time(parts) + GRADE_STAMP_DELAY
+        if self.screen_name == RUN_END and not self.stamped and self.end_time >= stamp_at:
+            self.stamped = True
+            self.sounds.play("stamp")
+
+    def typed_chat(self):
+        """Letters typed of each game over chat line, or None when the chat is not playing."""
+        if self.game.scene != GAME_OVER_SCENE or not self.game.in_scene():
+            return None
+        return typed_letters(self.chat, GAME_OVER_TIME - self.game.scene_time)
+
+    def chat_blips(self, typed_before):
+        """
+        The talking blips of the game over chat: one every CHAT_BLIP_LETTERS
+        letters typed, in the voice of the logo talking. At most one a frame,
+        and none on a space (a little pause between words).
+        """
+        typed_now = self.typed_chat()
+        if typed_before is None or typed_now is None:
+            return
+        for (who, text), before, now in zip(self.chat, typed_before, typed_now):
+            if now // CHAT_BLIP_LETTERS > before // CHAT_BLIP_LETTERS and text[now - 1] != " ":
+                self.sounds.play(talk_sound(who, random.randrange(len(TALK_PITCHES[who]))))
+                return
+
+    def chalk_heard(self):
+        """
+        True while the chalk sound should loop: the exam is on, he erases the
+        board, and the player is not looking down (then they hear nothing).
+        """
+        return (self.screen_name == GAME and self.game.state == PLAYING and not self.paused
+                and not self.game.in_scene() and self.teacher.erasing() and self.direction != DOWN)
+
+    def music_track(self):
+        """The music that should play now: "menu", "exam" or None (silence)."""
+        if self.screen_name in SILENT_SCREENS:
+            return None
+        if self.screen_name == GAME:
+            # The exam music stops when you lose (the alert and the scenes take over).
+            return "exam" if self.game.state == PLAYING else None
+        return "menu"
 
     def game_screen(self, frame, face_found, now, dt, over=False):
         """GAME (and, with over=True, the frozen game under the END menu)."""
         paused = False
+        self.paused = False
         if not over:
             new_direction = self.tracker.current_direction(now, face_found)
             # None = the player is gone. After losing (the scenes before the
             # end menu) nothing depends on the face, so nothing pauses.
             paused = new_direction is None and self.game.state == PLAYING
+            self.paused = paused
         if not over and not paused:
             if new_direction is not None:
                 self.direction = new_direction
@@ -555,10 +728,12 @@ class App:
                 changes = self.teacher.update(dt, keep_watching=self.game.under_suspicion())
                 heard = self.teacher.sounds(changes, can_hear=self.direction != DOWN)
             # game.update() also runs during the scene: it counts the scene down.
+            typed_before = self.typed_chat()
             for name in heard + self.game.update(self.direction, dt, self.teacher):
                 self.sounds.play(name)
                 if name == "lost":
                     self.pick_chat()
+            self.chat_blips(typed_before)
 
         self.tracker.draw_face(frame, FACE_COLOURS[self.direction])
         # The classroom is always shown at the end: if you were caught, you
@@ -585,72 +760,78 @@ class App:
     # The main loop
     # ------------------------------------------------------------------
     def run(self):
-        # Our team's intro first; it returns False if the window was closed.
-        # (The camera starts in the background meanwhile, see camera.py.)
-        self.running = glitch_intro.play(self.renderer.screen, self.clock)
         camera_waiting = False
+        try:
+            # Our team's intro first; it returns False if the window was closed.
+            # (The camera starts in the background meanwhile, see camera.py.)
+            self.running = glitch_intro.play(self.renderer.screen, self.clock)
+            previous_time = time.time()
+            while self.running:
+                # 1. Keys and clicks.
+                self.handle_events()
 
-        previous_time = time.time()
-        while self.running:
-            # 1. Keys, clicks and the window's X button.
-            self.handle_events()
+                if not self.running:
+                    break   # quitting must also work before the camera has sent a picture
 
-            if not self.running:
-                break   # quitting must also work before the camera has sent a picture
+                # 2. Newest webcam frame and head angles.
+                frame = self.camera.read()
+                if frame is None:
+                    # No (fresh) picture: the camera is starting or reconnecting (camera.py
+                    # does that in the background). Everything waits, and the waiting
+                    # time is thrown away, so the exam clock does not run meanwhile.
+                    previous_time = time.time()
+                    if not camera_waiting:
+                        self.tracker.reset_tracking()   # old angles are not true any more
+                        self.game.neighbours.reset_focus()   # waiting must not count as looking
+                    camera_waiting = True
+                    self.sounds.loop("chalk", False)   # everything waits: no chalk either
+                    if self.screen_name == CALIBRATING:
+                        self.calibration.restart()
+                    self.renderer.t = previous_time - self.start_time
+                    self.renderer.draw_camera_wait(self.camera.status
+                                                   or "Waiting for a fresh camera picture...")
+                    pygame.display.flip()
+                    self.clock.tick(FPS)
+                    continue
+                camera_waiting = False
+                now = time.time()
+                dt = min(now - previous_time, MAX_DT)
+                previous_time = now
+                face_found = self.tracker.read(frame, now)
+                # Seconds since the program started: the renderer animates with it.
+                self.renderer.t = now - self.start_time
 
-            # 2. Newest webcam frame and head angles.
-            frame = self.camera.read()
-            if frame is None:
-                # No (fresh) picture: the camera is starting or reconnecting (camera.py
-                # does that in the background). Everything waits, and the waiting
-                # time is thrown away, so the exam clock does not run meanwhile.
-                previous_time = time.time()
-                if not camera_waiting:
-                    self.tracker.reset_tracking()   # old angles are not true any more
-                    self.game.neighbours.reset_focus()   # waiting must not count as looking
-                camera_waiting = True
-                if self.screen_name == CALIBRATING:
-                    self.calibration.restart()
-                self.renderer.t = previous_time - self.start_time
-                self.renderer.draw_camera_wait(self.camera.status
-                                               or "Waiting for a fresh camera picture...")
+                # The music: the menu theme in the menus, the exam music during an
+                # exam; each fades out before the other fades in.
+                self.sounds.music(self.music_track(), dt)
+                self.sounds.loop("chalk", self.chalk_heard())
+
+                # 3 + 4. Rules, sounds and drawing for the current screen.
+                if self.screen_name == DISCLAIMER:
+                    for sound in self.notice.update(dt):
+                        self.sounds.play(sound)
+                    self.renderer.draw_disclaimer(self.notice)
+                    if self.notice.done():
+                        self.go_to(START)
+                        # The music starts here, from its beginning: not during the
+                        # intro (its own sound) or the notice (typewriter and stamp).
+                        self.sounds.start_music()
+                elif self.screen_name in (START, CALIBRATING):
+                    self.start_screen(frame, now, dt)
+                elif self.screen_name == LOADING:
+                    self.loading_screen(dt)
+                elif self.screen_name == HELP:
+                    self.guide_screen(frame, face_found, now, dt)
+                elif self.screen_name in MENU_SCREENS:
+                    self.menu_screen(frame, face_found, dt)
+                else:
+                    self.game_screen(frame, face_found, now, dt)
+
+                self.crossfade(dt)
                 pygame.display.flip()
                 self.clock.tick(FPS)
-                continue
-            camera_waiting = False
-            now = time.time()
-            dt = min(now - previous_time, MAX_DT)
-            previous_time = now
-            face_found = self.tracker.read(frame, now)
-            # Seconds since the program started: the renderer animates with it.
-            self.renderer.t = now - self.start_time
-
-            # The music: only in the menus; it fades out while loading an exam
-            # and fades back in after it.
-            self.sounds.music(self.screen_name not in SILENT_SCREENS, dt)
-
-            # 3 + 4. Rules, sounds and drawing for the current screen.
-            if self.screen_name == DISCLAIMER:
-                for sound in self.notice.update(dt):
-                    self.sounds.play(sound)
-                self.renderer.draw_disclaimer(self.notice)
-                if self.notice.done():
-                    self.go_to(START)
-                    # The music starts here, from its beginning: not during the
-                    # intro (its own sound) or the notice (typewriter and stamp).
-                    self.sounds.start_music()
-            elif self.screen_name in (START, CALIBRATING):
-                self.start_screen(frame, now, dt)
-            elif self.screen_name == LOADING:
-                self.loading_screen(dt)
-            elif self.screen_name in MENU_SCREENS:
-                self.menu_screen(frame, face_found, dt)
-            else:
-                self.game_screen(frame, face_found, now, dt)
-
-            self.crossfade(dt)
-            pygame.display.flip()
-            self.clock.tick(FPS)
+        except KeyboardInterrupt:
+            pass   # Ctrl+C in the terminal: close everything properly below
 
         # Give the webcam back to the system and close everything.
         self.camera.release()

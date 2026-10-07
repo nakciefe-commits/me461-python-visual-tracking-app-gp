@@ -24,9 +24,14 @@ def parts_shown(parts, elapsed):
     return sum(1 for i in range(len(parts)) if appear_time(i) <= elapsed)
 
 
+def done_time(parts):
+    """Seconds after the end screen opened when the count is over (0 if there is nothing to count)."""
+    return appear_time(len(parts) - 1) + TALLY_COUNT_TIME if parts else 0.0
+
+
 def is_done(parts, elapsed):
     """True once the last part has appeared and finished counting."""
-    return elapsed >= appear_time(len(parts) - 1) + TALLY_COUNT_TIME if parts else True
+    return elapsed >= done_time(parts)
 
 
 def running_score(parts, elapsed):

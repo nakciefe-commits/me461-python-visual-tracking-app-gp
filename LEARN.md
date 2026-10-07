@@ -107,7 +107,7 @@ The game is always on one screen, stored in `self.screen_name` in
 (glitch_intro.play() first, before the loop)
 DISCLAIMER ──signed + stamped──► START ──Space/click──► CALIBRATING ──2 s──► MENU
                                                                          │
-     HELP ◄── "How to play" ── MENU ── "Settings" ──► SETTINGS ──"Recalibrate"──► CALIBRATING
+    HELP (the guide) ◄── "How to play" ── MENU ── "Settings" ──► SETTINGS ──"Recalibrate"──► CALIBRATING
                                 │                                                      (back to SETTINGS)
                               "Play" (a new run)
                                 ▼
@@ -122,7 +122,8 @@ DISCLAIMER ──signed + stamped──► START ──Space/click──► CALI
 `App.go_to(name)` changes the screen. MENU, HELP, SETTINGS, BRIEFING, END
 and RUN_END are the "menu screens": each has a `Menu` (a list of items) in
 `self.menus`. END's items change: "Next exam" / "Main menu", or "See
-results" after the last exam.
+results" after the last exam. HELP is not a menu screen: it is the guide
+(`guide_screen()`), and when the guide is finished it goes back to MENU.
 
 "Face not found" is not a separate screen: it's the GAME screen while the rules
 are not updated (paused).
@@ -405,6 +406,27 @@ returns `"type"`, `"stamp"`; `press()` returns `"sign"`. `draw_disclaimer()`
 the paper sliding in, the typed lines in a typewriter font, a signature
 drawn from two sine waves, and the red stamp (`make_stamp()`) slamming down.
 
+### `logic/guide.py` — the "How to play" guide
+`GUIDE_STEPS` is the script: each step is a few chat lines `(who, text)`
+and maybe a `task`: `("look", DOWN)` (hold that direction for
+`GUIDE_HOLD_TIME`), `("read", LEFT)` (keep looking until the paper is sharp,
+`PAPER_FOCUS_TIME`, like in the game), `("write", "B")` (look down and press
+B; `None` = any letter). A step can also say what the teacher is doing
+(`"teacher": "watching"`) and a `"sound"` to play when it starts (the "hmm").
+`Guide` works like `Disclaimer`: `update(dt, direction)` types the current
+line (`letters()`), waits `GUIDE_LINE_PAUSE`, goes to the next line; on the
+last line of a step with a task it waits (`waiting()`) until the task is
+done, says "read" (the ding), waits `GUIDE_STEP_PAUSE` and goes on.
+`press(letter, direction)` is for the write tasks, `skip()` for Space. It
+returns events like `"talk:GEMINI"` every `GUIDE_BLIP_LETTERS` letters, which
+`main.py` turns into a talking blip in that voice. `said` keeps every line
+started, so the screen can show the last two. `draw_guide()` (in
+`ui/draw_guide.py`) draws what you would see in the game where you look (the
+classroom, your paper with what you wrote, a neighbour's paper blurred by
+`clarity()`), the task banner and the chat: at the bottom while you look at
+the screen, and only the newest line, higher up, while you look away, so
+the papers are not covered.
+
 ### `ui/glitch_intro.py` — our team's intro
 A separate, self-contained file (only pygame, and NumPy for the sound), so it
 can be copied into any project: `glitch_intro.play(screen)` runs its own
@@ -429,9 +451,46 @@ two logos do not tell the same joke again soon.
 (`[]` if it is missing or broken; an old file with only a best score still
 works). `add_score(top, score, date)` puts a run's total into the list if it
 is good enough and says where (0 = first), or `None`; only
-`TOP_SCORES_KEPT` (5) are kept. `save_top(path, top)` writes it (and only
+`TOP_SCORES_KEPT` (5) are kept. Each entry is `{"score", "date", "name"}`;
+the name is `""` until it is typed, and `set_name(top, place, name)` adds it.
+`save_top(path, top)` writes it (and only
 prints a message if it can't). main.py keeps the file next to itself
 (`HIGH_SCORE_PATH`), so it works wherever the game is started from.
+`record_run()` saves a new top score at once without a name (so quitting
+while typing does not lose it), then saves it again with the name.
+
+### `logic/grade.py` — the semester grade, on a curve
+Like a real teacher: no letter for one exam, one letter for the semester
+(the run). `semester_grade(total, share, past_totals)`: with at least
+`GRADE_CURVE_MIN` (5) earlier runs, `curve()` gives their average and
+standard deviation (`statistics.mean`, `statistics.pstdev`), `z_score()`
+says how many standard deviations the total is above the average, and
+`letter_for_z()` looks it up in `GRADES` (settings.py). With fewer runs
+there is no class yet: `letter_for_share()` uses the share of the exam
+points (`Run.share()`). A total of 0 is FF. `class_average()` is shown
+after each exam.
+
+The scores of every play are kept in the same file as the top scores
+(`highscore.py`: `load_history()`, `remember()`, `save_top(path, top,
+history)`): `{"runs": [...], "exams": {"THE QUIZ": [...], ...}}`, the newest
+`GRADE_HISTORY_KEPT` (200) of each. main.py's `record_exam()` (at END) reads
+the class average of that exam *before* adding the new score, and
+`record_run()` (at RUN_END) grades the run *before* adding it, so you are
+never curved against yourself. `draw_run_end()` stamps the grade on
+(`grade_stamp()`) `GRADE_STAMP_DELAY` after the count, with the "stamp"
+sound (`self.stamped`, so skipping the count with Space still plays it).
+
+### `logic/name_entry.py` — three letters, like an arcade machine
+`NameEntry` holds `NAME_LETTERS` (3) letters and which one is chosen
+(`slot`). `roll(+1 / -1)` turns the chosen letter through `ALPHABET`
+(Z wraps to A), `next()` goes to the next letter (after the last one:
+`done`), `back()` to the one before, `type(letter)` sets it and goes on,
+`finish()` ends it. main.py feeds it the menu actions while `naming()` is
+true (after the run's count, when the run got into the top scores): tilt
+up/down = `roll()`, turn right = `next()`, turn left = `back()`; and keys
+(`name_key()`): A-Z type, Enter/Esc finish. The letter keys are checked
+before all the other keys, so R, M, T and K type instead of restarting.
+Until the name is done the menu is hidden and does nothing.
 
 ### `ui/sounds.py` — beeps and sound files
 A sound is a long list of numbers telling the speaker where to be, 44,100 times
@@ -442,12 +501,39 @@ Luigi "hmm" for `state:TURNING`, the MGS alert for losing by being caught or
 by warnings). A missing file keeps the beep. If the computer has no sound
 device, `Sounds` stays empty and `play()` does nothing, so the game still runs.
 `muted = True` (the Sound setting) also makes `play()` do nothing.
-**Music:** `theme.mp3` is too long to load like the other sounds, so
-`start_music()` plays it with `pygame.mixer.music`, which reads the file a
-bit at a time while it plays ("streaming"), looping forever. Every frame
-`main.py` calls `music(on, dt)`, which moves the volume a little towards
-`MUSIC_VOLUME` (in the menus) or 0 (loading, the exam, or muted): a fade,
-not a jump. `SILENT_SCREENS` in `main.py` says where it is off.
+`SOUND_VOLUMES` makes some quieter (the chalk). **Loops:** `loop(name, on)`
+is called every frame; it starts the sound looping (`play(loops=-1)`) when
+`on` turns true and fades it out when it turns false. main.py's
+`chalk_heard()` says when: in the exam, `teacher.erasing()` (busy at the
+board), not looking down, no scene, not paused. Made in code (stand-ins
+for files the team may add): `footsteps()` (thuds that get louder, the
+event comes from `teacher.update()` when he changes place and from
+`game.warn()`), `rip()` (two tearing pulls: high-passed noise with
+crackle and clicks), `chalk()`.
+
+**Mood pictures:** `load_pictures()` (render.py) also loads
+`<picture>_<mood>` for every picture and every mood in `MOODS` if the
+file exists, and `picture(name)` returns today's version (main.py sets
+`renderer.mood` before each exam). The drawing code always asks
+`self.picture(...)`, never `self.classroom[...]`, so new mood pictures need
+no code. A mood's `"place"` (settings.py) is where the teacher starts
+(`Teacher.home`); with `"move": 0` he stays there.
+**Music:** `theme.mp3` (menus) and `thrilling.mp3` (exam) are too long to
+load like the other sounds, so they are played with `pygame.mixer.music`,
+which reads the file a bit at a time while it plays ("streaming"), looping
+forever. It can stream only one file, so `MUSIC_FILES` names two tracks,
+`"menu"` and `"exam"`. Every frame `main.py` asks `music_track()` which one
+should play (None = silence: the notice, loading, after failing an exam)
+and calls `music(track, dt)`. That moves the volume a little towards the
+track's volume (`MUSIC_VOLUME`, `EXAM_MUSIC_VOLUME`) or 0: a fade, not a
+jump. When the track changes, the old one fades to 0 first, then
+`load_track()` starts the new one from its beginning and it fades in.
+**Talking blips:** while the game over chat is typed, `typed_letters()`
+(in `draw_scenes.py`) says how many letters of each line are typed. Each
+frame `main.py` compares it with the frame before (`chat_blips()`) and
+plays a short blip every `CHAT_BLIP_LETTERS` letters, in the speaker's
+voice (`TALK_PITCHES`: Gemini higher, Claude lower, a random one of three
+pitches each time).
 The buttons use `synth()`: a sine plus some of its 3rd and 5th harmonics,
 which sounds brighter, like an old synthesizer (`menu_move`, `menu_select`,
 `menu_back`). The score count's ticks (`tally0`, `tally1`, …) go up a semitone each:
@@ -458,7 +544,7 @@ pygame draws onto a "surface" (the window) and `pygame.display.flip()` (in
 `main.py`) shows it. Everything is drawn **again from scratch every frame**;
 that is how all the animation works.
 
-**One `Renderer`, six files.** `render.py` has the `Renderer` class, but
+**One `Renderer`, seven files.** `render.py` has the `Renderer` class, but
 most of its drawing methods are in other files, one per kind of screen:
 
 | File | Class | Draws |
@@ -470,9 +556,10 @@ most of its drawing methods are in other files, one per kind of screen:
 | `draw_game.py` | `GameDrawing` | the game screen, popup, pause |
 | `draw_scenes.py` | `SceneDrawing` | warning, caught and game over scenes |
 | `draw_results.py` | `ResultsDrawing` | the score count after an exam, the run's results, the top scores |
+| `draw_guide.py` | `GuideDrawing` | the "How to play" guide |
 
-`class Renderer(NeonStyle, NoticeDrawing, MenuDrawing, GameDrawing,
-SceneDrawing, ResultsDrawing)` inherits from all of them (these helper
+`class Renderer(NeonStyle, NoticeDrawing, MenuDrawing, BriefingDrawing,
+GameDrawing, SceneDrawing, ResultsDrawing, GuideDrawing)` inherits from all of them (these helper
 classes are called "mixins"). So there is still one `renderer` object, and
 any method can call any other with `self.`, whichever file it is in.
 `render.py` itself only loads what they all need once: fonts
@@ -614,7 +701,11 @@ desktop, not a real video-mode change. F11 just calls `open_window()` again.)
      turns), then "I'M READY"; `draw_briefing`.
    - LOADING: count `loading_time` up to `LOADING_TIME`, then
      `begin_playing()`. Nothing in the game moves yet.
-   - MENU / HELP / SETTINGS: `head_input.update(yaw, pitch, dt, ...)` may
+   - HELP: `guide_screen()`: the head direction
+     (`tracker.current_direction()`, the last one kept if the face is lost)
+     goes to `guide.update()`; its events are played (`play_guide_sounds()`);
+     `draw_guide`. When the guide is finished → MENU. Keys go to `guide_key()`.
+   - MENU / SETTINGS: `head_input.update(yaw, pitch, dt, ...)` may
      give an action → `menu_action()`; then `draw_menu`.
    - GAME: `direction = tracker.current_direction(...)`. If not `None`:
      `teacher.update(dt)`, filtered by `teacher.sounds()` (silence while
@@ -630,6 +721,8 @@ desktop, not a real video-mode change. F11 just calls `open_window()` again.)
      frozen game with the classroom always shown, and `draw_end` the count
      and the menu on top.
    - RUN_END: the same count, over the run's exams, and `draw_run_end`.
+     A new top score: after the count, the name boxes (`name_boxes()`)
+     instead of the menu until the name is typed.
      Space skips a count.
 4. `crossfade(dt)`: for SCREEN_FADE_TIME after `go_to()` the old screen's
    last picture (copied in `go_to()`) is laid over the new one, more and

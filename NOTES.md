@@ -1818,3 +1818,391 @@ team chose not to take the rest. From now on the game is developed on
   bytes. **Not tried on Windows**: a person should double-click `run.bat`
   on a fresh clone on Windows, check that it installs, that the webcam
   opens quickly (DirectShow) and that the game runs.
+
+---
+
+## Commit #33 — Exam music, talking blips in the game over chat, the Metal Gear joke removed
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The team added `assets/sounds/thrilling.mp3` for the exam. It now plays
+during an exam (quieter than the menu theme, so the teacher's sounds are
+still heard) and stops when you fail. The game over chat's speech bubbles
+now make little talking blips while they are typed, a different voice for
+each logo. The chat about Metal Gear Solid ("You are not Solid Snake") was
+removed, as the team asked.
+
+### Added
+
+| File | Change |
+|---|---|
+| `assets/sounds/thrilling.mp3` | The exam music (11 s, looped), added by the team. |
+| `ui/sounds.py` | `MUSIC_FILES` / `MUSIC_VOLUMES` (two tracks, `"menu"` and `"exam"`), `load_track()`; `TALK_PITCHES`, `talk_sound()` and six `talk_*` blips. |
+| `ui/draw_scenes.py` | `typed_letters()`, `CHAT_BLIP_LETTERS` (2 letters per blip). |
+| `main.py` | `music_track()`, `typed_chat()`, `chat_blips()`. |
+| `settings.py` | `EXAM_MUSIC_VOLUME` (0.35). |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `ui/sounds.py` | `start_music()` only allows the music to start; `music(track, dt)` takes the track instead of on/off, and switches tracks with a fade out and a fade in. |
+| `main.py` | `GAME` is no longer in `SILENT_SCREENS`. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The exam music and the blips. |
+
+### Removed
+
+| Item | Why |
+|---|---|
+| The "Solid Snake / Evaporated Snake" chat in `GAME_OVER_CHAT["caught"]` | The team asked for the Metal Gear Solid messages to go. The MGS alert sound and the red "!" stay. |
+
+### Details worth knowing
+
+- pygame streams only one music file at a time, so a new track waits
+  until the old one has faded to silence, then starts from its beginning.
+  The menu theme therefore starts over after every exam (before, it kept
+  running silently through the exam).
+- The blips play at most one a frame and never on a space, so words are
+  heard as little groups. Skipping the chat (Space) stops them.
+- Checked: tests (179) pass; with a dummy display the tracks switch
+  (menu → exam → silence → menu at the right volumes) and the blips are
+  made. **A person should try:** is the exam music too loud or too quiet
+  against the Luigi "hmm" (`EXAM_MUSIC_VOLUME`); does the 11 s loop get
+  annoying over a whole exam; are the blips pleasant or too many
+  (`CHAT_BLIP_LETTERS` 2 → 3).
+
+### Next
+
+- Phase B (PLAN.md 11.4): bluffs, sneaky glances, sign sounds.
+
+---
+
+## Commit #34 — How to play is a hands-on guide with Gemini and Claude
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The "How to play" screen was a list of nine lines of text. Now it is a
+guide: Gemini and Claude take turns talking (typed out, with the talking
+blips from #33), finishing each other's sentences, and the player tries
+each thing with their head as it is explained. Behind them is what the
+player would see in the game: looking down shows the paper with what they
+wrote, turning right shows the neighbour with "?" getting sharper, turning
+left the one with "B", looking at the screen the teacher (busy, then
+watching with the "hmm"). A banner says what to do, with a bar while the
+direction is held, and "NICE!" when it is done. 12 steps cover the whole
+game: the paper, writing and blanks, guessing and grading, the two
+neighbours, the teacher, the "hmm", being caught, close calls, warnings,
+handing in early, the bonuses and the three-exam run. The menu item is
+still called "HOW TO PLAY"; at the end it offers Play, Start over and
+Main menu.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `logic/guide.py` | `GUIDE_STEPS` (the script and tasks), `GUIDE_PAPERS`, `Guide`: `update()`, `press()`, `skip()`, `letters()`, `waiting()`, `progress()`, `clarity()`, `finished()`. No pygame. |
+| `ui/draw_guide.py` | `GuideDrawing.draw_guide()`, `guide_view()`, `task_banner()`. |
+| `tests/test_guide.py` | 13 tests: typing, blips, look / read / write tasks, the task waits for the lines, step sounds, Space, finishing, the real guide played through, line lengths. 192 tests in all. |
+| `settings.py` | `GUIDE_TYPE_SPEED` (40 letters/s), `GUIDE_LINE_PAUSE` (1.6 s), `GUIDE_STEP_PAUSE` (1.0 s), `GUIDE_HOLD_TIME` (0.8 s), `GUIDE_BLIP_LETTERS` (2). |
+| `main.py` | `guide_screen()`, `guide_key()`, `play_guide_sounds()`; `self.guide`, `self.guide_direction`. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | HELP runs the guide until it is finished, then is a menu (`PLAY`, `START OVER`, `MAIN MENU`); `go_to(HELP)` starts a new guide. HELP has no entry in `TITLES` any more. |
+| `ui/draw_menus.py` | `draw_menu()` lost its `lines` parameter (only the old help used it). |
+| `ui/render.py` | `Renderer` also inherits `GuideDrawing`. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The guide. |
+
+### Removed
+
+| Item | Why |
+|---|---|
+| `HELP_LINES` in `ui/draw_menus.py` | Replaced by the guide. |
+
+### Details worth knowing
+
+- A task only counts once all lines of its step are typed, so the
+  player reads what to do first. Writing only works while looking down,
+  and the "write B" step only takes B (any other key: the "back" sound).
+- In the guide the neighbours are fixed (right "?", left "B"), so the
+  lines can talk about them; the real game picks at random.
+- While looking at the screen the chat shows the last two lines at the
+  bottom; looking away it shows only the newest one, under the banner,
+  and hides the webcam preview: the papers are in the bottom half and
+  Claude's logo would cover the preview.
+- Losing the face does not pause the guide; the last direction is kept.
+- Space finishes the line, then does the task for the player; Esc goes
+  back to the menu. During the guide the head does not control a menu
+  (turning right is a task, not "select").
+- Checked: tests (192) pass; drew the steps with a dummy display (intro,
+  look down, the right "?", the left paper, writing B, the watching
+  teacher, the end menu) and moved texts that covered the papers.
+  **A person should try:** play the whole guide with the webcam; is it
+  too long (12 steps, about 2 minutes); does the chat jumping up when you
+  look away feel odd; are the lines funny; does the "look at the screen"
+  step pass easily after turning back.
+
+### Next
+
+- Phase B (PLAN.md 11.4): bluffs, sneaky glances, sign sounds.
+
+---
+
+## Commit #35 — After the guide, back to the main menu (it crashed)
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The team found that the game closed when the "How to play" guide ended.
+On the frame the guide finished, `draw_guide()` still asked for the
+current step's task, but there was no step left (`IndexError`), and the
+game crashed. Now the guide goes straight back to the main menu when it
+ends, as the team asked, and the end menu (Play / Start over / Main menu)
+is gone.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | `guide_screen()` goes to MENU when the guide is finished, before drawing. HELP is no longer in `MENU_SCREENS` and has no `Menu`; "START OVER" removed. |
+| `ui/draw_guide.py` | `draw_guide()` lost its `menu` parameter and the end menu. |
+| `logic/guide.py` | `task()` and `teacher()` work after the end too (None / "busy"), so asking never crashes. |
+| `tests/test_guide.py` | `test_it_finishes` asks about the step after the end. |
+| `README.md`, `LEARN.md` | Back to the main menu after the guide. |
+
+### Details worth knowing
+
+- Reproduced the crash with a dummy display (`IndexError: list index out
+  of range` in `task_banner()`), then ran the real `App` through the whole
+  guide: it ends on MENU and the main menu draws. Tests (192) pass.
+  **A person should try:** listen to the whole guide with the webcam and
+  check that it lands on the main menu.
+
+---
+
+## Commit #36 — Three-letter names for top scores, the score boxes no longer cover texts, no quitting with q or X
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+A run that gets into the top scores now asks for a three-letter name, like
+an arcade machine: after the count, "NEW HIGH SCORE! #2", "ENTER YOUR
+NAME" and three letter boxes. Tilt up/down rolls the chosen letter, turn
+right goes to the next one (after the last: done), turn left goes back; or
+type the letters, Enter finishes. The name shows in the top scores ("1.
+EFE 12808 7 OCT"), live while it is typed. The team said the top scores
+box covered texts: on the main menu the selected "HOW TO PLAY" (bigger
+and rocking) reached the box, and on the results "NEW HIGH SCORE!" sat on
+the total and the menu items touched each other. Also, as the team asked,
+`q` and the window's X button no longer quit; Esc (main menu, game,
+start screen) and the menu's QUIT do.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `logic/name_entry.py` | `NameEntry`: `roll()`, `next()`, `back()`, `type()`, `finish()`, `name()`; `ALPHABET`. No pygame. |
+| `tests/test_name_entry.py` | 9 tests. |
+| `logic/highscore.py` | A `"name"` on each entry; `set_name()`; `add_score(..., name="")`. |
+| `tests/test_highscore.py` | 3 more tests (old files without names, long names cut, the name set later). 204 tests in all. |
+| `settings.py` | `NAME_LETTERS` (3). |
+| `main.py` | `name_entry`, `last_name` (the next entry starts with it), `naming()`, `name_action()`, `name_key()`, `save_name()`. |
+| `ui/draw_results.py` | `name_boxes()`; a name column in `top_scores()` (`---` when there is none). |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `ui/draw_menus.py` | `menu_items()` takes the middle `cx`; on the main menu the items move right just enough that the widest one, selected, keeps `TOP_PANEL_GAP` (24 px) from the scores box (measured, so any font fits). `TOP_PANEL` 20 px wider for the names. |
+| `ui/draw_results.py` | Run results: the exams' box and the total moved up, the menu items 56 px apart (were 44, they touched), "NEW HIGH SCORE!" only while the name is typed and centred, the menu hidden until then. |
+| `main.py` | `q` no longer quits; the window's X button is ignored (`pygame.QUIT` not handled). `SDL_NO_SIGNAL_HANDLERS` and a `try / except KeyboardInterrupt` in `run()` keep Ctrl+C in the terminal working and closing the camera properly. |
+| `ui/draw_menus.py` | Footers: "Esc = quit" on the start screen, "Esc = back / quit" while waiting for the camera. |
+| `README.md`, `LEARN.md` | Names, quitting. |
+
+### Details worth knowing
+
+- The new score is saved at once without a name and again with it, so
+  quitting while typing never loses the score.
+- While typing, all keys go to the name first: R, M, T, K type letters
+  instead of restarting, the menu, testing or calibrating. Esc finishes the
+  name as it is.
+- The menu does nothing until the name is done, so a head turn meant for
+  the last letter cannot also choose "PLAY AGAIN" (the head must be
+  straight once again after the name).
+- `ui/glitch_intro.py` still returns on the window's X button during the
+  3 s intro: it is our shared intro file for every project, so it was left
+  as it is.
+- Checked: tests (204) pass; drew the main menu with "HOW TO PLAY"
+  selected, the results while typing and after it; ran the real `App`:
+  Space skips the count, `q`, `r`, `m` typed "QRM" (the game did not
+  quit), the file got the name, then the menu worked. The X button and `q`
+  leave the game running; Esc on the main menu quits.
+  **A person should try:** type a name with the head (is 0.8 s per
+  letter to go on too slow?); check on your own screen that nothing
+  overlaps any more; Ctrl+C in the terminal stops the game.
+
+---
+
+## Commit #37 — The semester's letter grade, on a curve like a real teacher
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The run now ends with a METU-style letter grade (AA, BA, BB, CB, CC, DC,
+DD, FD, FF), stamped on a moment after the count with the "stamp" sound.
+The team asked for it to be given the way real teachers do: **on a curve
+over all the earlier plays**, not over the top scores. So there is no
+letter for a single exam (after it you see the class average of that
+exam); the letter is for the semester, from the run's total against every
+earlier run on this computer: how many standard deviations above their
+average it is (z). An average run is a CC. For the first 5 runs there is
+no class yet, so a fixed table on the share of the exam points is used
+(90 % = AA, 50 % = CC). A total of 0 is always FF. Gemini also tells it in
+the guide.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `logic/grade.py` | `curve()`, `z_score()`, `letter_for_z()`, `letter_for_share()`, `semester_grade()`, `class_average()`. No pygame. |
+| `tests/test_grade.py` | 10 tests (no curve with too few runs, average = the z-0 letter, better total never a worse grade, thresholds, all-equal class, 0 = FF). |
+| `logic/highscore.py` | The history of every play: `load_history()`, `remember()`, `empty_history()`; `save_top()` takes the history too. 3 more tests. 217 tests in all. |
+| `logic/run.py` | `share()`: the share of all exam points got. |
+| `logic/tally.py` | `done_time()`. |
+| `settings.py` | `GRADES` (letter, least z, least share), `GRADE_CURVE_MIN` (5 runs), `GRADE_HISTORY_KEPT` (200), `GRADE_STAMP_DELAY` (0.5 s). |
+| `main.py` | `history`, `record_exam()`, `exam_average`, `semester`, `stamped`; `record_run()` grades the run. |
+| `ui/draw_results.py` | `grade_stamp()` (turned, lands from bigger, in the grade's colour, with the class average or "NO CLASS CURVE YET"); "CLASS AVERAGE" next to the run total after an exam. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `highscore.json` | Gets a `"history"` part on the next save; files without it still load (empty history). |
+| `logic/guide.py` | One more line in step 11 about the curve. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The grade. |
+
+### Details worth knowing
+
+- The class average and the curve are read *before* the new score is
+  added, so a run is never curved against itself.
+- Failed exams (0) count in an exam's class average and a run's total
+  counts in the class whatever it is, like everyone in a real class.
+  Runs left half-way (main menu) add their exams but not a run total.
+- The z limits (+1.3 AA ... −1.5 FD) and the fixed table are in
+  `GRADES` in `settings.py`.
+- The grade is from the total, which already has the bonuses and the
+  −300 per warning, so warnings need no extra rule.
+- Checked: tests (217) pass; drew the results with a curved BA (while
+  typing a name) and an uncurved FD, and the class average after an
+  exam; ran the real `App` through 7 fake runs into a scratch file: the
+  history was written, the curve started at the 6th run, and the stamp
+  sound played every time, also when Space skipped the count.
+  **A person should try:** play a few runs and check the letters feel
+  fair (too easy or too hard: change the z limits); this computer's
+  `highscore.json` starts with no history, so the first 5 runs are
+  graded without a curve.
+
+---
+
+## Commit #38 — Chalk, footsteps and a real tear; mood pictures; new phone stays at the desk; gossip lines fit
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The team asked for three sounds: the board being erased, walking, and the
+exam being torn up. The chalk file (`Erasing Chalk On Chalkboard Sound
+Effect.mp3`, in the folder since the start) now loops while the teacher
+erases the board and stops the moment he starts to turn, so silence is a
+warning too. Footsteps play when he walks between the board and the desk
+and when he comes to your desk after a warning. The tear is two pulls
+(rrrip... rrrrip!) instead of a short hiss. Footsteps and the tear are made
+in code until the team adds files. The team also wants mood pictures
+(party hat on his birthday, a suit when the dean visits, head in the phone
+with a new phone): the code now shows `<picture>_<mood>` when that file
+exists; the pictures are still to be made (PLAN.md 11.5 lists them). With
+a new phone he now never leaves his desk. And the team saw gossip texts
+running out of their box: the third +/- line of five moods was under the
+box's edge.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `ui/sounds.py` | `loop()` (looping sounds, faded), `footsteps()`, `step()`, `tear()`, `chalk()` (stand-in); `"chalk"`, `"footsteps"`, `"rip"` in `SOUND_FILES` (the last two optional files); `SOUND_VOLUMES`. |
+| `logic/teacher.py` | `erasing()`; `update()` also returns `"footsteps"` when he changes place; `home` (a mood's `"place"`). |
+| `logic/game.py` | `warn()` also returns `"footsteps"`. |
+| `main.py` | `chalk_heard()`, `self.paused`; the chalk loop every frame (off while waiting for the camera); `renderer.mood` before each exam. |
+| `ui/render.py` | Mood pictures loaded if they exist; `picture(name)`. |
+| `settings.py` | `CHALK_VOLUME` (0.5), `LOOP_FADE_TIME` (0.15 s); `new_phone`: `"place": "DESK"`, `"move": 0.0`, one more + line. |
+| Tests | Footsteps only when he moves; erasing only busy at the board; a mood can keep him at one place; mood texts fit (3 story, 3 +/- lines). 222 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `ui/sounds.py` | `rip()` rewritten: two tearing pulls, 0.9 s. |
+| `ui/draw_game.py`, `ui/draw_scenes.py` | Every picture through `self.picture()`. |
+| `ui/draw_briefing.py` | `LINE_GAP` 28 → 26, `EFFECTS_TOP` 234 → 222: three +/- lines fit in the box. |
+| `README.md`, `LEARN.md`, `PLAN.md` | Sounds, mood pictures (the list of pictures wanted is in PLAN.md 11.5). |
+
+### Details worth knowing
+
+- Like every teacher sound, the chalk is not heard while looking down.
+- The gossip on the reel was never cut: it shrinks to fit (down to 63 %
+  for "He is fighting with someone on the phone."). Only the +/- lines
+  ran over the box (`coffee`, `diet`, `paranoid`, `lost_bet`, and
+  `new_phone` after its new line). All 13 moods were measured: they fit.
+- Checked: tests pass; a fake `classroom_board_busy_birthday` in a scratch
+  folder was loaded and shown only on the birthday; the gossip screen
+  drawn for every mood. **Not heard by anyone yet:** a person should
+  listen to the chalk loop (is it seamless, is 0.5 too loud), the
+  footsteps and the new tear.
+
+---
+
+## Commit #39 — Gemini prompts for the mood pictures
+
+- **Date:** 7 Oct 2026
+
+### Summary
+
+The team will make the mood pictures (NOTES #38) with Gemini, on another
+computer. `IMAGE_PROMPTS.md` has every prompt complete, ready to paste:
+for each picture which image(s) to upload, the prompt, and the file name
+to save it as. 16 prompts: birthday B1–B8 (B8 is one prompt for the 10
+optional side views), the dean's visit D1–D6, the new phone N1–N2.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `IMAGE_PROMPTS.md` | The prompts, how to use them, the order and how to check the results. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `README.md`, `PLAN.md` | Point to `IMAGE_PROMPTS.md`. |
+
+### Details worth knowing
+
+- Every prompt of a group repeats the same fixed description of the
+  hat, cake, balloons and banner (BIRTHDAY SET), the suit and the dean
+  (DEAN SET) or the phone (NEW PHONE SET): the team saw the cake in some
+  birthday pictures and not in others in a first draft.
+- B1, D1 and N1 are made first; the rest upload them as a second,
+  reference image, so the look is the same everywhere.
+- There is no cake in B5 and the side views on purpose: the teacher's
+  desk is not in those pictures.
+- Each prompt asks Gemini to keep the camera angle and the teacher's head
+  in place: the warning scene zooms in on fixed spots of his face.

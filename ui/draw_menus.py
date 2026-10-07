@@ -16,7 +16,7 @@ import numpy as np
 import pygame
 
 from settings import CALIBRATION_TIME, QUIZZES
-from ui.style import (WHITE, YELLOW, NEON_PINK, NEON_CYAN, NEON_YELLOW, NEON_RED, SHADOW,
+from ui.style import (WHITE, NEON_PINK, NEON_CYAN, NEON_YELLOW, NEON_RED, SHADOW,
                       HUD_PURPLE, FOOTER_HEIGHT, GLOW_BLUR, SHADOW_OFFSET, TITLE_PULSE,
                       TITLE_WOBBLE, TITLE_WOBBLE_SPEED, mix)
 
@@ -45,19 +45,8 @@ MENU_PREVIEW_SIZE = (192, 144) # webcam preview in the menus, pixels
 INDICATOR_HEIGHT = 28          # pixels, the "HEAD CONTROL" / "KEYBOARD" box in the menus
 MENU_HINT = ("HEAD: tilt up/down = choose   turn right = select   turn left = back"
              "        KEYS: arrows, Enter, Esc")
-# The "How to play" screen: (text, colour).
-HELP_LINES = [
-    ("A run is 3 exams: Quiz, Midterm, Final. Your score is the total.", NEON_CYAN),
-    ("Turn LEFT or RIGHT: their paper gets sharper as you keep looking.", WHITE),
-    ("One neighbour knows the letter (A-D), the other one shows \"?\".", WHITE),
-    ("Look DOWN at your paper: A-D writes it, S leaves it blank.", WHITE),
-    ("Guessing is allowed: right +1, wrong -0.5, blank 0.", NEON_YELLOW),
-    ("Look at the SCREEN to see the teacher. Busy teacher = safe to copy.", WHITE),
-    ("Listen! \"Hmm\" means the teacher is about to look up.", YELLOW),
-    ("Seen copying = caught (0 points). Staring at him = a warning (3 = out).", WHITE),
-    ("Hand in early for a bonus. Time up = your paper is collected as it is.", WHITE),
-]
-TOP_PANEL = (28, 245, 250, 230)  # x, y, width, height of the top scores box on the main menu, pixels
+TOP_PANEL = (20, 245, 270, 230)  # x, y, width, height of the top scores box on the main menu, pixels
+TOP_PANEL_GAP = 24             # pixels the menu items keep from the top scores box (they move right if needed)
 
 
 class MenuDrawing:
@@ -159,14 +148,15 @@ class MenuDrawing:
             self.neon_cache[key] = pygame.transform.gaussian_blur(halo, GLOW_BLUR)
         return self.neon_cache[key]
 
-    def menu_items(self, labels, selected, top, select_progress, gap=MENU_ITEM_GAP):
+    def menu_items(self, labels, selected, top, select_progress, gap=MENU_ITEM_GAP, cx=None):
         """
-        The menu items, one under the other from `top`. The selected one is
+        The menu items, one under the other from `top`, centred on cx (the
+        middle of the window if None). The selected one is
         bigger, neon and rocking; under it a bar shows how long the head has
         been turned right (selecting). Remembers where each item is, for clicks.
         """
         t = self.t
-        cx = self.width // 2
+        cx = self.width // 2 if cx is None else cx
         self.menu_rects = []
         for i, label in enumerate(labels):
             y = top + i * gap
@@ -241,7 +231,7 @@ class MenuDrawing:
             done = 1 - seconds_left / CALIBRATION_TIME
             self.bar(r.x, r.y + 15, r.width, 30, done, NEON_YELLOW)
 
-        self.footer("In the game:  A/B/C/D = write answer    Q = quit    R = restart    "
+        self.footer("In the game:  A/B/C/D = write answer    Esc = quit    R = restart    "
                     "M = menu    K = recalibrate")
 
     def draw_loading(self, progress, number, title):
@@ -287,7 +277,7 @@ class MenuDrawing:
                          (cx, cy + 90), center=True)
         self.shadow_text("Close other camera apps, or check CAMERA_INDEX in settings.py.",
                          self.small, WHITE, (cx, cy + 130), center=True)
-        self.footer("Q = quit")
+        self.footer("Esc = back / quit")
 
     def head_indicator(self, head_pause, x, y, width):
         """
@@ -307,45 +297,39 @@ class MenuDrawing:
                                                      int(width * (1 - head_pause)), 5))
 
     def draw_menu(self, title, labels, selected, select_progress, back_progress,
-                  camera_surface, lines=None, head_pause=0.0, top=None):
+                  camera_surface, head_pause=0.0, top=None):
         """
-        A whole menu screen in the neon style: main menu, settings, or how to
-        play (with `lines`, a list of (text, colour) shown in a dark box).
+        A whole menu screen in the neon style: the main menu or the settings
+        (how to play is the guide, see draw_guide.py).
         select_progress / back_progress (0..1): how long the head has been
-        turned right / left, drawn as bars. camera_surface None = no
-        webcam preview (the how-to-play text needs the room). head_pause:
+        turned right / left, drawn as bars. head_pause:
         see head_indicator(). top: the top scores (main menu), shown in a
         box at the left; None = no box.
         """
         self.menu_background()
-        if lines is None:
-            # Short menus (the main menu) get a big title; longer ones move up.
-            if len(labels) <= 4:
-                self.menu_title(title, 120)
-                items_top = 270
-            else:
-                self.menu_title(title, 75)
-                items_top = 195
+        # Short menus (the main menu) get a big title; longer ones move up.
+        if len(labels) <= 4:
+            self.menu_title(title, 120)
+            items_top = 270
         else:
-            self.menu_title(title, 60)
-            box_top = 110
-            self.darken(170, (60, box_top, self.width - 120, len(lines) * 36 + 24))
-            for i, (message, colour) in enumerate(lines):
-                self.text(message, self.medium, colour, (84, box_top + 14 + i * 36))
-            items_top = box_top + len(lines) * 36 + 75
-        self.menu_items(labels, selected, items_top, select_progress)
-        if top is not None:
+            self.menu_title(title, 75)
+            items_top = 195
+        if top is None:
+            self.menu_items(labels, selected, items_top, select_progress)
+        else:
+            # The top scores box is on the left: the items move right just
+            # enough that the widest one, selected (bigger) and rocking,
+            # never reaches the box, whatever font this computer has.
+            widest = max(self.menu_item_font.size(label)[0] for label in labels)
+            box_right = TOP_PANEL[0] + TOP_PANEL[2]
+            cx = max(self.width // 2, box_right + TOP_PANEL_GAP + int(widest * SELECTED_SCALE) // 2)
+            self.menu_items(labels, selected, items_top, select_progress, cx=cx)
             self.top_scores(top, TOP_PANEL)
 
         # The webcam, so the player can see the head is being tracked, and
         # above it who is in control (the head or the keys).
         x = self.width - MENU_PREVIEW_SIZE[0] - 16
         y = self.height - MENU_PREVIEW_SIZE[1] - 50
-        if camera_surface is not None:
-            self.preview(camera_surface, x, y, MENU_PREVIEW_SIZE)
-            self.head_indicator(head_pause, x, y - INDICATOR_HEIGHT - 6, MENU_PREVIEW_SIZE[0])
-        else:
-            # No webcam (how to play): the box sits low, clear of the text.
-            self.head_indicator(head_pause, x, self.height - FOOTER_HEIGHT - INDICATOR_HEIGHT - 10,
-                                MENU_PREVIEW_SIZE[0])
+        self.preview(camera_surface, x, y, MENU_PREVIEW_SIZE)
+        self.head_indicator(head_pause, x, y - INDICATOR_HEIGHT - 6, MENU_PREVIEW_SIZE[0])
         self.footer(MENU_HINT, back_progress)

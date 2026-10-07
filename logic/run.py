@@ -80,6 +80,11 @@ class Run:
         """Each finished exam's score as (title, points), for the run's score count."""
         return [(result["title"], result["score"]) for result in self.results]
 
+    def share(self):
+        """The share of all the exam points got so far (points / questions; a failed exam 0)."""
+        questions = sum(result["questions"] for result in self.results)
+        return sum(result["points"] for result in self.results) / questions if questions else 0.0
+
     def total(self):
         """The run's score: all exam scores added up."""
         return sum(result["score"] for result in self.results)

@@ -61,8 +61,6 @@ GAME_OVER_CHAT = {
          (GEMINI, "Even your neighbour noticed. And she was half asleep.")],
         [(GEMINI, "I drew that teacher. I gave him eyes for a reason."),
          (CLAUDE, "And I wrote the alarm. You heard it. You stayed.")],
-        [(CLAUDE, "The Metal Gear alert played. You are not Solid Snake."),
-         (GEMINI, "Not even Liquid Snake. More like... Evaporated Snake.")],
         [(GEMINI, "He tore up your exam so fast, it was almost art."),
          (CLAUDE, "Honestly, the tear was the best thing on that paper.")],
         [(CLAUDE, "Fun fact: the \"hmm\" means LOOK AWAY."),
@@ -94,6 +92,7 @@ GAME_OVER_CHAT = {
 CHAT_START = 1.2               # seconds of "GAME OVER" alone before the chat starts
 CHAT_LINE_TIME = 2.6           # seconds between the two chat lines
 CHAT_TYPE_SPEED = 40           # letters per second the lines are typed
+CHAT_BLIP_LETTERS = 2          # letters per talking blip while a line is typed (1 = a blip per letter)
 CHAT_TOP = 182                 # pixels, the middle of the first chat line
 CHAT_ROW = 108                 # pixels between the chat lines
 CHAT_MENU_TOP = 395            # pixels; after the chat, the end menu appears under it from here
@@ -125,6 +124,16 @@ END_TEXTS = {   # lose_reason -> big text on the end screen
 }
 
 
+def typed_letters(chat, elapsed):
+    """
+    For each chat line, how many of its letters are typed `elapsed` seconds
+    after the chat started (0 = not started yet, len(text) = all typed).
+    main.py uses it for the talking blips.
+    """
+    return [max(0, min(len(text), int((elapsed - CHAT_START - i * CHAT_LINE_TIME) * CHAT_TYPE_SPEED)))
+            for i, (who, text) in enumerate(chat)]
+
+
 class SceneDrawing:
     def zoomed(self, picture, centre, zoom):
         """
@@ -152,7 +161,7 @@ class SceneDrawing:
         offset = self.scene_shake(arrived)
 
         # The walk: zoom into the teacher. walk² starts slow and speeds up.
-        watching = self.classroom[f"classroom_{teacher.place.lower()}_watching"]
+        watching = self.picture(f"classroom_{teacher.place.lower()}_watching")
         zoom = 1 + (APPROACH_ZOOM - 1) * walk * walk
         self.screen.fill(BLACK)
         self.screen.blit(self.zoomed(watching, TEACHER_FACE[teacher.place], zoom), offset)
@@ -162,7 +171,7 @@ class SceneDrawing:
         # Arrived: the pointing picture, at once. The white flash below hides
         # the cut from the zoomed picture.
         if POINTING_IMAGE in self.classroom:
-            self.screen.blit(self.classroom[POINTING_IMAGE], offset)
+            self.screen.blit(self.picture(POINTING_IMAGE), offset)
         # One line per warning; if MAX_WARNINGS is raised, the last line repeats.
         line = WARNING_LINES[min(game.warnings, len(WARNING_LINES)) - 1]
         self.scene_texts(f"WARNING {game.warnings}/{MAX_WARNINGS}", line, arrived)
@@ -230,10 +239,10 @@ class SceneDrawing:
         since_cut = elapsed - CAUGHT_EXCLAIM_TIME
         if since_cut >= 0 and CAUGHT_IMAGE in self.classroom:
             self.screen.fill(BLACK)
-            self.screen.blit(self.classroom[CAUGHT_IMAGE], self.scene_shake(since_cut))
+            self.screen.blit(self.picture(CAUGHT_IMAGE), self.scene_shake(since_cut))
         else:
             # The moment you are seen: the teacher, and the "!" popping up big.
-            self.screen.blit(self.classroom[f"classroom_{teacher.place.lower()}_watching"], (0, 0))
+            self.screen.blit(self.picture(f"classroom_{teacher.place.lower()}_watching"), (0, 0))
             face_x, face_y = TEACHER_FACE[teacher.place]
             pop = min(1.0, elapsed / EXCLAIM_POP_TIME)
             self.blit_turned(self.exclaim, (face_x, face_y - EXCLAIM_ABOVE), 0, 1 + 0.5 * (1 - pop))

@@ -292,13 +292,14 @@ logic/               The rules, no drawing, no camera, all tested
   highscore.py       The top scores file
   menu.py            Menus: selected item; head tilt/turn -> up/down/select/back; loading bar
   disclaimer.py      The opening notice: typed, signed, stamped
+  guide.py           How to play: Gemini and Claude's lines, the tasks to try
 tracking/
   camera.py          Reads the webcam in a background thread
   head_tracker.py    Webcam frame -> yaw/pitch -> DOWN / SCREEN / LEFT / RIGHT / None
 ui/
   render.py          The Renderer: fonts and pictures; drawing in the files below
   style.py           Colours, fonts, the neon helpers
-  draw_game.py, draw_scenes.py, draw_results.py, draw_menus.py, draw_notice.py
+  draw_game.py, draw_scenes.py, draw_results.py, draw_menus.py, draw_notice.py, draw_guide.py
   sounds.py          Generated beeps + sound files, played by name
   glitch_intro.py    Our team's intro (self-contained, for every project)
 tests/               unittest tests for logic/ and the tracker logic
@@ -358,7 +359,8 @@ main menu and the results; tests (152).
 3. **More art:** a turning picture; a walking teacher so moving between board
    and desk is not a jump.
 4. **Menus and polish:** ✅ main menu, how-to-play screen, settings, end
-   menu, all head-controlled (commit #15). Still: end screen with
+   menu, all head-controlled (commit #15). ✅ How to play is a hands-on
+   guide where Gemini and Claude teach the game (NOTES #34). Still: end screen with
    time/warnings, readable webcam errors, menu music.
 5. **Difficulty and score:** ✅ score, top scores, levels (Quiz → Midterm →
    Final) with moods. Still: the teacher checks more often as the exam goes
@@ -383,8 +385,8 @@ main menu and the results; tests (152).
 - **More settings:** sensitivity, volume, difficulty (the settings menu
   has sound on/off, fullscreen and recalibrate).
 - **Background music:** ✅ `theme.mp3` (made by the team with Suno) loops:
-  normal in the menus, quiet in the exam (NOTES #28). Maybe later: a second,
-  tenser track for the exam.
+  normal in the menus (NOTES #28). ✅ A tenser track for the exam,
+  `thrilling.mp3`, quieter than the theme (NOTES #33).
 
 ---
 
@@ -521,6 +523,18 @@ row and the safe time after a look is kept.
 - **Pictures** (optional, Gemini): the teacher asleep at the desk, the
   empty classroom (toilet break), the teacher looking out of the window.
   Without them the moment can be told with text and sound.
+- **Mood pictures** (Gemini; the code is ready, NOTES #38; the prompts,
+  ready to paste, are in `IMAGE_PROMPTS.md`): the same
+  pictures with the mood's look, named `<picture>_<mood>.jpeg`, same
+  camera angle and size as the originals (the zoom on his face and the
+  paper spots must still match). Wanted: `birthday` (party hat, balloons,
+  a banner; the four classroom pictures, the three look-away pictures,
+  `classroom_warning`, `classroom_caught`), `dean_visit` (a suit and tie;
+  the four classroom pictures, `classroom_warning`, `classroom_caught`),
+  `new_phone` (`classroom_desk_busy`: head down in the new phone;
+  `classroom_desk_watching`: looking up, phone still in his hand).
+- **Sound files** that replace the ones made in code: `footsteps.mp3`,
+  `paper-rip.mp3` (see `SOUND_FILES` in `ui/sounds.py`).
 
 ### 11.6 The team's new ideas, and what we think of them
 
@@ -577,7 +591,10 @@ last until the end of the run, so at most 2 per run.
   If a "greed" reward is wanted: **finish a read after hearing the "hmm"**
   (keep looking although the teacher is about to turn).
 
-**5. A letter grade at the end (AA–FF) — yes, definitely.** Cheapest and
+**5. A letter grade at the end (AA–FF) — ✅ done (NOTES #37)**, as the team
+asked: like a real teacher, only a semester grade, on a curve over all the
+earlier runs (a fixed table for the first 5); a class average after each
+exam. The first draft below was: Cheapest and
 funniest. ME461 is a METU course, and the AA–FF grades are exactly what the
 players know. Instead of a screen full of numbers, one huge neon grade badge:
 "EXAM HANDED IN!" with [ AA ] under it; "CAUGHT CHEATING!" with [ FF ].
@@ -694,6 +711,6 @@ under 8.5 minutes.
   in Turkish.
 - **Sounds:** the team picks the sound files from a library themselves;
   until then sounds made in code stand in (`ui/sounds.py`, `SOUND_FILES`).
-  The background music is `assets/sounds/theme.mp3` (Suno).
+  The music is `assets/sounds/theme.mp3` (menus, Suno) and `thrilling.mp3` (exam).
 - **Next step:** play a whole run with the webcam and tune `QUIZZES` and
   `MOODS`; then phase B (11.4): bluffs, sneaky glances, sign sounds.

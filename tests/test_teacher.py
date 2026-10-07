@@ -121,6 +121,45 @@ class TeacherTests(unittest.TestCase):
                 self.assertTrue(os.path.exists(path), path)
 
 
+class SoundEventTests(unittest.TestCase):
+    def test_footsteps_only_when_he_moves(self):
+        teacher = Teacher(random.Random(1))
+        for _ in range(round(300 / DT)):
+            place = teacher.place
+            events = teacher.update(DT)
+            self.assertEqual("footsteps" in events, teacher.place != place)
+
+    def test_erasing_only_busy_at_the_board(self):
+        teacher = Teacher(random.Random(2))
+        for _ in range(round(120 / DT)):
+            teacher.update(DT)
+            self.assertEqual(teacher.erasing(), teacher.state == BUSY and teacher.place == BOARD)
+
+
+class MoodTextTests(unittest.TestCase):
+    def test_mood_texts_fit_the_gossip_box(self):
+        # The gossip screen has room for 3 story lines and 3 +/- lines.
+        for name, mood in MOODS.items():
+            self.assertLessEqual(len(mood["story"]), 3, name)
+            self.assertLessEqual(len(mood["good"]) + len(mood["bad"]), 3, name)
+
+
+class PlaceTests(unittest.TestCase):
+    def test_a_mood_can_keep_him_at_one_place(self):
+        for mood, numbers in MOODS.items():
+            if "place" not in numbers or numbers["move"] > 0:
+                continue
+            teacher = Teacher(random.Random(3), mood)
+            for _ in range(round(300 / DT)):
+                teacher.update(DT)
+                self.assertEqual(teacher.place, numbers["place"])
+                self.assertFalse(teacher.erasing() and numbers["place"] == DESK)
+
+    def test_places_in_moods_are_real(self):
+        for numbers in MOODS.values():
+            self.assertIn(numbers.get("place", BOARD), (BOARD, DESK))
+
+
 class KeepWatchingTests(unittest.TestCase):
     def watching_teacher(self):
         teacher = Teacher(random.Random(4))
@@ -138,7 +177,7 @@ class KeepWatchingTests(unittest.TestCase):
         teacher = self.watching_teacher()
         for _ in range(round(30 / DT)):
             teacher.update(DT, keep_watching=True)
-        self.assertEqual(teacher.update(DT), ["state:" + BUSY])
+        self.assertIn("state:" + BUSY, teacher.update(DT))
 
     def test_busy_teacher_is_not_affected(self):
         teacher = Teacher(random.Random(5))

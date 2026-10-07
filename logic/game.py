@@ -210,7 +210,7 @@ class Game:
         warning also ends the game, but the scene still plays first.
         """
         self.warnings += 1
-        events.append("warning")
+        events += ["warning", "footsteps"]   # the buzz, and he walks over to your desk
         self.show_popup(f"The teacher noticed you staring! Warning {self.warnings}/{MAX_WARNINGS}")
         self.start_scene(WARNING_SCENE, WARNING_SCENE_TIME)
         self.suspicion.start_over()

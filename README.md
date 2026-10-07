@@ -81,6 +81,16 @@ CONTROL" again). In **Settings** you can turn the sound off, switch
 fullscreen, or calibrate again. The main menu also shows the **top scores**
 (the 5 best runs).
 
+**How to play** is a hands-on guide: Gemini and Claude take turns talking
+to you (typed out, with little talking blips) and you try each thing as
+they explain it: look down at your paper and write a letter, turn right
+(the neighbour shows "?"), turn left and keep looking until the paper is
+sharp (B), write B, look at the screen to see the teacher. Then they
+explain the "hmm", being caught, close calls, warnings, the bonuses and the
+three-exam run. A banner says what to do, with a bar while you hold it.
+Space hurries a line (or does the task for you), Esc goes back. When they
+are done, the game goes back to the main menu.
+
 Choose **Play** to start a **run: three exams in a row**:
 
 | Exam | Questions | Time |
@@ -112,6 +122,16 @@ class for a few seconds (danger). **Luigi's "hmm"** means the teacher is
 about to look up: stop copying. There is no sound when they are busy again:
 look at the screen to find out. While you look down at the paper you hear
 **nothing** from the teacher: look up to find out what they are doing.
+While he erases the board you hear the **chalk**; it stops the moment he
+starts to turn. You hear his **footsteps** when he walks between the board
+and the desk, and when he comes to your desk after a warning. When you are
+caught, he tears your exam in two (rrrip... rrrrip!).
+
+Some moods change more than the numbers: with a **new phone** he never
+leaves his desk. A mood can also have its own pictures (his birthday: a
+party hat and balloons; the dean's visit: a suit): a file like
+`assets/images/classroom_board_busy_birthday.jpeg` is shown instead of
+`classroom_board_busy.jpeg` on that day. Without them, the normal pictures.
 
 **When the clock runs out**, the teacher collects your paper as it is (the
 unanswered questions count as blank) and it is graded: falling notes play.
@@ -119,14 +139,16 @@ unanswered questions count as blank) and it is graded: falling notes play.
 alert plays). When you are caught, a red Metal Gear "!" pops up over the
 teacher, then he tears up your exam. After failing comes a GAME OVER screen
 where the Gemini and Claude logos make fun of you, with a different joke
-each time (Space skips it). A failed
+each time, typed out with little talking blips (Space skips it). A failed
 exam scores 0, and the run goes on with the next exam.
 
 **Music:** an 80s Miami theme (`assets/sounds/theme.mp3`) loops in the
 menus from the start screen on (not during the intro and the notice). It
-fades out while an exam loads, the exam itself is silent (you need to hear
-the teacher), and it fades back in afterwards. Sound OFF in the settings
-turns it off too. Every screen change is a short crossfade.
+fades out while an exam loads; during the exam a tense track
+(`assets/sounds/thrilling.mp3`) plays, quieter so you still hear the
+teacher, and stops when you fail. The theme fades back in afterwards, from
+its beginning. Sound OFF in the settings turns both off. Every screen
+change is a short crossfade.
 
 **Grading:** every question is worth one point: right **+1**, wrong
 **−0.5**, blank **0**. So a blind guess is a gamble (right only one time in
@@ -148,14 +170,27 @@ each time the first paper you read for a question is the one that knows),
 with one warning) and −300 per warning.
 Space skips the count. The exam's score is never below 0.
 
+After each exam you also see the **class average**: the average score of
+that exam over everyone who played it on this computer before.
+
 After the last exam, the **results** show each exam's score and the run's
-total, counted up, next to the top scores. A total good enough for the top 5
-lights up in the list with "NEW HIGH SCORE!", confetti and a fanfare. The
-top scores are kept in `highscore.json` (each computer has its own).
+total, counted up, next to the top scores. Then the **semester grade** is
+stamped on, METU style (AA, BA, BB, CB, CC, DC, DD, FD, FF), like a real
+teacher grades: **on a curve**. Your total is compared with all the earlier
+runs on this computer (their average and standard deviation): about the
+class average is a CC, far above it an AA. For the first 5 runs there is no
+class yet, so the grade comes from the share of right answers instead (90 %
+= AA, 50 % = CC). A total of 0 is always FF. A total good enough for the top 5
+lights up in the list with "NEW HIGH SCORE!", confetti and a fanfare, and
+you type a **three-letter name** for it, like on an arcade machine: tilt
+up/down to change the letter, turn right for the next one, turn left to go
+back (or just type the letters and press Enter). The top scores
+("1. EFE 12808 7 OCT") are kept in `highscore.json` (each computer has its own).
 
 Keys: Space calibrate, `a`/`b`/`c`/`d` write an answer, `s` leave it blank
-(both while looking at your paper), `q` quit (Esc quits in the game and on
-the main menu, and goes back in the other menus), `r` restart the run, `m`
+(both while looking at your paper), Esc quits in the game and on
+the main menu (and goes back in the other menus; the window's X button and
+`q` do nothing, Ctrl+C in the terminal still stops it), `r` restart the run, `m`
 main menu, `k` recalibrate, F11
 fullscreen on/off, `t` always show the classroom and the teacher's state (for testing). The game opens as a maximized window (title bar and taskbar stay
 visible); F11 makes it borderless fullscreen. In `settings.py`, set
@@ -246,6 +281,7 @@ you see and hear. `main.py` and `settings.py` stay at the top.
 | `logic/bag.py` | Random order without repeats (like the Tetris piece bag), for the game over jokes. |
 | `logic/menu.py` | Menus: the selected item, and head tilts/turns → up/down/select/back; the loading bar's uneven fill. |
 | `logic/disclaimer.py` | The opening notice: typing, signing, the stamp (no drawing). |
+| `logic/guide.py` | The "How to play" guide: Gemini and Claude's lines and the tasks to try (no drawing). |
 | **`tracking/`** | |
 | `tracking/camera.py` | Reads the webcam in the background. |
 | `tracking/head_tracker.py` | Webcam frame → head direction (DOWN / SCREEN / LEFT / RIGHT). |
@@ -257,6 +293,7 @@ you see and hear. `main.py` and `settings.py` stay at the top.
 | `ui/draw_results.py` | The score count after an exam, the run's results, the top scores. |
 | `ui/draw_menus.py` | Start, loading, camera wait and the menus. |
 | `ui/draw_notice.py` | The opening notice on the desk. |
+| `ui/draw_guide.py` | The "How to play" guide: what you look at, the task banner, the chat. |
 | `ui/sounds.py` | Sound effects: beeps made in code, some replaced by files. |
 | `ui/glitch_intro.py` | Our team's "Glitch Please" intro. One file, only needs pygame: copy it into any project. |
 | `tests/` | Unit tests for the rules, the tracker and the menus. |
@@ -267,9 +304,10 @@ you see and hear. `main.py` and `settings.py` stay at the top.
 | `face_landmarker.task` | Pre-trained MediaPipe face model. |
 | `pose_landmarker.task` | Pre-trained MediaPipe pose model, used by `old/tracker.py`. |
 | `assets/images/` | The four classroom pictures, plus the three look-away pictures (`classroom_desk_looking_down/left/right`) and each neighbour's paper with a letter (`left_A` … `left_D`, `left_unknown` = "?", same for `right_`), the teacher pointing at you after a warning (`classroom_warning`) (`original/`: as made by Gemini, before sharpening). |
-| `assets/sounds/` | Sound files (Luigi "hmm", MGS alert, chalk erasing for later) and `theme.mp3`, the background music. |
+| `assets/sounds/` | Sound files (Luigi "hmm", MGS alert, chalk erasing for later), `theme.mp3` (menu music) and `thrilling.mp3` (exam music). |
 | `LEARN.md` | **Start here to learn the code:** how it works, file by file. |
 | `PLAN.md` | Game design, open questions, what is done and what is next. |
+| `IMAGE_PROMPTS.md` | Ready-to-paste Gemini prompts for the teacher's mood pictures (which image to upload, what to save it as). |
 | `NOTES.md` | Update log: what changed in each commit and why. |
 | `CLAUDE.md` | Rules for changing the code (read automatically by Claude Code). |
 | `requirements.txt` | Libraries to install. |

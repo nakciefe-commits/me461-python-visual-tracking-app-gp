@@ -48,10 +48,20 @@ SLOT_TURNS = 3              # how many times the reel goes all the way round (mo
 SLOT_BOUNCE = 0.35          # moods; at the end the reel goes this much too far and settles back, like a real one
 SLOT_LEVER_TIME = 0.4       # seconds the lever takes to spring back up after the pull
 
-# --- Background music (assets/sounds/theme.mp3; the game runs without it) ---
-MUSIC_VOLUME = 0.6          # 0..1, the music's volume in the menus (it is silent during an exam)
+# --- Music (assets/sounds/theme.mp3 in the menus, thrilling.mp3 in the exam; the game runs without them) ---
+MUSIC_VOLUME = 0.6          # 0..1, the music's volume in the menus
+EXAM_MUSIC_VOLUME = 0.35    # 0..1, the exam music's volume (quieter: the teacher's sounds must be heard)
+CHALK_VOLUME = 0.5          # 0..1, the chalk sound while the teacher erases the board (it loops)
+LOOP_FADE_TIME = 0.15       # seconds a looping sound (the chalk) takes to fade in or out
 MUSIC_FADE_TIME = 1.5       # seconds to fade the music from silent to full volume, or back
 SCREEN_FADE_TIME = 0.4      # seconds the old screen takes to fade out when the screen changes
+
+# --- The guide ("How to play": Gemini and Claude teach the game, see logic/guide.py) ---
+GUIDE_TYPE_SPEED = 40       # letters per second the lines are typed
+GUIDE_LINE_PAUSE = 1.6      # seconds a typed line stays before the next one starts
+GUIDE_STEP_PAUSE = 1.0      # seconds after a task is done before the next step
+GUIDE_HOLD_TIME = 0.8       # seconds the player must hold a direction for a "look" task
+GUIDE_BLIP_LETTERS = 2      # letters per talking blip while a line is typed
 
 # --- Disclaimer (the "official notice" when the game opens) ---
 NOTICE_TYPE_DELAY = 0.6     # seconds before the typing starts (the paper slides in first)
@@ -102,6 +112,32 @@ SCORE_ALMOST_NINJA = 500    # every answer right with exactly one warning
 SCORE_SHARP_EYE = 100       # each time the first paper you read for a question is the one that knows it
 HIGH_SCORE_FILE = "highscore.json"  # where the top scores are kept (next to main.py)
 TOP_SCORES_KEPT = 5         # how many of the best runs are kept and shown on the main menu
+NAME_LETTERS = 3            # letters in a top score's name, like an arcade machine ("EFE")
+
+# --- The semester's letter grade (METU style, on a curve; see logic/grade.py) ---
+# Like a real teacher: no letters for single exams (you see your score and
+# the class average), one letter at the end of the semester. The run's total
+# is graded against ALL the earlier runs on this computer (the "class"):
+# its "z" is how many standard deviations it is above their average (0 =
+# average, +1 = clearly better). Until there are GRADE_CURVE_MIN earlier
+# runs there is no class yet, and a fixed table is used: the share of all
+# the exam points you got (points / questions; right +1, wrong -0.5, a
+# failed exam 0).
+# (letter, the least z on the curve, the least share without a curve). Best first.
+GRADES = [
+    ("AA",  1.3, 0.90),
+    ("BA",  0.9, 0.80),
+    ("BB",  0.5, 0.70),
+    ("CB",  0.1, 0.60),
+    ("CC", -0.3, 0.50),   # about the class average: a pass
+    ("DC", -0.7, 0.40),
+    ("DD", -1.1, 0.30),
+    ("FD", -1.5, 0.15),
+    ("FF", float("-inf"), float("-inf")),   # everything else, and a total of 0
+]
+GRADE_CURVE_MIN = 5          # earlier runs needed before grading on the curve
+GRADE_HISTORY_KEPT = 200     # how many past runs (and past scores of each exam) are kept, the newest
+GRADE_STAMP_DELAY = 0.5      # seconds after the score count ends before the grade is stamped on
 TALLY_START = 0.8           # seconds after the end screen opens before the score tally starts
 TALLY_STEP_TIME = 0.45      # seconds between two parts of the tally (each question, then the bonuses)
 TALLY_COUNT_TIME = 0.3      # seconds the score takes to count up after a part appears
@@ -148,7 +184,10 @@ SUSPICIOUS_AT = 0.6         # 0..1, the hidden point when no exam says otherwise
 # both, the Final's are only bad. For now a mood is only numbers (bluffs and
 # sneaky glances come in phase B): "busy" and "watching" are (min, max)
 # seconds of those states, "move" the 0..1 chance to change place
-# (board/desk) after watching. The good/bad lines must match the numbers.
+# (board/desk) after watching, and "place" (optional) where he starts
+# ("BOARD" if not given). A mood can also have its own pictures, e.g.
+# assets/images/classroom_board_busy_birthday.jpeg (see ui/render.py).
+# The good/bad lines must match the numbers.
 MOODS = {
     # --- The Quiz: good days ---
     "team_won": {
@@ -180,9 +219,9 @@ MOODS = {
         "story": ["The newest model, still with the plastic on it.",
                   "He is moving his photos over, one by one,",
                   "and looks up only while something is loading."],
-        "good": ["Long busy times at the desk", "Quick looks"],
+        "good": ["Long busy times at the desk", "Quick looks", "He never leaves the desk"],
         "bad": [],
-        "busy": (5.0, 8.5), "watching": (2.5, 4.5), "move": 0.15},
+        "busy": (5.0, 8.5), "watching": (2.5, 4.5), "move": 0.0, "place": "DESK"},
     "normal_day": {
         "gossip": "Nothing special happened today.",
         "story": ["No news, no gossip, no drama.",

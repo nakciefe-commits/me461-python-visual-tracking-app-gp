@@ -8,6 +8,7 @@ The drawing code is split over a few files, one per kind of screen:
     draw_briefing.py the hallway gossip before each exam (with the slot machine)
     draw_game.py    the classroom, your paper, the neighbours, the strips
     draw_scenes.py  warning, caught and game over scenes
+    draw_guide.py   how to play: Gemini and Claude teach the game
     draw_results.py the score count after an exam, the run's results, top scores
 
 Each of those files has one class with some of the drawing methods, and
@@ -27,12 +28,13 @@ import cv2
 import pygame
 
 from ui.draw_briefing import BriefingDrawing
+from ui.draw_guide import GuideDrawing
 from ui.draw_game import GameDrawing, LOOK_AWAY_IMAGES, PAPER_IMAGES
 from ui.draw_menus import MenuDrawing, BUTTON_TEXT, BUTTON_HEIGHT, BUTTON_PADDING
 from ui.draw_notice import NoticeDrawing
 from ui.draw_results import ResultsDrawing
 from ui.draw_scenes import SceneDrawing, SCENE_PICTURE_TOP, GEMINI, CLAUDE, LOGO_GLOW
-from settings import CLASSROOM_TOP
+from settings import CLASSROOM_TOP, MOODS
 from ui.style import NeonStyle, PREVIEW_SIZE, SCANLINE_GAP, SCANLINE_ALPHA, menu_font, mono_font
 
 IMAGE_FOLDER = os.path.join("assets", "images")
@@ -70,11 +72,12 @@ def load_classroom(name, width, height, top=CLASSROOM_TOP):
 
 
 class Renderer(NeonStyle, NoticeDrawing, MenuDrawing, BriefingDrawing, GameDrawing, SceneDrawing,
-               ResultsDrawing):
+               ResultsDrawing, GuideDrawing):
     def __init__(self, screen):
         self.screen = screen
         self.width, self.height = screen.get_size()
         self.t = 0.0   # seconds since the program started; main.py sets it every frame
+        self.mood = None   # today's teacher mood; main.py sets it before each exam (see picture())
         self.load_fonts()
         self.load_pictures()
 
@@ -129,3 +132,15 @@ class Renderer(NeonStyle, NoticeDrawing, MenuDrawing, BriefingDrawing, GameDrawi
         for name, top in SCENE_PICTURE_TOP.items():
             if image_file(name):
                 self.classroom[name] = load_classroom(name, self.width, self.height, top)
+        # Optional pictures for a mood: "classroom_board_busy_birthday" is
+        # shown instead of "classroom_board_busy" on his birthday (see picture()).
+        for name in list(self.classroom):
+            top = SCENE_PICTURE_TOP.get(name, CLASSROOM_TOP)
+            for mood in MOODS:
+                if image_file(f"{name}_{mood}"):
+                    self.classroom[f"{name}_{mood}"] = load_classroom(f"{name}_{mood}", self.width,
+                                                                      self.height, top)
+
+    def picture(self, name):
+        """Picture `name`, or today's mood's own version of it if there is one (e.g. "_birthday")."""
+        return self.classroom.get(f"{name}_{self.mood}", self.classroom[name])

@@ -10,7 +10,11 @@ Renderer (see render.py).
   the two logos (draw_scenes.py), with the menu under it.
 - After the run (three exams): each exam's score, the total counted up, and
   the top scores with the new one lit up. A new top score gets a big
-  "NEW HIGH SCORE!" with confetti.
+  "NEW HIGH SCORE!" with confetti, and the player types a three-letter
+  name for it (name_boxes()) before the menu appears. A moment after the
+  count, the semester's letter grade (logic/grade.py) is stamped on
+  (grade_stamp()). After a single exam there is no letter, like at school:
+  the score and the class average.
 """
 
 import math
@@ -20,8 +24,8 @@ import pygame
 
 from logic.exam_paper import CORRECT, WRONG, EMPTY
 from logic.game import WON
-from logic.tally import parts_shown, appear_time, running_score, is_done
-from settings import GAME_OVER_TIME, TOP_SCORES_KEPT
+from logic.tally import parts_shown, appear_time, running_score, is_done, done_time
+from settings import GAME_OVER_TIME, TOP_SCORES_KEPT, GRADE_STAMP_DELAY
 from ui.draw_game import RESULT_COLOURS
 from ui.draw_menus import MENU_HINT, MENU_PREVIEW_SIZE, INDICATOR_HEIGHT
 from ui.draw_scenes import END_TEXTS, CHAT_MENU_TOP, CHAT_MENU_GAP
@@ -47,15 +51,36 @@ END_MENU_GAP = 52              # pixels between those items
 
 # The run's results.
 RUN_TITLE_Y = 52                   # pixels, the middle of "SEMESTER OVER"
-RUN_PANEL = (40, 100, 540, 170)    # x, y, width, height of the box with the three exams, pixels
-RUN_ROW = 48                       # pixels between the exams in it
+RUN_PANEL = (40, 100, 540, 150)    # x, y, width, height of the box with the three exams, pixels
+RUN_ROW = 42                       # pixels between the exams in it
 RUN_OUTCOME_X = 380                # pixels from the box's left edge to the middle of the grade ("2.5/3")
-RUN_TOTAL_Y = 310                  # pixels, the middle of the big total
-RUN_TOP_PANEL = (610, 100, 310, 240)  # x, y, width, height of the top scores box, pixels
-NEW_TOP_Y = 360                    # pixels, the middle of "NEW HIGH SCORE!"
-RUN_MENU_TOP = 440                 # pixels, the first item of the menu after the run
-RUN_MENU_GAP = 44                  # pixels between those items
+RUN_TOTAL_Y = 292                  # pixels, the middle of the big total (under the exams' box)
+RUN_TOP_PANEL = (610, 100, 310, 235)  # x, y, width, height of the top scores box, pixels
+NEW_TOP_Y = 362                    # pixels, the middle of "NEW HIGH SCORE!" (while typing the name)
+RUN_MENU_TOP = 412                 # pixels, the first item of the menu after the run
+RUN_MENU_GAP = 56                  # pixels between those items (the selected one is bigger: they must not touch)
 TOP_ROW = 34                       # pixels between the rows of a top scores list
+# The columns of a top scores row, as parts of the box's width from its left edge.
+TOP_NAME_X = 0.15                  # where the name starts
+TOP_SCORE_X = 0.70                 # where the score ends
+NO_NAME = "---"                    # shown for a score without a name (yet, or from an old file)
+# Typing the name of a new top score.
+NAME_TITLE_Y = 412                 # pixels, the middle of "ENTER YOUR NAME"
+NAME_BOX_Y = 485                   # pixels, the middle of the letter boxes
+NAME_BOX = (62, 74)                # pixels, width and height of a letter box
+NAME_BOX_GAP = 34                  # pixels between the letter boxes (room for the "next" bar)
+NAME_ARROW = 12                    # pixels, the size of the up/down arrows at the chosen letter
+# The semester grade's stamp.
+STAMP_CENTRE = (822, 425)          # pixels, its middle: under the top scores, right of the menu
+STAMP_SIZE = (200, 128)            # pixels, width and height
+STAMP_ANGLE = -8                   # degrees it is turned, like a rubber stamp put down quickly
+STAMP_DROP = 1.5                   # how much bigger it starts (1.5 = 150 % bigger), then lands
+STAMP_DROP_TIME = 0.15             # seconds it takes to land
+ORANGE = (255, 150, 40)
+GRADE_COLOURS = {"AA": NEON_GREEN, "BA": NEON_CYAN, "BB": NEON_CYAN, "CB": NEON_YELLOW,
+                 "CC": NEON_YELLOW, "DC": ORANGE, "DD": ORANGE, "FD": NEON_RED, "FF": NEON_RED}
+NAME_HINT = ("HEAD: tilt up/down = letter   turn right = next   turn left = back"
+             "        KEYS: type it, Enter")
 CONFETTI_COUNT = 60                # pieces of confetti for a new top score
 CONFETTI_FALL = 140                # pixels per second the confetti falls
 CONFETTI_COLOURS = [NEON_PINK, NEON_CYAN, NEON_YELLOW, NEON_GREEN]
@@ -67,7 +92,7 @@ class ResultsDrawing:
     # After one exam
     # ------------------------------------------------------------------
     def draw_end(self, game, run, chat, labels, selected, select_progress, back_progress,
-                 head_pause, elapsed):
+                 head_pause, elapsed, class_average=None):
         """
         Drawn when an exam is over, with a small menu (next exam / main menu,
         or see the run's results after the last one). A handed-in exam gets
@@ -75,6 +100,8 @@ class ResultsDrawing:
         opened. A failed one is the game over chat (finished, both logos
         laughing) with the menu under it, so the screen does not change when
         the chat ends. chat: the conversation the game over scene showed.
+        class_average: the average of the earlier plays of this exam, or
+        None (the first time).
         """
         total = f"RUN TOTAL  {run.total()}"
         if game.state != WON:
@@ -88,6 +115,8 @@ class ResultsDrawing:
         self.screen.blit(self.scanlines, (0, 0))
         done = self.draw_tally(game, elapsed)
         if done:
+            if class_average is not None:
+                total += f"      CLASS AVERAGE  {class_average}"
             self.shadow_text(total, self.hud, NEON_CYAN, (self.width // 2, TALLY_RUN_Y),
                              center=True)
         self.menu_items(labels, selected, END_MENU_TOP, select_progress, END_MENU_GAP)
@@ -177,13 +206,16 @@ class ResultsDrawing:
     # After the run
     # ------------------------------------------------------------------
     def draw_run_end(self, run, top, new_place, labels, selected, select_progress,
-                     back_progress, head_pause, elapsed):
+                     back_progress, head_pause, elapsed, name_entry=None, semester=None):
         """
         The run is over: each exam's result appears in turn while the total
         counts up (the same count as after an exam), next to the top
         scores. new_place: where this run got in the top scores (0 = first),
         or None. A new top score: its row lights up and, once the count is
-        over, "NEW HIGH SCORE!" with confetti.
+        over, "NEW HIGH SCORE!" with confetti. name_entry: its name being
+        typed (NameEntry); until it is done, the letter boxes instead of the
+        menu. semester: the run's grade {"letter", "average", "curved"}
+        (main.py's record_run()), stamped on after the count.
         """
         self.menu_background()
         self.menu_title("SEMESTER OVER", RUN_TITLE_Y)
@@ -195,7 +227,7 @@ class ResultsDrawing:
         self.panel(RUN_PANEL)
         x, y, width, _ = RUN_PANEL
         for i, result in enumerate(run.results):
-            row_y = y + 36 + i * RUN_ROW
+            row_y = y + 32 + i * RUN_ROW
             self.shadow_text(f"{i + 1}. {result['title']}", self.hud, WHITE, (x + 18, row_y - 14))
             if i >= shown:
                 continue
@@ -211,22 +243,102 @@ class ResultsDrawing:
         self.thumped(f"TOTAL  {running_score(parts, elapsed)}", self.hud_huge, NEON_YELLOW,
                      (x + width // 2, RUN_TOTAL_Y), parts, elapsed)
 
-        # The top scores; the new one only shows once the count is over.
-        self.top_scores(top, RUN_TOP_PANEL, new_place if done else None, hide=None if done else new_place)
+        # The top scores; the new one only shows once the count is over,
+        # with the name as it is being typed.
+        typing = name_entry is not None and not name_entry.done
+        self.top_scores(top, RUN_TOP_PANEL, new_place if done else None, hide=None if done else new_place,
+                        typed_name=name_entry.name() if typing else None)
         if done and new_place is not None:
             self.confetti(elapsed - appear_time(len(parts) - 1))
-            self.shout(f"NEW HIGH SCORE!  #{new_place + 1}", self.hud_big, NEON_YELLOW,
-                       (self.width // 2, NEW_TOP_Y), wobble=5, pulse=0.12)
 
-        self.menu_items(labels, selected, RUN_MENU_TOP, select_progress, RUN_MENU_GAP)
+        stamp_time = elapsed - done_time(parts) - GRADE_STAMP_DELAY
+        if semester is not None and stamp_time >= 0:
+            self.grade_stamp(semester, stamp_time)
+
         self.corner_indicator(head_pause)
+        if typing:
+            self.menu_rects = []   # nothing to click until the name is typed
+            if done:
+                # Only now: once the name is typed, the menu needs the room
+                # (the lit-up row in the top scores still shows it).
+                self.shout(f"NEW HIGH SCORE!  #{new_place + 1}", self.hud_big, NEON_YELLOW,
+                           (self.width // 2, NEW_TOP_Y), wobble=3, pulse=0.08)
+                self.name_boxes(name_entry, select_progress)
+                self.footer(NAME_HINT, back_progress)
+            else:
+                self.footer("Space = skip the count")
+            return
+        self.menu_items(labels, selected, RUN_MENU_TOP, select_progress, RUN_MENU_GAP)
         self.footer(MENU_HINT if done else "Space = skip the count", back_progress)
 
-    def top_scores(self, top, rect, highlight=None, hide=None):
+    def grade_stamp(self, semester, since):
         """
-        The top scores in a box: "1.  5230   7 OCT" per row, best first.
+        The semester's letter grade as a rubber stamp in its colour, landing
+        from bigger (`since`: seconds since it was put down). Under the
+        letter: the class average it was curved on, or that there is no
+        class yet (the first runs are graded without a curve).
+        """
+        letter = semester["letter"]
+        colour = GRADE_COLOURS.get(letter, WHITE)
+        stamp = pygame.Surface(STAMP_SIZE, pygame.SRCALPHA)
+        rect = stamp.get_rect()
+        pygame.draw.rect(stamp, (*HUD_PURPLE, 225), rect, border_radius=14)
+        pygame.draw.rect(stamp, colour, rect, 5, border_radius=14)
+        caption = self.small.render("SEMESTER GRADE", True, colour)
+        stamp.blit(caption, caption.get_rect(midtop=(rect.centerx, 12)))
+        big = self.neon_text(letter, self.hud_huge, colour)
+        stamp.blit(big, big.get_rect(center=(rect.centerx, rect.centery + 4)))
+        if semester["curved"]:
+            note = f"CLASS AVG {semester['average']}"
+        else:
+            note = "NO CLASS CURVE YET"
+        note_image = self.small.render(note, True, WHITE)
+        stamp.blit(note_image, note_image.get_rect(midbottom=(rect.centerx, rect.bottom - 8)))
+        landing = max(0.0, 1 - since / STAMP_DROP_TIME)   # 1 = just put down, 0 = landed
+        self.blit_turned(stamp, STAMP_CENTRE, STAMP_ANGLE, 1 + STAMP_DROP * landing)
+
+    def name_boxes(self, name_entry, select_progress):
+        """
+        "ENTER YOUR NAME" and one box per letter. The chosen box glows, with
+        arrows above and below (tilt up/down) and a bar under it while the
+        head is turned right (on to the next letter).
+        """
+        cx = self.width // 2
+        self.shadow_text("ENTER YOUR NAME", self.hud, NEON_CYAN, (cx, NAME_TITLE_Y), center=True)
+        count = len(name_entry.letters)
+        box_w, box_h = NAME_BOX
+        left = cx - (count * box_w + (count - 1) * NAME_BOX_GAP) // 2
+        glow = (math.sin(self.t * 8) + 1) / 2   # 0..1, the chosen box pulses
+        for i, letter in enumerate(name_entry.letters):
+            box = pygame.Rect(left + i * (box_w + NAME_BOX_GAP), 0, box_w, box_h)
+            box.centery = NAME_BOX_Y
+            chosen = i == name_entry.slot
+            self.darken(200, box, HUD_PURPLE)
+            colour = mix(NEON_PINK, NEON_YELLOW, glow) if chosen else NEON_CYAN
+            pygame.draw.rect(self.screen, colour, box, 4 if chosen else 2, border_radius=6)
+            self.shadow_text(letter, self.hud_huge, NEON_YELLOW if chosen else WHITE, box.center,
+                             center=True)
+            if chosen:
+                a = NAME_ARROW
+                top_tip, bottom_tip = box.top - 6 - a, box.bottom + 6 + a
+                pygame.draw.polygon(self.screen, colour, [(box.centerx - a, box.top - 6),
+                                                          (box.centerx + a, box.top - 6),
+                                                          (box.centerx, top_tip)])
+                pygame.draw.polygon(self.screen, colour, [(box.centerx - a, box.bottom + 6),
+                                                          (box.centerx + a, box.bottom + 6),
+                                                          (box.centerx, bottom_tip)])
+                if select_progress > 0:
+                    bar = pygame.Rect(box.right + 10, box.top, 8, box.height)
+                    pygame.draw.rect(self.screen, SHADOW, bar)
+                    filled = int(bar.height * select_progress)
+                    pygame.draw.rect(self.screen, NEON_CYAN, (bar.x, bar.bottom - filled, bar.width, filled))
+
+    def top_scores(self, top, rect, highlight=None, hide=None, typed_name=None):
+        """
+        The top scores in a box: "1.  EFE  5230   7 OCT" per row, best first.
         highlight: the row of a new top score (lit up and pulsing).
         hide: a row not to show yet (the new score while it is still counting).
+        typed_name: the highlighted row's name while it is being typed.
         """
         self.panel(rect)
         x, y, width, _ = rect
@@ -244,9 +356,12 @@ class ResultsDrawing:
                 glow = (math.sin(self.t * 8) + 1) / 2
                 self.darken(int(120 + 100 * glow), (x + 6, row_y - 15, width - 12, 30), NEON_PINK)
                 colour = mix(NEON_YELLOW, WHITE, glow)
-            self.shadow_text(f"{i + 1}.", self.hud_small, colour, (x + 16, row_y - 10))
+            self.shadow_text(f"{i + 1}.", self.hud_small, colour, (x + 14, row_y - 10))
+            name = typed_name if i == highlight and typed_name is not None else entry["name"]
+            self.shadow_text(name or NO_NAME, self.hud_small, colour if name else GREY,
+                             (x + width * TOP_NAME_X, row_y - 10))
             score = self.hud.render(str(entry["score"]), True, colour)
-            self.screen.blit(score, score.get_rect(midright=(x + width * 0.58, row_y)))
+            self.screen.blit(score, score.get_rect(midright=(x + width * TOP_SCORE_X, row_y)))
             date = self.small.render(entry["date"], True, colour if i == highlight else GREY)
             self.screen.blit(date, date.get_rect(midright=(x + width - 14, row_y)))
 

@@ -154,12 +154,12 @@ class GameDrawing:
 
         # The classroom, or what you look at while looking away.
         if view > 0:
-            self.screen.blit(self.classroom[teacher.image_name()], (0, 0))
+            self.screen.blit(self.picture(teacher.image_name()), (0, 0))
             if view < 1:
                 self.darken(int(255 * (1 - view)))   # fading in from black
         elif direction in LOOK_AWAY_IMAGES:
             if direction == DOWN:
-                self.screen.blit(self.classroom[LOOK_AWAY_IMAGES[DOWN]], (0, 0))
+                self.screen.blit(self.picture(LOOK_AWAY_IMAGES[DOWN]), (0, 0))
                 # Your answers so far, "handwritten" on the answer lines.
                 for i, letter in enumerate(game.paper.written):
                     self.text(letter, self.big, PENCIL, (OWN_ANSWER_X, OWN_ANSWER_Y[i]),
@@ -171,10 +171,10 @@ class GameDrawing:
                 picture = self.neighbour_picture(game, direction)
                 clarity = game.neighbours.clarity(direction)
                 if picture is not None:
-                    self.screen.blit(self.blurred(self.classroom[picture], clarity), (0, 0))
+                    self.screen.blit(self.blurred(self.picture(picture), clarity), (0, 0))
                 else:
                     # No picture with that letter: the plain one, and a note once read.
-                    plain = self.classroom[LOOK_AWAY_IMAGES[direction]]
+                    plain = self.picture(LOOK_AWAY_IMAGES[direction])
                     self.screen.blit(self.blurred(plain, clarity), (0, 0))
                     if game.paper_shows(direction) is not None:
                         self.neighbour_note(direction, game.paper_shows(direction))

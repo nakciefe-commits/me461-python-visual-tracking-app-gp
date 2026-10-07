@@ -42,18 +42,21 @@ class Teacher:
         """
         Today's mood (a name from MOODS in settings.py), or None for the
         plain teacher. A mood changes how long he is busy and watching, and
-        how often he moves between the board and the desk.
+        how often he moves between the board and the desk, and where he
+        starts (with a new phone he never leaves the desk).
         """
         self.mood = mood
         self.durations = dict(TEACHER_DURATIONS)
         self.move_chance = MOVE_CHANCE
+        self.home = BOARD   # where he starts
         if mood is not None:
             self.durations[BUSY] = MOODS[mood]["busy"]
             self.durations[WATCHING] = MOODS[mood]["watching"]
             self.move_chance = MOODS[mood]["move"]
+            self.home = MOODS[mood].get("place", BOARD)
 
     def reset(self):
-        self.place = BOARD
+        self.place = self.home
         self.start(BUSY)
 
     def start(self, state):
@@ -67,7 +70,8 @@ class Teacher:
     def update(self, dt, keep_watching=False):
         """
         Move the teacher forward by dt seconds. Returns ["state:<NEW STATE>"]
-        when the state changes (main.py plays a sound for it), otherwise [].
+        when the state changes (main.py plays a sound for it), and
+        "footsteps" when he walks to the other place; otherwise [].
         keep_watching=True (the suspicion bar is above the exam's hidden
         point, see game.under_suspicion()): his watching does not end, he
         keeps his eyes on you.
@@ -78,6 +82,7 @@ class Teacher:
         if self.state == WATCHING and keep_watching:
             return []
 
+        events = []
         if self.state == BUSY:
             self.start(TURNING)
         elif self.state == TURNING:
@@ -86,8 +91,9 @@ class Teacher:
             # Back to work, sometimes at the other place.
             if self.rng.random() < self.move_chance:
                 self.place = DESK if self.place == BOARD else BOARD
+                events.append("footsteps")
             self.start(BUSY)
-        return ["state:" + self.state]
+        return ["state:" + self.state] + events
 
     def sounds(self, events, can_hear):
         """
@@ -104,6 +110,13 @@ class Teacher:
             self.turning_heard = True
             heard.append("state:" + TURNING)
         return heard
+
+    def erasing(self):
+        """
+        True while he erases the board: the chalk sound loops. It stops the
+        moment he starts turning, so a sudden silence is a warning too.
+        """
+        return self.state == BUSY and self.place == BOARD
 
     def is_facing_class(self):
         """True while the teacher looks at the class (the picture shows it)."""
