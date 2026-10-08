@@ -37,11 +37,13 @@ class NeighbourPapers:
     def has_read(self, side):
         return side in self.read_sides
 
-    def update(self, direction, dt, can_focus):
+    def update(self, direction, dt, can_focus, speed=1.0):
         """
         Move the focus forward by dt seconds. can_focus is False while the
-        teacher sees you copying. Returns ["read"] the moment a paper gets
-        sharp (once per side and question), else [].
+        teacher sees you copying. speed: how fast the paper gets sharp (1 =
+        normal; glasses read faster, a sleepy energy drink addict slower).
+        Returns ["read"] the moment a paper gets sharp (once per side and
+        question), else [].
         """
         # Every look is new: turning anywhere else blurs both papers again.
         if direction != self.last_direction:
@@ -49,7 +51,7 @@ class NeighbourPapers:
         self.last_direction = direction
         if direction not in (LEFT, RIGHT) or not can_focus:
             return []
-        self.focus_time[direction] = min(PAPER_FOCUS_TIME, self.focus_time[direction] + dt)
+        self.focus_time[direction] = min(PAPER_FOCUS_TIME, self.focus_time[direction] + speed * dt)
         if self.focus_time[direction] >= PAPER_FOCUS_TIME and not self.has_read(direction):
             self.read_sides.add(direction)
             return ["read"]

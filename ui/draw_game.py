@@ -1,14 +1,19 @@
 """
 Drawing the game screen: the classroom picture (or what you look at while
 looking away) with see-through strips on top: answers, warnings and the exam
-clock at the top, the suspicion bar at the bottom, the webcam preview on the
-right. Also the popup band and the "face not found" pause. Part of Renderer
-(see render.py).
+clock at the top, the suspicion bar at the bottom. Also the popup band and
+the "face not found" pause. Part of Renderer (see render.py). No webcam
+picture: the player does not see their own face in the game.
 
 The classroom with the teacher is only shown while the player looks at the
 screen. Looking away shows their own paper, or a neighbour's paper, with no
 teacher in it, so the teacher can only be checked by really looking (and
 heard, through the sounds).
+
+The player's character shows too: a badge under the top strip (its name,
+the nerd's jokers and deadline, the energy drink's sugar rush or crash),
+the classroom blurry at first for glasses, and eyelids closing during the
+energy drink addict's sleepy spells.
 """
 
 import math
@@ -17,10 +22,11 @@ import pygame
 
 from logic.exam_paper import UNKNOWN, BLANK, CORRECT, WRONG, EMPTY
 from tracking.head_tracker import DOWN, LEFT, RIGHT
-from settings import MAX_WARNINGS
+from settings import MAX_WARNINGS, CHARACTERS, DEFAULT_CHARACTER
+from logic.character import RUSH
 from ui.style import (BLACK, WHITE, GREY, NEON_PINK, NEON_CYAN, NEON_YELLOW, NEON_GREEN, NEON_RED,
                    SHADOW, HUD_PURPLE,
-                   HUD_ALPHA, HUD_LINE, TEXT_WOBBLE, PREVIEW_SIZE)
+                   HUD_ALPHA, HUD_LINE, TEXT_WOBBLE)
 from logic.suspicion import GRACE_PART
 
 TOP_BAR = 56                   # height of the strip at the top, pixels
@@ -55,6 +61,11 @@ OWN_ANSWER_X = 410
 OWN_ANSWER_Y = [310, 352, 397, 440, 487]
 PENCIL = (40, 50, 90)          # colour of the letters you write
 ORANGE = (240, 140, 40)
+
+BADGE_TOP = TOP_BAR + 8       # pixels, the top of the character badge (under the top strip)
+BADGE_WIDTH = 300              # pixels
+EYELID_CLOSED = 0.3           # 0..1 of the screen's height each eyelid covers at most while sleepy
+EYELID_BLINK = 1.8             # radians per second: how fast the sleepy eyes close and open
 
 # Which neighbour, for the look-away text ("Copying answer 2 from the left")
 LOOK_AWAY = {
@@ -130,6 +141,8 @@ class GameDrawing:
         if direction == DOWN:
             if game.knows_answer():
                 first = f"Press A-D to write answer {q}   (S = blank)"
+            elif game.jokers > 0:
+                first = f"Answer {q}: J = joker, A-D = guess"
             else:
                 first = f"Answer {q}: guess with A-D, or S = blank"
             # Looking at the paper you hear nothing either (see teacher.sounds()).
@@ -143,20 +156,23 @@ class GameDrawing:
             first = "Remember it, then look at your paper and write it"
         return first, "You can't see the teacher - listen!"
 
-    def draw_game(self, game, teacher, direction, view, camera_surface, yaw, pitch, fps,
-                  tracking_note, show_teacher_state):
+    def draw_game(self, game, teacher, direction, view, yaw, pitch, fps,
+                  tracking_note, show_teacher_state, clarity=1.0):
         """
         view: how visible the classroom is, 0 = black (looking away) to
         1 = fully shown. main.py raises it over FADE_TIME after the player
-        looks at the screen.
+        looks at the screen. clarity: how sharp the classroom is, 0..1
+        (glasses see it blurry at first, logic/character.py).
         """
         cx = self.width // 2
 
         # The classroom, or what you look at while looking away.
         if view > 0:
-            self.screen.blit(self.picture(teacher.image_name()), (0, 0))
+            self.screen.blit(self.blurred(self.picture(teacher.image_name()), clarity), (0, 0))
             if view < 1:
                 self.darken(int(255 * (1 - view)))   # fading in from black
+            if game.is_sleepy():
+                self.eyelids()
         elif direction in LOOK_AWAY_IMAGES:
             if direction == DOWN:
                 self.screen.blit(self.picture(LOOK_AWAY_IMAGES[DOWN]), (0, 0))
@@ -165,8 +181,7 @@ class GameDrawing:
                     self.text(letter, self.big, PENCIL, (OWN_ANSWER_X, OWN_ANSWER_Y[i]),
                               center=True)
                 strip_top = TOP_BAR   # at the top: lines 4 and 5 are at the bottom
-                # Centred left of the webcam preview, which is at the top right too.
-                text_x = (self.width - PREVIEW_SIZE[0] - 12) // 2
+                text_x = cx
             else:
                 picture = self.neighbour_picture(game, direction)
                 clarity = game.neighbours.clarity(direction)
@@ -181,6 +196,8 @@ class GameDrawing:
                 # Just above the bars, so it does not cover the neighbour's paper.
                 strip_top = self.height - BOTTOM_BAR - LOOK_AWAY_STRIP
                 text_x = cx
+            if game.is_sleepy():
+                self.eyelids()   # under the text strip, so the hint stays readable
             first, hint = self.look_away_texts(game, direction)
             self.darken(HUD_ALPHA, (0, strip_top, self.width, LOOK_AWAY_STRIP), HUD_PURPLE)
             self.shadow_text(first, self.hud, WHITE, (text_x, strip_top + 24), center=True)
@@ -224,8 +241,8 @@ class GameDrawing:
         # now, and the game is guessing the direction.
         self.text(tracking_note, self.small, NEON_YELLOW, (self.width - 250, 32))
 
-        # Right: webcam preview, under the top strip.
-        self.preview(camera_surface, self.width - PREVIEW_SIZE[0] - 12, TOP_BAR + 8)
+        # Looking down, the text strip is at the top: the badge goes under it.
+        self.character_badge(game, BADGE_TOP + (LOOK_AWAY_STRIP if direction == DOWN and view == 0 else 0))
 
         # Testing aid (T key): name the teacher's state.
         if show_teacher_state:
@@ -246,6 +263,43 @@ class GameDrawing:
         self.bar(bar_x, top + 12, bar_width, 24, suspicion, NEON_PINK if danger else NEON_YELLOW)
         marker_x = bar_x + bar_width * GRACE_PART
         pygame.draw.line(self.screen, WHITE, (marker_x, top + 8), (marker_x, top + 40), 3)
+
+    def eyelids(self):
+        """The energy drink addict is sleepy: dark eyelids slowly close and open from top and bottom."""
+        closed = EYELID_CLOSED * (0.6 + 0.4 * math.sin(self.t * EYELID_BLINK))   # never fully shut
+        lid = int(self.height * closed)
+        self.darken(245, (0, 0, self.width, lid), SHADOW)
+        self.darken(245, (0, self.height - lid, self.width, lid), SHADOW)
+        self.shout("Z z z", self.hud_big, NEON_CYAN, (self.width // 2, lid + 30), wobble=6)
+
+    def character_badge(self, game, top):
+        """
+        A small box under the top strip, left: who you are, and what your
+        character has going on (jokers left, the nerd's deadline, a sugar
+        rush or a crash). Not for the plain character.
+        """
+        if game.character == DEFAULT_CHARACTER:
+            return
+        notes = []
+        if game.rules["jokers"]:
+            notes.append(f"JOKER x{game.jokers}  (J)")
+        if game.deadline() > 0:
+            left = max(0, int(game.time_left - game.deadline() + 0.999))   # seconds until the deadline
+            notes.append("TOO LATE!" if game.missed_deadline else f"HAND IN WITHIN {left // 60}:{left % 60:02d}")
+        if game.energy is not None:
+            if game.energy.day == RUSH:
+                notes.append("SUGAR RUSH")
+            else:
+                notes.append("ZZZ... SLEEPY" if game.is_sleepy() else "CRASH DAY")
+        height = 26 + 20 * len(notes)
+        box = pygame.Rect(12, top, BADGE_WIDTH, height)
+        self.darken(HUD_ALPHA, box, HUD_PURPLE)
+        pygame.draw.rect(self.screen, NEON_PINK, box, 2)
+        self.shadow_text(CHARACTERS[game.character]["name"], self.hud_small, NEON_YELLOW,
+                         (box.x + 10, box.y + 4))
+        for i, note in enumerate(notes):
+            colour = NEON_RED if note == "TOO LATE!" else NEON_CYAN
+            self.shadow_text(note, self.hud_small, colour, (box.x + 10, box.y + 24 + i * 20))
 
     def draw_popup(self, message):
         """A dark band across the screen with the message, drawn on top of the game."""

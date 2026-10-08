@@ -38,12 +38,14 @@ class Teacher:
         self.set_mood(mood)
         self.reset()
 
-    def set_mood(self, mood):
+    def set_mood(self, mood, busy_times=1.0, watching_times=1.0):
         """
         Today's mood (a name from MOODS in settings.py), or None for the
         plain teacher. A mood changes how long he is busy and watching, and
         how often he moves between the board and the desk, and where he
         starts (with a new phone he never leaves the desk).
+        busy_times / watching_times: the player's character stretches his
+        busy and watching times (his buddy: he checks less often, but longer).
         """
         self.mood = mood
         self.durations = dict(TEACHER_DURATIONS)
@@ -54,6 +56,10 @@ class Teacher:
             self.durations[WATCHING] = MOODS[mood]["watching"]
             self.move_chance = MOODS[mood]["move"]
             self.home = MOODS[mood].get("place", BOARD)
+        shortest, longest = self.durations[BUSY]
+        self.durations[BUSY] = (shortest * busy_times, longest * busy_times)
+        shortest, longest = self.durations[WATCHING]
+        self.durations[WATCHING] = (shortest * watching_times, longest * watching_times)
 
     def reset(self):
         self.place = self.home

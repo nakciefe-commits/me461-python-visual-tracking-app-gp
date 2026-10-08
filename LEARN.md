@@ -105,12 +105,12 @@ The game is always on one screen, stored in `self.screen_name` in
 
 ```
 (glitch_intro.play() first, before the loop)
-DISCLAIMER ──signed + stamped──► START ──Space/click──► CALIBRATING ──2 s──► MENU
+DISCLAIMER ──signed + stamped──► START ──Space/click──► CALIBRATING ──4 poses──► MENU
                                                                          │
     HELP (the guide) ◄── "How to play" ── MENU ── "Settings" ──► SETTINGS ──"Recalibrate"──► CALIBRATING
                                 │                                                      (back to SETTINGS)
-                              "Play" (a new run)
-                                ▼
+                              "Play" ──► RUN_INTRO ──drop──► CHARACTER ── pick ──► a new run
+                                                                          ▼
          ┌──────────────► BRIEFING ──"I'm ready"──► LOADING ──3 s──► GAME ──handed in / collected / failed──► END
          │   (next exam)                    ▲  k: CALIBRATING                         │
          │                                  └──┘                                      │
@@ -123,7 +123,11 @@ DISCLAIMER ──signed + stamped──► START ──Space/click──► CALI
 and RUN_END are the "menu screens": each has a `Menu` (a list of items) in
 `self.menus`. END's items change: "Next exam" / "Main menu", or "See
 results" after the last exam. HELP is not a menu screen: it is the guide
-(`guide_screen()`), and when the guide is finished it goes back to MENU.
+(`guide_screen()`), and when the guide is finished the **practice exam**
+starts (`start_practice()`): a `Run(practice=True)` of one short exam,
+straight to LOADING (no gossip), then GAME and END like any exam, but not
+counted anywhere; END offers "Play for real" / "Main menu", and R plays
+the practice again (`restart()`).
 
 "Face not found" is not a separate screen: it's the GAME screen while the rules
 are not updated (paused).
@@ -183,9 +187,11 @@ The hardest file. Three parts:
 - `calibrate(yaw, pitch)` stores your "looking at the screen" angles
   (*neutral*). Everyone sits differently, so all angles are measured from
   *your* neutral (`relative_angles()`).
-- `raw_direction()` compares the angles with the limits:
-  more than `PITCH_DOWN_THRESHOLD` (28°) down → `DOWN`, more than
-  `YAW_THRESHOLD` (18°) left/right → `LEFT`/`RIGHT`, otherwise `SCREEN`.
+- `raw_direction()` compares the angles with the limits
+  `down_threshold`, `left_threshold` and `right_threshold`: past them →
+  `DOWN`, `LEFT`/`RIGHT`, otherwise `SCREEN`. They start as the fixed
+  `PITCH_DOWN_THRESHOLD` (23°) and `YAW_THRESHOLD` (18°); calibration
+  replaces them with the player's own (`set_thresholds()`).
 - `update_direction(now)` adds a **hold time**: a new direction must last
   `HOLD_TIME` (0.1 s) before it's believed. While a new direction is waiting it's called the
   `candidate`.
@@ -193,7 +199,7 @@ The hardest file. Three parts:
 **c) `current_direction(now, face_found)`: what if the face disappears?**
 The face often vanishes from MediaPipe's view. The rules, in order:
 
-| Situation | Result | `status` (shown under the preview) |
+| Situation | Result | `status` (shown at the top right of the game) |
 |---|---|---|
 | Face found | the tracked direction | `""` |
 | Face vanished while the head was tilting down | `DOWN` (looking at the paper hides the face) | `"head down"` |
@@ -203,8 +209,18 @@ The face often vanishes from MediaPipe's view. The rules, in order:
 `draw_face()` draws the face outline, eyes, lips and the nose arrow onto the
 frame, so you can see what the tracker sees.
 
-**`Calibration`** collects your angles for 2 s and gives their average to
-`calibrate()`. If the face is lost on the way, it starts over.
+**`Calibration`** asks for four poses in turn (`CALIBRATION_POSES`:
+screen, left, right, down). For each, the player presses Space
+(`start()`), and the angles are collected for `CALIBRATION_SAMPLE_TIME`
+(1 s) and averaged. The screen pose goes to `calibrate()` (the neutral).
+After the last pose, `pose_threshold()` turns each pose into a threshold:
+`CALIBRATION_SHARE` (60 %) of the way to it, between
+`CALIBRATION_MIN_ANGLE` and `CALIBRATION_MAX_ANGLE`, so you only need to
+turn a bit more than half as far as you showed. A pose that went the wrong
+way keeps the fixed threshold. If the face is lost, that pose is measured
+again, except looking down (it often hides the face: the last angles are
+used). main.py also gives the left/right turns to the menus
+(`HeadMenuInput.set_turns()`).
 
 ### `logic/game.py` — the rules of one exam
 `Game` holds one exam: `state` (`PLAYING` / `WON` / `LOST`), `time_left`,
@@ -280,6 +296,10 @@ answer: `CORRECT`, `WRONG` or `EMPTY`; `points()` adds up their worth
 (`POINTS_CORRECT` 1, `POINTS_WRONG` −0.5, `POINTS_BLANK` 0), so a grade can
 be 2.5 / 3, or even below 0 if you guess badly. Tests set the key by hand
 so they know the answers.
+The key is random but without streaks: `answer_key()` only picks from the
+letters that are not the last one and have come fewer than
+`MAX_SAME_LETTER` (2) times, and `knowing_sides()` switches sides after
+`MAX_SIDE_STREAK` (2) of the same side in a row.
 
 ### `logic/neighbours.py` — reading a neighbour's paper
 Gradual focus, Emre's idea:
@@ -324,6 +344,9 @@ exam's mood (one of its two, at random), so the run is known in advance.
 the score: 0 if failed) and moves on, so a failed exam does not end the
 run. `total()` is the run's score; `score_parts()` lists each exam's score,
 for the count on the results screen.
+`Run(practice=True)` is the practice exam after the guide: one exam,
+`PRACTICE_QUIZ` (2 questions, 60 s, the sleepy "practice" mood);
+`chapter()` says "PRACTICE" instead of "CHAPTER 1/3" on the loading screen.
 
 ### `logic/slot.py` — the gossip slot machine
 `run.py` has already picked today's mood; the slot machine only shows that
@@ -333,16 +356,30 @@ round and round. It goes `SLOT_TURNS` times round plus up to the target, in
 `SLOT_SPIN_TIME`, with an ease-out (`1 - (1 - x)³`): fast at first, then
 slowing to a stop. `passed()` counts the moods rolling past the middle
 (main.py plays a tick for each); `mood_in_middle()` says which one is
-there. `draw_briefing.py` draws the reel: the moods at `(k - offset) *
-REEL_ROW` around the middle, clipped to the window (`screen.set_clip()`).
+there. `draw_briefing.py` draws the machine: a cabinet with a dome
+(`cabinet_shape()`: an oval and a box drawn white on a "mask", a purple
+gradient kept only inside it; `pygame.mask` gives the outline for the neon
+edge), small bulbs all round that edge (`edge_bulb_spots()`: one every
+`EDGE_BULB_GAP` pixels walked along the outline; every other one lit,
+swapping every `EDGE_BULB_SWAP` seconds), a gold-framed reel window with a glass gleam
+(`glass()`), the lever on its side, and a glowing screen under the reel
+(`info_screen()`) where the story and the + / − lines light up after the
+stop. The reel: the moods (wrapped to two lines, `reel_line()`) at
+`(k - offset) * REEL_ROW` around the middle, clipped to the window
+(`screen.set_clip()`).
 
 ### `logic/tally.py` — counting the score, like Balatro
 After an exam the score is not just shown: each part (each question, then
 each bonus) appears in turn, `TALLY_STEP_TIME` apart, and the score counts
 up to include it over `TALLY_COUNT_TIME`. `parts_shown(parts, elapsed)`
 says how many parts have appeared `elapsed` seconds after the screen
-opened, `running_score()` what the score shows right now, `is_done()`
-whether it is over. Only numbers, so it is tested; `draw_results.py` draws
+opened, `running_score()` what the score shows right now (and
+`running_value()` the same with its fraction, so the slot-machine reels
+can roll smoothly), `is_done()` whether it is over, `is_counting()` whether
+a part is counting up right now. `strength(score, exams)` (0..1) says how
+wild the slot-machine effects are, from the score and
+`TALLY_FX_FULL_SCORE`; `jackpot()` is true from `TALLY_JACKPOT_SHARE` of
+it. Only numbers, so it is tested; `draw_results.py` draws
 it and `main.py` plays a tick (a semitone higher each time) for every new
 part. The run's results use the same count, with one part per exam.
 
@@ -403,8 +440,11 @@ BUSY ──► TURNING ──► WATCHING ──► BUSY ...
 after the stamp), `sign_progress()`, `stamp_age()` and `done()`. `update(dt)`
 returns `"type"`, `"stamp"`; `press()` returns `"sign"`. `draw_disclaimer()`
 (in `ui/draw_notice.py`) draws it: a wooden desk (`make_desk()`: a gradient with wavy grain lines),
-the paper sliding in, the typed lines in a typewriter font, a signature
-drawn from two sine waves, and the red stamp (`make_stamp()`) slamming down.
+the paper sliding in, the typed lines in a typewriter font, the
+"signature" (someone trying to draw a helicopter: `helicopter_strokes()`
+builds it from ovals and lines, `shaky()` makes the hand tremble, and it
+is drawn stroke by stroke as `sign_progress()` grows), and the red stamp
+(`make_stamp()`) slamming down.
 
 ### `logic/guide.py` — the "How to play" guide
 `GUIDE_STEPS` is the script: each step is a few chat lines `(who, text)`
@@ -426,6 +466,49 @@ classroom, your paper with what you wrote, a neighbour's paper blurred by
 `clarity()`), the task banner and the chat: at the bottom while you look at
 the screen, and only the newest line, higher up, while you look away, so
 the papers are not covered.
+
+### `logic/character.py` — who you are
+The characters are data: `CHARACTERS` in `settings.py` lists for each one
+only the rules it changes (and its texts); `rules(name)` adds `DEFAULTS`
+(no change) for the rest. So a new character, or tuning one, needs no new
+code. `Game(character=...)` reads them:
+- `focus_speed` goes to `neighbours.update(..., speed=)` (glasses read faster);
+- `seen_speed`, `stare_speed` and `creep_time` go to `SuspicionBar` (the cap
+  and the lazy guy; with `creep_time` the bar creeps up while you look
+  anywhere but your paper, `update(..., away=True)`);
+- `both_know` goes to `ExamPaper` (`says()` gives the letter on both sides);
+- `jokers` is `game.jokers`; `use_joker()` writes `paper.right_answer()`;
+- `hand_in_share` gives `deadline()`: handing in with less time left adds a
+  "NERD WAS LATE" row of `-late_penalty` to `score_parts()`;
+- `busy_times` / `watching_times` stretch the teacher (`set_mood()`).
+`screen_clarity(rules, look_time)` is how sharp the classroom is after
+looking up (glasses: from `screen_blur_start` to 1 in
+`screen_focus_time`). `Energy` is the energy drink addict's day: a coin
+toss (`RUSH` or `CRASH`); `world_speed()` (the clock and the bar use
+`dt * world_speed()`, so does the teacher in main.py) and `focus_speed()`;
+`update(dt)` starts and ends the sleepy spells (events `"sleepy"`,
+`"awake"`).
+
+### `logic/run_intro.py` — the briefing, timed to the music
+The character music was measured once (with numpy, from the file): 147
+beats per minute (`CHARACTER_MUSIC_BPM`), a strong hit on the first beat of
+every bar from `INTRO_FIRST_HIT` (0.81 s), and the drop at `INTRO_DROP`
+(11.84 s), where it gets twice as loud. `BEAT` and `BAR` (4 beats) follow
+from the tempo. `INTRO_LINES` are the sarcastic lines, one per bar:
+`line_time(i)`, `current_line(t)` and `since_line(t)` say which one is on
+screen and since when; `is_over(t)` is true from the drop. `since_beat(t)`
+and `since_bar(t)` let the drawing thump on the beat (also on the character
+screen). `draw_run_intro()` (`ui/draw_run_intro.py`) draws it: rushing
+diagonal stripes, the line slamming down from 260 % with a white flash and
+a shake (only the newest line is on screen). A different song needs the three
+numbers measured again.
+
+The character screen (`ui/draw_characters.py`) is a sliding row
+(`carousel()`): each portrait's distance from the middle `d = (i - slide)`
+(the short way round) sets its x and its size; `main.py` moves `slide`
+towards the chosen one a bit every frame (`CAROUSEL_SPEED`), so it glides.
+The portraits are drawn on a small picture of their own
+(`portrait_image()`) and scaled.
 
 ### `ui/glitch_intro.py` — our team's intro
 A separate, self-contained file (only pygame, and NumPy for the sound), so it
@@ -528,6 +611,10 @@ and calls `music(track, dt)`. That moves the volume a little towards the
 track's volume (`MUSIC_VOLUME`, `EXAM_MUSIC_VOLUME`) or 0: a fade, not a
 jump. When the track changes, the old one fades to 0 first, then
 `load_track()` starts the new one from its beginning and it fades in.
+The third track, `"character"`, is different: the run intro is timed to
+it, so `cut_to()` starts it at once at full volume, and
+`music_position()` says how far into it the player is (main.py's
+`music_time()` uses its own count when there is no real sound device).
 **Talking blips:** while the game over chat is typed, `typed_letters()`
 (in `draw_scenes.py`) says how many letters of each line are typed. Each
 frame `main.py` compares it with the frame before (`chat_blips()`) and
@@ -557,9 +644,10 @@ most of its drawing methods are in other files, one per kind of screen:
 | `draw_scenes.py` | `SceneDrawing` | warning, caught and game over scenes |
 | `draw_results.py` | `ResultsDrawing` | the score count after an exam, the run's results, the top scores |
 | `draw_guide.py` | `GuideDrawing` | the "How to play" guide |
+| `draw_characters.py` | `CharacterDrawing` | the character screen: the list, the card, portraits drawn in code (`portrait()` draws a head and shoulders, then `portrait_<key>()` adds the cap, the glasses, the can...) |
 
 `class Renderer(NeonStyle, NoticeDrawing, MenuDrawing, BriefingDrawing,
-GameDrawing, SceneDrawing, ResultsDrawing, GuideDrawing)` inherits from all of them (these helper
+GameDrawing, SceneDrawing, ResultsDrawing, GuideDrawing, CharacterDrawing)` inherits from all of them (these helper
 classes are called "mixins"). So there is still one `renderer` object, and
 any method can call any other with `self.`, whichever file it is in.
 `render.py` itself only loads what they all need once: fonts
@@ -616,11 +704,20 @@ blank), warnings and the clock at the top, the suspicion bar at the bottom.
 
 **`draw_results.py`:**
 - `draw_end` after an exam. Handed in (or collected): `draw_tally()` over
-  the frozen game: the question cards pop in one by one in their colour
-  (`RESULT_COLOURS`: green right, red wrong, grey blank) with their points
-  over them, then the grade, then the bonuses, while the big score counts
-  up (`tally.running_score()`) and thumps (`thumped()`) each time a part
-  arrives. Failed: the game over chat (`chat_screen()`, finished, both
+  the frozen game, as two tables made with `table_frame()`:
+  `question_table()` (a row per question: what you wrote, the key, the
+  result, the points; each row glows in its colour, `RESULT_COLOURS`:
+  green right, red wrong, grey blank, when its turn comes, `table_row()`,
+  and its points pop in, `row_points()`; then the grade) and
+  `bonus_table()` (a row per bonus), while the big score counts
+  up as a slot machine (`slot_score()`): one reel per digit
+  (`reel_cell()`: two digits on a paper drum, moved by the fraction of
+  `running_value() / 10^place`, with blurred copies when fast; stopped,
+  each reel clunks onto its whole digit), a gold frame with bulbs
+  (`reel_frame()`), sparks when a part arrives (`sparks()`, a fixed seed per
+  part so they do not flicker), a shake while counting, all stronger for a
+  bigger score (`tally.strength()`), and "JACKPOT!" flashing for a huge
+  one. Failed: the game over chat (`chat_screen()`, finished, both
   logos laughing) with the menu under it, so the screen does not change
   when the chat ends.
 - `draw_run_end` after the run: each exam in a `panel()` (its grade or how
@@ -694,17 +791,36 @@ desktop, not a real video-mode change. F11 just calls `open_window()` again.)
 2. **Camera**: `camera.read()`, then `tracker.read(frame, now)`.
 3. **Per screen**:
    - DISCLAIMER: the notice, shown once when the game opens.
-   - START / CALIBRATING: big preview, feed `calibration.add()`; when done,
+   - START / CALIBRATING: big preview, Space = `calibration.start()` for
+     each pose, feed `calibration.add()`; when done,
      go to `after_calibration` (the main menu, the game, or settings).
    - BRIEFING: a menu screen with one item: "SPIN" starts the slot machine
      (`spin_time`; `turn_reel()` moves it on and ticks; no menu while it
      turns), then "I'M READY"; `draw_briefing`.
-   - LOADING: count `loading_time` up to `LOADING_TIME`, then
-     `begin_playing()`. Nothing in the game moves yet.
+   - LOADING: count `loading_time` up to `LOADING_TIME` (the bar), then
+     `EXAM_TITLE_TIME` more for the title card (`draw_exam_title()`: the
+     exam's `"title"` and `"tagline"` from `QUIZZES` slam in, with a thud),
+     then `begin_playing()`. Nothing in the game moves yet.
    - HELP: `guide_screen()`: the head direction
      (`tracker.current_direction()`, the last one kept if the face is lost)
      goes to `guide.update()`; its events are played (`play_guide_sounds()`);
-     `draw_guide`. When the guide is finished → MENU. Keys go to `guide_key()`.
+     `draw_guide`. When the guide is finished → the practice exam. Keys go to `guide_key()`.
+   - RUN_INTRO: `intro_screen()`: `music_time()` → `draw_run_intro`; at
+     the drop (or Space / turning right) → CHARACTER.
+   - "ARE YOU SURE?": choosing QUIT or MAIN MENU (or Esc on the main menu)
+     sets `self.confirming` (`ask_confirm()`); while it is set every menu
+     action goes to `answer_confirm()` (SELECT = yes, BACK = no) and
+     `draw_confirm` is drawn over the menu. Selecting disarms the head, so
+     "yes" needs a second, fresh turn to the right.
+   - CHARACTER: a menu screen whose items are the keys of `CHARACTERS`;
+     the head works sideways here (`head_input.horizontal`, `HORIZONTAL` in
+     menu.py: turn left/right = previous/next, look down = choose, up = back);
+     the row slides (`self.carousel`); choosing one sets `self.character`
+     and starts the run; `draw_characters`.
+   - GAME (characters): the teacher gets `dt * game.world_speed()` (the
+     sugar rush), `set_mood()` gets the buddy's `busy_times` /
+     `watching_times`, J calls `game.use_joker()`, and `screen_clarity()`
+     tells `draw_game` how blurry the classroom is (glasses).
    - MENU / SETTINGS: `head_input.update(yaw, pitch, dt, ...)` may
      give an action → `menu_action()`; then `draw_menu`.
    - GAME: `direction = tracker.current_direction(...)`. If not `None`:

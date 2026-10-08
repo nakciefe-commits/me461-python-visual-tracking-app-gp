@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from logic.game import WON, LOST
 from logic.run import Run
-from settings import QUIZZES, MOODS, ANSWERS_NEEDED
+from settings import QUIZZES, MOODS, ANSWERS_NEEDED, PRACTICE_QUIZ
 from tracking.head_tracker import DOWN
 
 
@@ -108,6 +108,30 @@ class RunTests(unittest.TestCase):
         # The paper picture has ANSWERS_NEEDED lines.
         for quiz in QUIZZES:
             self.assertLessEqual(quiz["questions"], ANSWERS_NEEDED)
+
+
+class PracticeTests(unittest.TestCase):
+    def test_practice_is_one_short_exam(self):
+        run = Run(random.Random(1), practice=True)
+        game = run.new_game()
+        self.assertEqual(game.paper.size(), PRACTICE_QUIZ["questions"])
+        self.assertEqual(game.exam_time, PRACTICE_QUIZ["time"])
+        self.assertEqual(run.mood(), PRACTICE_QUIZ["moods"][0])
+        self.assertEqual(run.chapter(), "PRACTICE")
+        hand_in(game)
+        run.finish_quiz(game)
+        self.assertTrue(run.is_over())
+
+    def test_practice_is_easy(self):
+        # Two questions, and the teacher's mood is one of the calmest.
+        self.assertLessEqual(PRACTICE_QUIZ["questions"], QUIZZES[0]["questions"])
+        mood = MOODS[PRACTICE_QUIZ["moods"][0]]
+        self.assertGreaterEqual(mood["busy"][0], max(MOODS[m]["busy"][0] for m in QUIZZES[0]["moods"]))
+
+    def test_real_run_chapters(self):
+        run = Run(random.Random(1))
+        self.assertFalse(run.practice)
+        self.assertEqual(run.chapter(), f"CHAPTER 1/{len(QUIZZES)}")
 
 
 if __name__ == "__main__":

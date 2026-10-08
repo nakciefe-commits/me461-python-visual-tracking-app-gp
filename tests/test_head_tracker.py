@@ -6,8 +6,10 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from tracking.head_tracker import HeadTracker, Calibration, DOWN, SCREEN, LEFT, RIGHT
-from settings import PITCH_DOWN_THRESHOLD, YAW_THRESHOLD, HOLD_TIME
+from tracking.head_tracker import (HeadTracker, Calibration, pose_threshold, DOWN, SCREEN, LEFT,
+                                   RIGHT)
+from settings import (PITCH_DOWN_THRESHOLD, YAW_THRESHOLD, HOLD_TIME, CALIBRATION_SHARE,
+                      CALIBRATION_MIN_ANGLE, CALIBRATION_MAX_ANGLE)
 
 # Clearly past the "down" threshold, whatever it is set to in settings.py.
 LOOKING_DOWN = -(PITCH_DOWN_THRESHOLD + 5)
@@ -118,26 +120,85 @@ class LostFaceTests(unittest.TestCase):
 
 
 class CalibrationTests(unittest.TestCase):
-    def test_averages_angles(self):
+    # 0.125 adds up exactly in floating point (0.1 would not reach 1.0)
+    STEP = 0.125
+
+    def measure(self, calibration, yaw, pitch, face_visible=True):
+        """Hold a pose (these angles), press Space, and wait until it is measured."""
+        calibration.tracker.yaw, calibration.tracker.pitch = yaw, pitch
+        calibration.start()
+        for _ in range(int(calibration.duration / self.STEP)):
+            calibration.add(face_visible, self.STEP)
+
+    def test_screen_pose_averages_angles(self):
         tracker = tracker_at(10, -4)
+        tracker.last_seen = 0.0
         calibration = Calibration(tracker, 1.0)
-        # 0.125 adds up exactly in floating point (0.1 would not reach 1.0)
+        calibration.start()
         for _ in range(4):
-            calibration.add(True, 0.125)
+            calibration.add(True, self.STEP)
         tracker.yaw, tracker.pitch = 20, -6
         for _ in range(4):
-            calibration.add(True, 0.125)
-        self.assertTrue(calibration.done())
+            calibration.add(True, self.STEP)
+        self.assertEqual(calibration.pose(), LEFT)   # on to the next pose
         self.assertAlmostEqual(tracker.neutral_yaw, 15)
         self.assertAlmostEqual(tracker.neutral_pitch, -5)
 
-    def test_lost_face_restarts(self):
+    def test_nothing_is_measured_before_space(self):
         calibration = Calibration(tracker_at(0, 0), 1.0)
+        for _ in range(20):
+            calibration.add(True, self.STEP)
+        self.assertEqual(calibration.pose(), SCREEN)
+        self.assertEqual(calibration.progress(), 0)
+
+    def test_four_poses_set_the_thresholds(self):
+        tracker = tracker_at(0, 0)
+        tracker.last_seen = 0.0
+        calibration = Calibration(tracker, 1.0)
+        self.measure(calibration, 5, 2)        # screen
+        self.measure(calibration, 35, 2)       # left: 30 degrees from the screen
+        self.measure(calibration, -20, 2)      # right: 25 degrees
+        self.measure(calibration, 5, -38)      # down: 40 degrees
+        self.assertTrue(calibration.done())
+        self.assertAlmostEqual(tracker.left_threshold, 30 * CALIBRATION_SHARE)
+        self.assertAlmostEqual(tracker.right_threshold, 25 * CALIBRATION_SHARE)
+        self.assertAlmostEqual(tracker.down_threshold, min(CALIBRATION_MAX_ANGLE, 40 * CALIBRATION_SHARE))
+        # And the game uses them: a turn a bit past the left threshold is LEFT.
+        tracker.yaw, tracker.pitch = 5 + 30 * CALIBRATION_SHARE + 1, 2
+        self.assertEqual(tracker.raw_direction(), LEFT)
+
+    def test_lost_face_measures_the_pose_again(self):
+        tracker = tracker_at(0, 0)
+        tracker.last_seen = 0.0
+        calibration = Calibration(tracker, 1.0)
+        calibration.start()
         for _ in range(6):
-            calibration.add(True, 0.125)
-        calibration.add(False, 0.125)
-        self.assertFalse(calibration.done())
-        self.assertAlmostEqual(calibration.seconds_left(), 1.0)
+            calibration.add(True, self.STEP)
+        calibration.add(False, self.STEP)
+        self.assertEqual(calibration.pose(), SCREEN)
+        self.assertEqual(calibration.progress(), 0)
+        self.assertFalse(calibration.measuring)   # Space again
+
+    def test_down_pose_survives_a_hidden_face(self):
+        # Looking down often hides the face: the last angles seen are used.
+        tracker = tracker_at(0, 0)
+        tracker.last_seen = 0.0
+        calibration = Calibration(tracker, 1.0)
+        self.measure(calibration, 0, 0)
+        self.measure(calibration, 25, 0)
+        self.measure(calibration, -25, 0)
+        self.measure(calibration, 0, -30, face_visible=False)
+        self.assertTrue(calibration.done())
+
+    def test_wrong_way_keeps_the_default(self):
+        self.assertEqual(pose_threshold(-10, YAW_THRESHOLD), YAW_THRESHOLD)
+        tiny = (CALIBRATION_MIN_ANGLE / CALIBRATION_SHARE) - 1   # hardly moved
+        self.assertEqual(pose_threshold(tiny, YAW_THRESHOLD), YAW_THRESHOLD)
+
+    def test_threshold_limits(self):
+        self.assertEqual(pose_threshold(200, YAW_THRESHOLD), CALIBRATION_MAX_ANGLE)
+        self.assertGreaterEqual(pose_threshold(CALIBRATION_MIN_ANGLE / CALIBRATION_SHARE, 0),
+                                CALIBRATION_MIN_ANGLE)
 
 
 if __name__ == "__main__":

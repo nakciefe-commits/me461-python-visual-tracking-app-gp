@@ -10,21 +10,29 @@ and adds up their scores. A failed exam (caught, or too many warnings)
 scores 0, and the run goes on to the next one, so a run is always three
 exams. The run's score is the total; the top scores are the best runs.
 
+The practice exam after "How to play" is a Run too, of one short exam
+(Run(practice=True), PRACTICE_QUIZ in settings.py); main.py does not count
+it anywhere.
+
 No pygame and no camera here, so it is tested on its own (tests/test_run.py).
 """
 
 import random
 
 from logic.game import Game, WON
-from settings import QUIZZES, MOODS
+from logic.character import RUSH
+from settings import QUIZZES, MOODS, PRACTICE_QUIZ, DEFAULT_CHARACTER
 
 
 class Run:
-    def __init__(self, rng=None):
+    def __init__(self, rng=None, practice=False, character=DEFAULT_CHARACTER):
         # Tests pass a random.Random with a fixed seed.
         self.rng = rng or random.Random()
+        self.practice = practice   # True = the practice exam, counted nowhere
+        self.character = character # who the player is in every exam of the run (CHARACTERS)
+        self.quizzes = [PRACTICE_QUIZ] if practice else QUIZZES
         # Today's mood for each exam, picked now so the whole run is known.
-        self.moods = [self.rng.choice(quiz["moods"]) for quiz in QUIZZES]
+        self.moods = [self.rng.choice(quiz["moods"]) for quiz in self.quizzes]
         self.results = []   # one per finished exam, see finish_quiz()
 
     def number(self):
@@ -33,7 +41,7 @@ class Run:
 
     def quiz(self):
         """The settings of the current exam (title, time, questions, moods)."""
-        return QUIZZES[self.number()]
+        return self.quizzes[self.number()]
 
     def mood(self):
         """The teacher's mood name for the current exam."""
@@ -59,7 +67,12 @@ class Run:
         """A fresh Game for the current exam: its own time and questions, 0 warnings."""
         quiz = self.quiz()
         return Game(self.rng, exam_time=quiz["time"], questions=quiz["questions"],
-                    suspicious_at=quiz["suspicious"])
+                    suspicious_at=quiz["suspicious"], character=self.character,
+                    rushes_before=self.rushes(), ease=quiz.get("ease", 1.0))
+
+    def rushes(self):
+        """How many of the finished exams were a sugar rush (the energy drink addict)."""
+        return sum(1 for result in self.results if result.get("rush"))
 
     def finish_quiz(self, game):
         """The current exam is over (handed in, collected or failed): keep its result."""
@@ -70,11 +83,18 @@ class Run:
             "points": game.paper.points() if game.state == WON else 0,
             "questions": game.paper.size(),
             "score": game.score(),   # 0 when failed
+            "rush": game.energy is not None and game.energy.day == RUSH,
         })
 
     def is_over(self):
         """True after the last exam."""
-        return self.number() == len(QUIZZES)
+        return self.number() == len(self.quizzes)
+
+    def chapter(self):
+        """What the loading screen calls the current exam: "CHAPTER 2/3", or "PRACTICE"."""
+        if self.practice:
+            return "PRACTICE"
+        return f"CHAPTER {self.number() + 1}/{len(self.quizzes)}"
 
     def score_parts(self):
         """Each finished exam's score as (title, points), for the run's score count."""

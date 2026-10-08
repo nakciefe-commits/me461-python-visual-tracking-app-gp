@@ -17,7 +17,7 @@ BLACK = (0, 0, 0)
 WHITE = (240, 240, 240)
 GREY = (110, 115, 125)
 YELLOW = (240, 200, 60)
-PREVIEW_SIZE = (240, 180)      # webcam preview in the game, pixels
+PREVIEW_SIZE = (240, 180)      # default size of a webcam picture, pixels (the start screen sets its own)
 
 # --- Neon style (Hotline Miami-like) ---
 NEON_PINK = (255, 40, 160)

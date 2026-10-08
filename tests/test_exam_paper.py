@@ -9,7 +9,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from logic.exam_paper import ExamPaper, LETTERS, UNKNOWN, BLANK, CORRECT, WRONG, EMPTY
 from tracking.head_tracker import LEFT, RIGHT
-from settings import ANSWERS_NEEDED, POINTS_CORRECT, POINTS_WRONG, POINTS_BLANK
+from settings import (ANSWERS_NEEDED, POINTS_CORRECT, POINTS_WRONG, POINTS_BLANK, MAX_SAME_LETTER,
+                      MAX_SIDE_STREAK)
 
 
 def paper_with_key(letter="B", side=LEFT):
@@ -63,6 +64,35 @@ class ExamPaperTests(unittest.TestCase):
         for _ in range(ANSWERS_NEEDED):
             paper.write("A")
         self.assertLess(paper.points(), 0)
+
+
+class NoStreakTests(unittest.TestCase):
+    """The answer key is random, but never "A A A B" (checked on many seeds)."""
+
+    def test_no_letter_twice_in_a_row(self):
+        for seed in range(500):
+            letters = ExamPaper(random.Random(seed)).right_letters
+            for before, after in zip(letters, letters[1:]):
+                self.assertNotEqual(before, after, f"seed {seed}: {letters}")
+
+    def test_no_letter_too_often(self):
+        for seed in range(500):
+            letters = ExamPaper(random.Random(seed)).right_letters
+            for letter in LETTERS:
+                self.assertLessEqual(letters.count(letter), MAX_SAME_LETTER)
+
+    def test_side_streaks_are_short(self):
+        for seed in range(500):
+            sides = ExamPaper(random.Random(seed)).knowing_side
+            for i in range(len(sides) - MAX_SIDE_STREAK):
+                self.assertGreater(len(set(sides[i:i + MAX_SIDE_STREAK + 1])), 1, f"seed {seed}: {sides}")
+
+    def test_still_random(self):
+        # Every letter still comes first sometimes, and both sides know answers.
+        firsts = {ExamPaper(random.Random(seed)).right_letters[0] for seed in range(200)}
+        self.assertEqual(firsts, set(LETTERS))
+        sides = {ExamPaper(random.Random(seed)).knowing_side[0] for seed in range(200)}
+        self.assertEqual(sides, {LEFT, RIGHT})
 
 
 if __name__ == "__main__":

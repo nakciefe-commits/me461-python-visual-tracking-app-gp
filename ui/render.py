@@ -6,6 +6,8 @@ The drawing code is split over a few files, one per kind of screen:
     draw_notice.py  the opening notice on the desk
     draw_menus.py   start, loading, camera wait, menus
     draw_briefing.py the hallway gossip before each exam (with the slot machine)
+    draw_characters.py the character screen before a run (with code-drawn portraits)
+    draw_run_intro.py the sarcastic briefing before it, timed to its music
     draw_game.py    the classroom, your paper, the neighbours, the strips
     draw_scenes.py  warning, caught and game over scenes
     draw_guide.py   how to play: Gemini and Claude teach the game
@@ -28,6 +30,8 @@ import cv2
 import pygame
 
 from ui.draw_briefing import BriefingDrawing
+from ui.draw_characters import CharacterDrawing
+from ui.draw_run_intro import RunIntroDrawing
 from ui.draw_guide import GuideDrawing
 from ui.draw_game import GameDrawing, LOOK_AWAY_IMAGES, PAPER_IMAGES
 from ui.draw_menus import MenuDrawing, BUTTON_TEXT, BUTTON_HEIGHT, BUTTON_PADDING
@@ -72,7 +76,7 @@ def load_classroom(name, width, height, top=CLASSROOM_TOP):
 
 
 class Renderer(NeonStyle, NoticeDrawing, MenuDrawing, BriefingDrawing, GameDrawing, SceneDrawing,
-               ResultsDrawing, GuideDrawing):
+               ResultsDrawing, GuideDrawing, CharacterDrawing, RunIntroDrawing):
     def __init__(self, screen):
         self.screen = screen
         self.width, self.height = screen.get_size()

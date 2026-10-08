@@ -67,17 +67,24 @@ project folder).
 
 The game opens with our team's "Glitch Please" intro (any key skips it), then
 a (satirical) official notice on a desk: it is typed out (Space shows it all
-at once), press Space to sign it, an "APPROVED" stamp comes down and the
+at once), press Space to sign it (the "signature" is someone trying to draw a
+helicopter), an "APPROVED" stamp comes down and the
 game goes on. Sit at the desk with the webcam on top of the monitor. The start screen shows
 the webcam with the tracking drawn on your face. Sit normally, look at the
-screen, and click **Calibrate** (or press Space): for 2 seconds the game learns
-your "looking at the screen" position. Then the **main menu** opens (Play,
+screen, and click **Calibrate** (or press Space): the game learns your
+"looking at the screen" position. Then it asks for three more poses, one
+at a time, with an arrow: **turn left**, **turn right** and **look down**,
+each only as far as you would in the game *while still seeing the screen*.
+Get into the pose and press Space; hold still for a second (ding). The game
+sets how far you must turn from your own poses, so it fits how you sit and
+move. Then the **main menu** opens (Play,
 How to play, Settings, Quit). Control it with your head: **tilt up/down** to
 move the selection, **turn right** and hold until the bar fills to choose,
 **turn left** and hold to go back. The arrow keys, Enter, Esc and the mouse
 work too; after a key press or a click the head is ignored for 1 s, so the
-two do not fight (the box above the webcam shows "KEYBOARD", then "HEAD
-CONTROL" again). In **Settings** you can turn the sound off, switch
+two do not fight (the box at the bottom right shows "KEYBOARD", then "HEAD
+CONTROL" again). **Quit** and **Main menu** ask "ARE YOU SURE?" first:
+turn right again (or Enter) for yes, left (or Esc) for no. In **Settings** you can turn the sound off, switch
 fullscreen, or calibrate again. The main menu also shows the **top scores**
 (the 5 best runs).
 
@@ -89,9 +96,37 @@ sharp (B), write B, look at the screen to see the teacher. Then they
 explain the "hmm", being caught, close calls, warnings, the bonuses and the
 three-exam run. A banner says what to do, with a bar while you hold it.
 Space hurries a line (or does the task for you), Esc goes back. When they
-are done, the game goes back to the main menu.
+are done, a **practice exam** starts: two questions, 60 seconds, a sleepy
+teacher with long busy times, and everything at 75 % of its danger (the
+suspicion bar fills slower, his looks are shorter, you read faster). It counts for nothing (no top score, no
+class average); after it, "Play for real" starts a run.
 
-Choose **Play** to start a **run: three exams in a row**:
+Choose **Play**: the character music starts and a short, sarcastic
+**briefing** plays to it, Hotline Miami style: on every strong hit of the
+music a new line slams onto the screen ("3 EXAMS." "1 SEMESTER." "0 HOURS
+OF STUDYING." ... "YOUR FAMILY EXPECTS... ...THE MAXIMUM SCORE." "NO
+PRESSURE." "(A LOT OF PRESSURE.)"), with a flash and a shake. Space, Enter
+or turning your head right skips it. When the music drops, the characters
+slide in: they stand in a row, the chosen one big in the middle, thumping
+to the beat; **turn left/right** to slide the row, **look down** (hold) to
+pick, look up (hold) to go back. Choose
+**who you are**. Each character bends one rule, with
+an advantage and a price (the numbers are in `CHARACTERS` in
+`settings.py`):
+
+| Character | + | − |
+|---|---|---|
+| NPC with a Monster bag (a gaming laptop he brought to a paper exam) | the plain game | — |
+| The New Era guy (flat-brim cap) | staring and copying fill the suspicion bar slower | while you are not looking at your paper the bar creeps up (full in 30 s), even when the teacher is busy |
+| Glasses | reads a neighbour's paper faster | the classroom is blurry for a moment each time you look at the teacher |
+| The nerd | one **joker** per exam: `j` while looking at your paper writes the right answer | his early bonus only starts at 30 % of the time left (0 there, the full bonus with all the time left); later than that, −1000 points |
+| Energy drink addict | a coin toss each exam (50 %, 15 % less after every rush in the run): **sugar rush**, the world (teacher, clock, bar) runs slower for you | or a **crash**: now and then you get sleepy (eyelids close) and read slowly |
+| The teacher's buddy | the teacher checks less often | but when he looks, he looks longer |
+| Lazy but funny | both neighbours show you the answer | the teacher is alarmed faster; no sharp-eye bonus |
+
+A badge at the top left of the game shows your character (and the nerd's
+jokers and deadline, the energy drink's day). **Play again** keeps the
+character. Then the **run: three exams in a row**:
 
 | Exam | Questions | Time |
 |---|---|---|
@@ -109,7 +144,11 @@ are bad days. A mood changes how long the teacher is busy and watching and
 how often he moves. When you are ready, **turn right** (and hold) on "I'm
 ready" (or press Enter); turn left goes back to the menu. A 3-second
 "chapter" screen ("Chapter 1/3 - The Quiz", today's date) gives you time to
-sit straight, then the exam starts:
+sit straight; when its bar is full, a quick title card slams in the exam's
+name and what you think of it ("THE QUIZ - This gotta be easy... right?",
+"THE MIDTERM - I can handle this. Probably. Maybe not.", "THE FINAL - God,
+please help me."), then the exam starts. (The first exam's gossip spin
+still has the character music; from the second one on, the menu theme.)
 
 | Head | Option | What happens |
 |---|---|---|
@@ -147,7 +186,9 @@ menus from the start screen on (not during the intro and the notice). It
 fades out while an exam loads; during the exam a tense track
 (`assets/sounds/thrilling.mp3`) plays, quieter so you still hear the
 teacher, and stops when you fail. The theme fades back in afterwards, from
-its beginning. Sound OFF in the settings turns both off. Every screen
+its beginning. The briefing and the character screen have their own
+track (`assets/sounds/character_[cut_180sec].mp3`), which starts at once
+(the briefing is timed to it). Sound OFF in the settings turns them all off. Every screen
 change is a short crossfade.
 
 **Grading:** every question is worth one point: right **+1**, wrong
@@ -160,14 +201,20 @@ watching you until the bar drains back under it, so you have to look at
 your paper.
 
 **Score:** after a handed-in exam the score is counted up part by part, like
-in Balatro: each question's card pops in (+1000 right, −500 wrong, 0 blank),
-then the **early bonus** (up to +1000, the share of the exam time you did
+in Balatro, in two tables. On the left one row per question lights up in
+turn: what you wrote, the answer key, right / wrong / blank and the points
+(+1000 right, −500 wrong, 0 blank), then the grade. On the right the
+bonuses come one row each: the **early bonus** (up to +1000, the share of the exam time you did
 not use), the **close calls** (the teacher saw you copying and you looked
 away in time: 100 to 500 points, the fuller the suspicion bar was the more;
 above 80 % it is a "razor close" call, +300 more), **sharp eyes** (+100
 each time the first paper you read for a question is the one that knows),
 **NINJA!** (+1500: every answer right, no warning; **almost ninja** +500
 with one warning) and −300 per warning.
+The score itself rolls up like a **slot machine**, one spinning reel per
+digit in a gold frame with bulbs: the bigger it gets, the more it shakes,
+sparkles and flashes, and a huge score ends with **JACKPOT!** and a
+fanfare. The run's total is counted the same way.
 Space skips the count. The exam's score is never below 0.
 
 After each exam you also see the **class average**: the average score of
@@ -187,9 +234,9 @@ up/down to change the letter, turn right for the next one, turn left to go
 back (or just type the letters and press Enter). The top scores
 ("1. EFE 12808 7 OCT") are kept in `highscore.json` (each computer has its own).
 
-Keys: Space calibrate, `a`/`b`/`c`/`d` write an answer, `s` leave it blank
-(both while looking at your paper), Esc quits in the game and on
-the main menu (and goes back in the other menus; the window's X button and
+Keys: Space calibrate (once per pose), `a`/`b`/`c`/`d` write an answer, `s` leave it blank,
+`j` the nerd's joker (all while looking at your paper), Esc quits in the game, asks
+"Are you sure?" on the main menu (and goes back in the other menus; the window's X button and
 `q` do nothing, Ctrl+C in the terminal still stops it), `r` restart the run, `m`
 main menu, `k` recalibrate, F11
 fullscreen on/off, `t` always show the classroom and the teacher's state (for testing). The game opens as a maximized window (title bar and taskbar stay
@@ -202,8 +249,10 @@ the game carries on. You don't need to turn your head
 far: 18° counts as looking to the side, and a face turned too far away is hard
 to track.
 
-To tune the head tracking, watch the yaw/pitch numbers under the webcam
-preview and change the numbers in `settings.py`.
+To tune the head tracking, watch the yaw/pitch numbers at the top right of
+the game and change the numbers in `settings.py`. Your own face (the
+webcam picture) is only shown on the start screen, while calibrating; the
+menus and the game do not show it.
 
 The old body tracker still runs with `.venv/bin/python old/tracker.py`
 (Windows: `.venv\Scripts\python old\tracker.py`).
@@ -282,6 +331,7 @@ you see and hear. `main.py` and `settings.py` stay at the top.
 | `logic/menu.py` | Menus: the selected item, and head tilts/turns → up/down/select/back; the loading bar's uneven fill. |
 | `logic/disclaimer.py` | The opening notice: typing, signing, the stamp (no drawing). |
 | `logic/guide.py` | The "How to play" guide: Gemini and Claude's lines and the tasks to try (no drawing). |
+| `logic/character.py` | The characters: their rules (from `CHARACTERS` in `settings.py`), the blur of glasses, the energy drink's rush or crash. |
 | **`tracking/`** | |
 | `tracking/camera.py` | Reads the webcam in the background. |
 | `tracking/head_tracker.py` | Webcam frame → head direction (DOWN / SCREEN / LEFT / RIGHT). |
@@ -294,6 +344,7 @@ you see and hear. `main.py` and `settings.py` stay at the top.
 | `ui/draw_menus.py` | Start, loading, camera wait and the menus. |
 | `ui/draw_notice.py` | The opening notice on the desk. |
 | `ui/draw_guide.py` | The "How to play" guide: what you look at, the task banner, the chat. |
+| `ui/draw_characters.py` | The character screen, with portraits drawn in code. |
 | `ui/sounds.py` | Sound effects: beeps made in code, some replaced by files. |
 | `ui/glitch_intro.py` | Our team's "Glitch Please" intro. One file, only needs pygame: copy it into any project. |
 | `tests/` | Unit tests for the rules, the tracker and the menus. |
@@ -304,7 +355,7 @@ you see and hear. `main.py` and `settings.py` stay at the top.
 | `face_landmarker.task` | Pre-trained MediaPipe face model. |
 | `pose_landmarker.task` | Pre-trained MediaPipe pose model, used by `old/tracker.py`. |
 | `assets/images/` | The four classroom pictures, plus the three look-away pictures (`classroom_desk_looking_down/left/right`) and each neighbour's paper with a letter (`left_A` … `left_D`, `left_unknown` = "?", same for `right_`), the teacher pointing at you after a warning (`classroom_warning`) (`original/`: as made by Gemini, before sharpening). |
-| `assets/sounds/` | Sound files (Luigi "hmm", MGS alert, chalk erasing for later), `theme.mp3` (menu music) and `thrilling.mp3` (exam music). |
+| `assets/sounds/` | Sound files (Luigi "hmm", MGS alert, chalk erasing for later), `theme.mp3` (menu music), `thrilling.mp3` (exam music) and `character_[cut_180sec].mp3` (the briefing and the character screen). |
 | `LEARN.md` | **Start here to learn the code:** how it works, file by file. |
 | `PLAN.md` | Game design, open questions, what is done and what is next. |
 | `IMAGE_PROMPTS.md` | Ready-to-paste Gemini prompts for the teacher's mood pictures (which image to upload, what to save it as). |

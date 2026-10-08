@@ -1,7 +1,7 @@
 """
 Drawing the opening screen: an official notice on a wooden desk. The paper
 slides in, the text is typed out, Space signs it and an "APPROVED" stamp
-comes down. Its timing is in disclaimer.py (no drawing there, so it is
+comes down. (The "signature" is someone trying to draw a helicopter.) Its timing is in disclaimer.py (no drawing there, so it is
 tested); this file only draws it. Part of Renderer (see render.py).
 """
 
@@ -38,6 +38,48 @@ STAMP_ANGLE = 14                 # degrees the stamp is turned
 STAMP_SLAM = 0.12                # seconds the stamp takes to come down (from big to its size)
 DESK_DARK = (45, 26, 16)         # the wooden desk behind the paper: dark and light wood
 DESK_LIGHT = (95, 58, 34)
+
+
+def shaky(points, seed):
+    """A line drawn by an unsteady hand: every point moved a little, smoothly (two sine waves)."""
+    return [(px + 1.6 * math.sin(i * 0.35 + seed) + 0.4 * math.sin(i * 0.9 + seed),
+             py + 1.8 * math.sin(i * 0.42 + seed * 2) + 0.4 * math.sin(i * 1.1 + seed))
+            for i, (px, py) in enumerate(points)]
+
+
+def oval(cx, cy, rx, ry, start, end, steps):
+    """Points along an oval from angle `start` to `end` (radians; more than 2π goes round again)."""
+    return [(cx + rx * math.cos(start + (end - start) * k / steps),
+             cy + ry * math.sin(start + (end - start) * k / steps)) for k in range(steps + 1)]
+
+
+def line(points, steps):
+    """Points along straight pieces through `points`, `steps` per piece."""
+    out = []
+    for (x1, y1), (x2, y2) in zip(points, points[1:]):
+        out += [(x1 + (x2 - x1) * k / steps, y1 + (y2 - y1) * k / steps) for k in range(steps)]
+    return out + [points[-1]]
+
+
+def helicopter_strokes(x, y, width):
+    """
+    The helicopter "signature" as strokes (lists of points), in the order
+    they are drawn. x, y: where the signature starts, on the signing line;
+    width: how wide it may be. Made from simple shapes, then made shaky.
+    """
+    def at(u, v):
+        return (x + u * width, y + v)   # u: 0..1 across, v: pixels down from the line
+
+    body = oval(*at(0.32, -8), 0.14 * width, 16, math.pi, 3.3 * math.pi, 40)   # goes round a bit more than once
+    window = oval(*at(0.25, -11), 0.06 * width, 8, 0.9 * math.pi, 1.6 * math.pi, 10)
+    tail = line([at(0.45, -10), at(0.66, -13), at(0.86, -17)], 10)
+    tail_rotor = oval(*at(0.88, -18), 9, 9, 0, 4 * math.pi, 26)               # scribbled round twice
+    mast = line([at(0.32, -24), at(0.33, -33)], 5)
+    rotor = line([at(0.06, -34), at(0.62, -31), at(0.10, -36), at(0.58, -33)], 12)   # back and forth
+    struts = line([at(0.24, 7), at(0.24, 12)], 3) + line([at(0.40, 7), at(0.40, 12)], 3)
+    skid = line([at(0.12, 9), at(0.16, 13), at(0.50, 13), at(0.54, 9)], 8)
+    return [shaky(stroke, seed) for seed, stroke in
+            enumerate([body, window, tail, tail_rotor, mast, rotor, struts, skid])]
 
 
 class NoticeDrawing:
@@ -77,22 +119,22 @@ class NoticeDrawing:
 
     def signature(self, x, y, width, progress):
         """
-        A scribbled signature, written from left to right as progress goes
-        0 → 1: a line that loops with two sine waves of different speeds.
+        The "signature": someone clearly trying to draw a helicopter instead.
+        A shaky body, a window, the tail with its little rotor, the mast, the
+        big rotor scribbled twice, and the skids, drawn stroke by stroke as
+        progress goes 0 → 1 (the pen lifts between strokes).
         """
-        total = 300   # points along the whole signature; many, so it is smooth
-        steps = int(total * progress)
-        if steps < 2:
-            return
-        points = []
-        for i in range(steps):
-            s = i / total
-            # Moving right with small loops back (the sine on x), going up
-            # and down in bigger waves that get smaller to the end.
-            points.append((x + s * width + 9 * math.sin(s * 38),
-                           y - 13 * math.sin(s * 19) * (1 - 0.5 * s) - 5 * math.sin(s * 57)))
-        pygame.draw.aalines(self.screen, BLUE_INK, False, points)
-        pygame.draw.lines(self.screen, BLUE_INK, False, points, 2)
+        strokes = helicopter_strokes(x, y, width)
+        total = sum(len(stroke) for stroke in strokes)
+        left = int(total * progress)   # how many points the pen has drawn so far
+        for stroke in strokes:
+            drawn = stroke[:left]
+            left -= len(stroke)
+            if len(drawn) >= 2:
+                pygame.draw.aalines(self.screen, BLUE_INK, False, drawn)
+                pygame.draw.lines(self.screen, BLUE_INK, False, drawn, 2)
+            if left <= 0:
+                break
 
     def draw_disclaimer(self, notice):
         """

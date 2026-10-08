@@ -64,6 +64,34 @@ class PoseTests(unittest.TestCase):
     def test_small_movements_do_nothing(self):
         self.assertIsNone(HeadMenuInput.pose(MENU_YAW_THRESHOLD - 3, MENU_PITCH_THRESHOLD - 3))
 
+    def test_sideways_menu(self):
+        # The character row: turning moves, tilting down chooses, tilting up goes back.
+        head = HeadMenuInput()
+        head.horizontal = True
+        head.update(*STRAIGHT, 0.1, True)          # straight once: armed
+        actions = [head.update(*TURN_RIGHT, MENU_MOVE_HOLD, True)]
+        self.assertEqual(actions, [DOWN])          # the next one
+        head.update(*STRAIGHT, 0.1, True)
+        self.assertEqual(head.update(*TURN_LEFT, MENU_MOVE_HOLD, True), UP)
+        head.update(*STRAIGHT, 0.1, True)
+        self.assertIsNone(head.update(*TILT_DOWN, MENU_SELECT_TIME / 2, True))
+        self.assertEqual(head.update(*TILT_DOWN, MENU_SELECT_TIME / 2, True), SELECT)
+        head.update(*STRAIGHT, 0.1, True)
+        head.update(*TILT_UP, MENU_SELECT_TIME / 2, True)
+        self.assertEqual(head.update(*TILT_UP, MENU_SELECT_TIME / 2, True), BACK)
+
+    def test_calibrated_turns(self):
+        # A player who turns only a little: the menu asks for their own turn.
+        head = HeadMenuInput()
+        head.set_turns(10, 12)
+        self.assertEqual(head.left_turn, 10)
+        self.assertEqual(head.right_turn, 12)
+        self.assertEqual(HeadMenuInput.pose(-13, 0, head.left_turn, head.right_turn), SELECT)
+        self.assertEqual(HeadMenuInput.pose(11, 0, head.left_turn, head.right_turn), BACK)
+        # Never more than the fixed menu turn.
+        head.set_turns(40, 40)
+        self.assertEqual(head.left_turn, MENU_YAW_THRESHOLD)
+
     def test_turn_wins_over_tilt(self):
         self.assertEqual(HeadMenuInput.pose(TURN_RIGHT[0], TILT_DOWN[1]), SELECT)
 

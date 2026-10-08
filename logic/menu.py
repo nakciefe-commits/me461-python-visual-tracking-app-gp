@@ -10,6 +10,10 @@ items with one of them selected. The player moves the selection with the head:
 The keyboard (arrows, Enter, Esc) and the mouse do the same things; main.py
 turns them into the same four actions.
 
+A menu laid out sideways (the character row) uses the head the other way
+round (horizontal=True): turn LEFT / RIGHT to move, tilt DOWN (hold) to
+choose, tilt UP (hold) to go back.
+
 Like game.py, this file draws nothing and does not import pygame, so it can be
 tested without a camera or a window (see tests/test_menu.py).
 """
@@ -20,6 +24,9 @@ from settings import (MENU_PITCH_THRESHOLD, MENU_YAW_THRESHOLD, MENU_MOVE_HOLD,
 
 # The four things a player can do in a menu.
 UP, DOWN, SELECT, BACK = "up", "down", "select", "back"
+# A sideways menu: what each head pose (named as in a normal menu) means there.
+# Turning moves (left = the one before, right = the next), tilting chooses.
+HORIZONTAL = {BACK: UP, SELECT: DOWN, DOWN: SELECT, UP: BACK}
 
 
 class Menu:
@@ -58,6 +65,11 @@ class HeadMenuInput:
 
     def __init__(self):
         self.paused_time = 0.0   # seconds head control stays off after a key press
+        # Degrees to turn left / right; main.py sets them to the player's
+        # own (calibrated) turns, but never more than MENU_YAW_THRESHOLD.
+        self.left_turn = MENU_YAW_THRESHOLD
+        self.right_turn = MENU_YAW_THRESHOLD
+        self.horizontal = False  # True on a sideways menu (see HORIZONTAL)
         self.reset()
 
     def reset(self):
@@ -66,16 +78,21 @@ class HeadMenuInput:
         self.held = None       # the pose being held right now: UP, DOWN, SELECT, BACK or None
         self.held_time = 0.0   # seconds it has been held
 
+    def set_turns(self, left, right):
+        """The player's calibrated turns (degrees); the menus never ask for more than MENU_YAW_THRESHOLD."""
+        self.left_turn = min(MENU_YAW_THRESHOLD, left)
+        self.right_turn = min(MENU_YAW_THRESHOLD, right)
+
     @staticmethod
-    def pose(yaw, pitch):
+    def pose(yaw, pitch, left_turn=MENU_YAW_THRESHOLD, right_turn=MENU_YAW_THRESHOLD):
         """
         Which action the head points at, or None for straight. yaw and pitch
         are measured from the calibrated screen angles (positive yaw = the
         player's left, positive pitch = up). Turning wins over tilting.
         """
-        if yaw < -MENU_YAW_THRESHOLD:
+        if yaw < -right_turn:
             return SELECT          # turned right
-        if yaw > MENU_YAW_THRESHOLD:
+        if yaw > left_turn:
             return BACK            # turned left
         if pitch > MENU_PITCH_THRESHOLD:
             return UP
@@ -103,7 +120,9 @@ class HeadMenuInput:
             self.held_time = 0.0
             return None
 
-        pose = self.pose(yaw, pitch)
+        pose = self.pose(yaw, pitch, self.left_turn, self.right_turn)
+        if pose is not None and self.horizontal:
+            pose = HORIZONTAL[pose]   # the same head, read sideways
         if pose is None:
             self.armed = True
             self.held = None

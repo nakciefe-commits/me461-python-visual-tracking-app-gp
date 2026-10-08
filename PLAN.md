@@ -62,9 +62,11 @@ Each webcam frame becomes one of:
 - **MediaPipe Face Landmarker** (`face_landmarker.task`) gives a rotation
   matrix for the face; from it we compute **yaw** (left/right) and **pitch**
   (up/down).
-- **Calibration** at the start: the player looks at the screen for 2 s and the
-  average angles become their *neutral*. All thresholds are measured from it,
-  so it works wherever the webcam sits.
+- **Calibration** at the start (section 12.1): the player shows four poses
+  (screen, left, right, down), pressing Space for each. The screen pose
+  becomes their *neutral*; all angles are measured from it, so it works
+  wherever the webcam sits. The other three set this player's own
+  thresholds (60 % of the way to each pose).
 - **Smoothing** (`SMOOTHING` 0.8) stops one noisy frame from jumping the angle.
 - **Hold time** (`HOLD_TIME` 0.1 s): a new direction must last this long, so
   jitter does not create fake glances. Lower = faster reaction, more jitter.
@@ -93,7 +95,7 @@ Each webcam frame becomes one of:
 
 - The classroom fades in from black over `FADE_TIME` (0.15 s).
 - While the teacher looks at the class, the **suspicion bar** fills: full
-  after 5 s (`STARE_GRACE_TIME` 3 s shown yellow, then `STARE_FILL_TIME` 2 s
+  after 3 s (`STARE_GRACE_TIME` 2 s shown yellow, then `STARE_FILL_TIME` 1 s
   red). Full = **warning** (buzz) and the bar starts over.
 - **The warning scene** (`WARNING_SCENE_TIME`, 2.5 s): the teacher walks
   up to your desk (a zoom into their picture, `TEACHER_APPROACH_TIME`
@@ -108,7 +110,8 @@ Each webcam frame becomes one of:
 - The screen shows the neighbour's paper (`classroom_desk_looking_left` /
   `_right`), never the teacher.
 - Each question has a random right letter (A-D) and a random neighbour who
-  knows it.
+  knows it; never the same letter twice in a row or more than twice per
+  exam, never the same neighbour three times in a row (NOTES #43).
 - **Gradual focus** (Emre's idea): the neighbour's paper (the picture with
   the letter circled, or "?") is blurry and gets sharper the longer you keep
   looking; after `PAPER_FOCUS_TIME` (2.5 s) without looking away you have
@@ -116,7 +119,7 @@ Each webcam frame becomes one of:
   holding a risky look; the blur itself shows how far (no bar). This replaced the old
   copy bar (5 s, kept between looks), where copying was just waiting.
 - **Seen copying** (the teacher is watching): an alarm plays, the suspicion
-  bar fills fast (full in `CAUGHT_TIME`, 0.9 s), and copying does not move
+  bar fills fast (full in `CAUGHT_TIME`, 0.7 s), and copying does not move
   forward. Look away before it is full and you escape; full = **caught**.
 
 ### 3.4 The suspicion bar
@@ -174,7 +177,8 @@ safe       "hmm" sound   copying = caught
 
 - **pygame-ce** draws everything (`render.py`): the classroom picture fills
   the 960×600 window, with see-through strips for answers, warnings, the exam
-  clock, the webcam preview and the two bars.
+  clock and the two bars. The webcam picture is only on the start
+  screen (calibration), not in the menus or the game (NOTES #47).
 - **Pictures** were made with Gemini and sharpened with Real-ESRGAN (an AI
   upscaler, run once by hand, not part of the game). Originals are in
   `assets/images/original/`. A new picture must show the same classroom from
@@ -293,13 +297,15 @@ logic/               The rules, no drawing, no camera, all tested
   menu.py            Menus: selected item; head tilt/turn -> up/down/select/back; loading bar
   disclaimer.py      The opening notice: typed, signed, stamped
   guide.py           How to play: Gemini and Claude's lines, the tasks to try
+  character.py       The characters' rules (from CHARACTERS), glasses' blur, the energy drink
 tracking/
   camera.py          Reads the webcam in a background thread
   head_tracker.py    Webcam frame -> yaw/pitch -> DOWN / SCREEN / LEFT / RIGHT / None
 ui/
   render.py          The Renderer: fonts and pictures; drawing in the files below
   style.py           Colours, fonts, the neon helpers
-  draw_game.py, draw_scenes.py, draw_results.py, draw_menus.py, draw_notice.py, draw_guide.py
+  draw_game.py, draw_scenes.py, draw_results.py, draw_menus.py, draw_notice.py, draw_guide.py,
+  draw_characters.py
   sounds.py          Generated beeps + sound files, played by name
   glitch_intro.py    Our team's intro (self-contained, for every project)
 tests/               unittest tests for logic/ and the tracker logic
@@ -346,6 +352,11 @@ main menu and the results; tests (152).
 
 **Next, roughly in order:**
 
+00. **Update 2** (section 12) ✅ built (NOTES #40–#45): calibration with
+    four poses, the score table, a practice exam, answers without streaks,
+    the slot-machine score, characters. Next: play it with the webcam and
+    tune `CALIBRATION_SHARE` and `CHARACTERS` (section 12.4).
+
 0. **The next big update: three quizzes and the teacher's moods.** Phase A
    is done; next is phase B, the real moods (section 11.8). It changes
    items 1, 2 and 5 below.
@@ -360,7 +371,8 @@ main menu and the results; tests (152).
    and desk is not a jump.
 4. **Menus and polish:** ✅ main menu, how-to-play screen, settings, end
    menu, all head-controlled (commit #15). ✅ How to play is a hands-on
-   guide where Gemini and Claude teach the game (NOTES #34). Still: end screen with
+   guide where Gemini and Claude teach the game (NOTES #34), followed by a
+  2-question practice exam (NOTES #42). Still: end screen with
    time/warnings, readable webcam errors, menu music.
 5. **Difficulty and score:** ✅ score, top scores, levels (Quiz → Midterm →
    Final) with moods. Still: the teacher checks more often as the exam goes
@@ -714,3 +726,78 @@ under 8.5 minutes.
   The music is `assets/sounds/theme.mp3` (menus, Suno) and `thrilling.mp3` (exam).
 - **Next step:** play a whole run with the webcam and tune `QUIZZES` and
   `MOODS`; then phase B (11.4): bluffs, sneaky glances, sign sounds.
+
+---
+
+## 12. Update 2: calibration, the score table, a practice exam, characters
+
+Asked for by the team after playing (8 Oct 2026). Built in this order, one
+NOTES entry each. All the numbers stay in `settings.py` (it already holds
+every tuning number, so nothing had to be moved); the characters are a
+`CHARACTERS` table there, so tuning one is changing a number, not code.
+
+| # | What | Why |
+|---|---|---|
+| 1 ✅ #40 | **Four-pose calibration** | Every player turns their head differently. The player shows the game each pose (screen, left, right, down) and presses Space; the thresholds come from their own poses. |
+| 2 ✅ #41 | **The score count as a table** | The cards and the bonus rows were hard to read; a table (what you wrote, the right answer, the points) reads at a glance. |
+| 3 ✅ #42 | **A practice exam after How to play** | 2 questions, a sleepy teacher, short: try it all for real once before the run. Not counted in the scores. |
+| 4 ✅ #43 | **Answers without streaks** | "A A A B" happened often. No letter twice in a row, at most twice per exam; the knowing neighbour is never the same side three times in a row. |
+| 5 ✅ #44 | **Slot-machine score** | The score rolls like the reels of a slot machine while it counts; the bigger the score, the more it shakes, sparkles and flashes (Balatro). |
+| 6 ✅ #45 | **Characters** | Pick who you are before a run; each one bends one rule with an advantage and a price. |
+
+### 12.1 Calibration (item 1)
+
+The start screen (and Settings → Recalibrate, and K in the game) goes
+through four poses, each with its own instruction:
+
+1. **SCREEN** — sit normally and look at the screen.
+2. **LEFT** — turn left as far as you would to copy, *but keep the screen
+   in sight* (in the game you must still see it).
+3. **RIGHT** — the same to the right.
+4. **DOWN** — look down at your desk, still seeing the screen.
+
+Each pose: hold it, press Space (or click), and it is measured for
+`CALIBRATION_SAMPLE_TIME`. The threshold of a direction is
+`CALIBRATION_SHARE` (60 %) of the way to the pose, kept between
+`CALIBRATION_MIN_ANGLE` and `CALIBRATION_MAX_ANGLE`. A pose that went the
+wrong way or hardly moved keeps the old fixed threshold. The menus use the
+same left/right turn.
+
+### 12.2 Characters (item 6)
+
+Picked on a new screen after PLAY, kept for the next run. Each changes
+only numbers the game already has (focus time, the suspicion bar's
+speeds, the teacher's times) plus one new rule.
+
+| Character | Plus | Minus |
+|---|---|---|
+| **NPC with a Monster bag** (a Monster gaming laptop, at a paper exam) | Nothing special: the plain game. | Nothing. |
+| **The New Era guy** (flat-brim cap) | The brim hides your eyes: staring and being seen copying fill the bar slower. | Whenever you are not looking at your paper the bar creeps up slowly, even when the teacher is busy. |
+| **Glasses** | Reading a neighbour's paper is a bit quicker. | Looking at the teacher, the classroom is blurry first and has to come into focus. |
+| **The nerd** | Starts every exam with one joker (J while looking down: writes the right answer). | Must hand the exam in early (a share of the time left), or loses points; his early bonus counts only from that line. |
+| **Energy drink addict** | A coin toss each exam: **sugar rush** — the world runs a bit slower for you. | **Crash** — now and then you get sleepy: reading gets slower, your eyelids close. |
+| **The teacher's buddy** | He checks on you less often (longer busy times). | When he does look, he looks longer. |
+| **Lazy but funny** | Both neighbours like you: both show the right answer. | The teacher gets alarmed faster: the bar fills faster when he sees you. No sharp-eye bonus (nothing to find). |
+
+The character is on the loading screen ("PLAYING AS") and on a badge in
+the game. The top scores do not change. The practice exam is always
+played as the NPC.
+
+### 12.3 The briefing and the sliding character screen (NOTES #48)
+
+PLAY starts the character music and a sarcastic briefing timed to it (a
+line per bar: "3 EXAMS." ... "(A LOT OF PRESSURE.)"); at the drop the
+characters slide in as a Hotline Miami-like row, the chosen one big in the
+middle and thumping to the beat. Timing numbers measured from the file:
+147 BPM, first hit 0.81 s, drop 11.84 s (`settings.py`).
+
+### 12.4 To tune after playing (all in `settings.py`)
+
+- Calibration: `CALIBRATION_SHARE` (0.6). Too jumpy → higher; too hard to
+  reach → lower.
+- Each character's numbers in `CHARACTERS`. Signs that one is too strong:
+  everyone picks it; too weak: nobody does. The nerd's 30 % and the cap's
+  `creep_time` (30 s) are the guesses most likely to need changing.
+- The game is still hard (the team's feeling): the first numbers to try
+  are `PAPER_FOCUS_TIME` (2.5 s), `CAUGHT_TIME` (0.7 s) and the moods'
+  `"watching"` times.

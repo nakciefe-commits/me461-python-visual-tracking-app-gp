@@ -8,10 +8,12 @@ replacing the beep of the same name.
 
 The music (MUSIC_FILES) is different: it is long, so pygame plays it
 straight from the file ("streaming", pygame.mixer.music) instead of
-loading it all. pygame can stream only one file at a time, so there are two
-tracks, "menu" and "exam": main.py says which one should play (see
-music()), and when it changes, the old one fades out and the new one fades
-in from its beginning.
+loading it all. pygame can stream only one file at a time, so there are
+three tracks, "menu", "exam" and "character": main.py says which one
+should play (see music()), and when it changes, the old one fades out and
+the new one fades in from its beginning. The run intro is timed to its
+music, so it does not wait for a fade: cut_to() starts it at once, and
+music_position() says where in the song it is.
 
 A few sounds loop while something lasts (the chalk while the teacher
 erases the board): main.py turns them on and off every frame with loop().
@@ -25,7 +27,8 @@ import os
 import numpy as np
 import pygame
 
-from settings import MUSIC_VOLUME, EXAM_MUSIC_VOLUME, MUSIC_FADE_TIME, CHALK_VOLUME, LOOP_FADE_TIME
+from settings import (MUSIC_VOLUME, EXAM_MUSIC_VOLUME, MUSIC_FADE_TIME, CHALK_VOLUME, LOOP_FADE_TIME,
+                      EXAM_TITLE_TIME)
 
 SAMPLE_RATE = 44100   # numbers per second of sound
 VOLUME = 0.4          # 0.0-1.0
@@ -40,12 +43,19 @@ SOUND_FILES = {
     "chalk": "Erasing Chalk On Chalkboard Sound Effect.mp3",   # loops while he erases the board
     "footsteps": "footsteps.mp3",             # he walks to your desk / to the other place (optional file)
     "rip": "paper-rip.mp3",                   # he tears up your exam (optional file)
+    # The school bell on the title card before each exam.
+    "bell": "School Bell Sound Effect (Download) - Soundspace Sound Effects (128k).mp3",
 }
 # Sounds played quieter than the rest, 0..1.
 SOUND_VOLUMES = {"chalk": CHALK_VOLUME}
+# Sounds cut to a fixed length (seconds), fading out at the end, so they
+# end with what they go with: the bell lasts exactly as long as the title card.
+SOUND_LENGTHS = {"bell": EXAM_TITLE_TIME}
+CUT_FADE_TIME = 0.35   # seconds over which a cut sound fades out
 # Music track -> file in SOUND_FOLDER (optional), looped while it plays.
-MUSIC_FILES = {"menu": "theme.mp3", "exam": "thrilling.mp3"}
-MUSIC_VOLUMES = {"menu": MUSIC_VOLUME, "exam": EXAM_MUSIC_VOLUME}
+MUSIC_FILES = {"menu": "theme.mp3", "exam": "thrilling.mp3",
+               "character": "character_[cut_180sec].mp3"}   # the run intro and the character screen
+MUSIC_VOLUMES = {"menu": MUSIC_VOLUME, "exam": EXAM_MUSIC_VOLUME, "character": MUSIC_VOLUME}
 
 
 def tone(freq, seconds, fade=True):
@@ -149,6 +159,40 @@ def nooo(seconds):
     return 0.6 * wave * np.minimum(1.0, 6 * (1 - t / seconds))   # fades out at the end
 
 
+def school_bell(seconds):
+    """
+    Stand-in for the bell file: an electric school bell, a bright metal ring
+    (a high note and its clangy overtone) hammered 25 times a second, which
+    fades out at the end.
+    """
+    t = np.arange(int(SAMPLE_RATE * seconds)) / SAMPLE_RATE
+    ring = np.sin(2 * np.pi * 1150 * t) + 0.5 * np.sin(2 * np.pi * 2730 * t)
+    hammer = 0.6 + 0.4 * np.abs(np.sin(2 * np.pi * 12.5 * t))   # 25 hits a second
+    return 0.45 * ring * hammer * fade_out(len(t), int(SAMPLE_RATE * CUT_FADE_TIME))
+
+
+def fade_out(count, fade_count):
+    """count numbers: 1, 1, 1, ... then down to 0 over the last fade_count (multiply a sound by it)."""
+    shape = np.ones(count)
+    fade_count = min(fade_count, count)
+    if fade_count > 0:
+        shape[count - fade_count:] = np.linspace(1.0, 0.0, fade_count)
+    return shape
+
+
+def cut_sound(samples, count, fade_count):
+    """
+    The first `count` samples of a sound (one number per sample, or one row
+    of two for stereo), fading out over the last `fade_count`. A shorter
+    sound is padded with silence.
+    """
+    cut = np.zeros((count,) + samples.shape[1:], dtype=np.float64)
+    length = min(count, len(samples))
+    cut[:length] = samples[:length]
+    shape = fade_out(count, fade_count)
+    return cut * (shape[:, None] if cut.ndim == 2 else shape)
+
+
 TALLY_TICKS = 16          # how many tally ticks are made (more parts reuse the highest one)
 TALLY_BASE_PITCH = 440    # Hz, the first tally tick; each next one is a semitone higher
 
@@ -192,6 +236,13 @@ def make_waves():
         # The gossip slot machine: a click per mood rolling past, a ding when it stops.
         "slot_tick": 0.5 * synth(1760, 0.03),
         "slot_stop": sum(synth(f, 0.6) for f in (784, 988, 1175)) / 2,
+        # The characters: the nerd's joker (a magic run up), the nerd too
+        # slow (a sad "wah-wah"), the energy drink crash (a sleepy yawn down)
+        # and waking up from it (a quick blip up).
+        "joker": np.concatenate([synth(f, 0.05) for f in (784, 988, 1175, 1568, 1976)]),
+        "nerd_late": np.concatenate([synth(392, 0.25), synth(370, 0.25), synth(349, 0.5)]),
+        "sleepy": np.concatenate([tone(f, 0.12) for f in (440, 392, 349, 294, 262)]),
+        "awake": np.concatenate([synth(f, 0.05) for f in (660, 990)]),
         # Reading the right neighbour first: a quick sparkle.
         "sharp_eye": np.concatenate([synth(f, 0.06) for f in (1319, 1568, 2093)]),
         # Scenes: the teacher tears up your exam; the game over screen.
@@ -203,6 +254,7 @@ def make_waves():
         "sign": scribble(0.65),
         "stamp": np.concatenate([0.9 * tone(70, 0.28) + 0.4 * scribble(0.28)]),
         "nooo": nooo(1.8),
+        "bell": school_bell(EXAM_TITLE_TIME),   # replaced by the bell file, if it loads
         # The chat bubbles typing: a very short soft synth blip per voice.
         **{talk_sound(who, i): 0.5 * synth(f, 0.045)
            for who, pitches in TALK_PITCHES.items() for i, f in enumerate(pitches)},
@@ -246,9 +298,20 @@ class Sounds:
             except (pygame.error, FileNotFoundError) as error:
                 # Broken file: keep the beep instead.
                 print(f"Could not load {file_name} ({error}); using a beep instead.")
+        for name, seconds in SOUND_LENGTHS.items():
+            if name in self.sounds:
+                self.sounds[name] = self.cut(self.sounds[name], seconds)
         for name, volume in SOUND_VOLUMES.items():
             if name in self.sounds:
                 self.sounds[name].set_volume(volume)
+
+    @staticmethod
+    def cut(sound, seconds):
+        """The sound, `seconds` long (cut, or padded with silence), fading out at the end."""
+        rate = pygame.mixer.get_init()[0]
+        samples = pygame.sndarray.array(sound)
+        cut = cut_sound(samples, int(rate * seconds), int(rate * CUT_FADE_TIME))
+        return pygame.sndarray.make_sound(cut.astype(samples.dtype))
 
     def play(self, name):
         """Play a sound once. Unknown names, no sound device or muted: nothing."""
@@ -295,6 +358,20 @@ class Sounds:
         self.music_volume = min(target, self.music_volume + step) if target > self.music_volume \
             else max(target, self.music_volume - step)
         pygame.mixer.music.set_volume(self.music_volume)
+
+    def cut_to(self, track):
+        """Start `track` from its beginning right now, at full volume (no fade): the intro is timed to it."""
+        if not self.has_music or not os.path.exists(os.path.join(SOUND_FOLDER, MUSIC_FILES[track])):
+            return
+        self.load_track(track)
+        self.music_volume = 0.0 if self.muted else MUSIC_VOLUMES[track]
+        pygame.mixer.music.set_volume(self.music_volume)
+
+    def music_position(self, track):
+        """Seconds since `track` started, or None if it is not playing (no sound device, no file)."""
+        if not self.has_music or self.track != track or not pygame.mixer.music.get_busy():
+            return None
+        return pygame.mixer.music.get_pos() / 1000
 
     def load_track(self, track):
         """Start a music track from its beginning, silent (music() fades it in), looping."""

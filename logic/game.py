@@ -16,6 +16,11 @@ How an answer gets onto your paper:
        out the teacher collects the paper: the rest are blank, also graded.
     Losing (0 points) is only getting caught or too many warnings.
 
+The player's character (logic/character.py) bends a few of these rules:
+the speeds of the suspicion bar and of reading, a joker that writes the
+right answer (use_joker()), a deadline for handing in, a sugar rush or a
+sleepy crash. Without one, the plain rules apply.
+
 This file only does the rules; it draws nothing and plays nothing. Every frame
 main.py calls update() with the head direction, and update() returns a list
 of "events" (like "read" or "warning") so main.py knows which sounds to play.
@@ -24,15 +29,16 @@ That keeps the rules testable without a camera or a window (tests/test_game.py).
 
 import random
 
-from logic.exam_paper import ExamPaper, BLANK, POINTS, CORRECT
+from logic.exam_paper import ExamPaper, BLANK, POINTS, CORRECT, UNKNOWN
 from tracking.head_tracker import DOWN, SCREEN, LEFT, RIGHT
 from logic.neighbours import NeighbourPapers
 from logic.suspicion import SuspicionBar, close_call_points
+from logic.character import rules as character_rules, Energy, RUSH
 from settings import (MAX_WARNINGS, POPUP_TIME, EXAM_TIME, ANSWERS_NEEDED, WARNING_SCENE_TIME,
                       CAUGHT_SCENE_TIME, CAUGHT_EXCLAIM_TIME, GAME_OVER_TIME,
                       STARE_ONLY_WHEN_FACING, SCORE_PER_POINT, SCORE_TIME_BONUS,
                       CLOSE_CALL_EDGE, SCORE_PER_WARNING, SUSPICIOUS_AT, SCORE_NINJA,
-                      SCORE_ALMOST_NINJA, SCORE_SHARP_EYE)
+                      SCORE_ALMOST_NINJA, SCORE_SHARP_EYE, DEFAULT_CHARACTER)
 
 # WON = the exam was handed in (or collected when time ran out) and is graded.
 PLAYING, WON, LOST = "PLAYING", "WON", "LOST"
@@ -45,13 +51,20 @@ WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE = "WARNING_SCENE", "CAUGHT_SCENE", 
 
 class Game:
     def __init__(self, rng=None, exam_time=EXAM_TIME, questions=ANSWERS_NEEDED,
-                 suspicious_at=SUSPICIOUS_AT):
+                 suspicious_at=SUSPICIOUS_AT, character=DEFAULT_CHARACTER, rushes_before=0,
+                 ease=1.0):
         # Tests pass a random.Random with a fixed seed, so the "random"
         # answers are the same every run.
         self.rng = rng or random.Random()
         self.exam_time = exam_time   # seconds (each quiz of the run has its own, see run.py)
         self.questions = questions   # how many questions this exam has
         self.suspicious_at = suspicious_at   # the hidden point on the suspicion bar, see under_suspicion()
+        self.character = character   # who the player is (a key of CHARACTERS)
+        self.rules = character_rules(character)
+        self.rushes_before = rushes_before   # the energy drink addict's sugar rushes earlier in the run
+        # The practice exam is easier: every danger at `ease` of its strength
+        # (the bar fills slower, you read faster; main.py shortens his looks).
+        self.ease = ease
         self.reset()
 
     def reset(self):
@@ -62,11 +75,19 @@ class Game:
         self.time_left = self.exam_time
         self.warnings = 0
         self.sharp_eyes = 0       # questions where the first paper you read was the one that knows
-        self.paper = ExamPaper(self.rng, self.questions)
+        self.paper = ExamPaper(self.rng, self.questions, both_know=self.rules["both_know"])
         self.neighbours = NeighbourPapers()
-        self.suspicion = SuspicionBar()
+        self.suspicion = SuspicionBar(self.rules["seen_speed"] * self.ease, self.rules["stare_speed"] * self.ease,
+                                      self.rules["creep_time"])
         self.popup_text = None    # message on screen, or None
         self.popup_timer = 0.0    # seconds until the popup disappears
+        self.jokers = self.rules["jokers"]   # the nerd's jokers left in this exam
+        self.missed_deadline = False         # the nerd: the time to hand in early has passed
+        # The energy drink addict: today's sugar rush or crash, else None.
+        self.energy = Energy(self.rng, self.rules, self.rushes_before) if self.rules["energy"] else None
+        if self.energy is not None:
+            self.show_popup("SUGAR RUSH! The world slows down" if self.energy.day == RUSH
+                            else "CRASH... you will get sleepy")
         # The scene playing (WARNING_SCENE etc.), or None, and its seconds
         # left. While one plays, nothing else moves: not the bar, not the
         # clock. main.py also stops the teacher.
@@ -86,10 +107,38 @@ class Game:
         return self.paper.says(side)
 
     def knows_answer(self):
-        """True once the neighbour who knows the current answer has been read."""
-        if self.paper.is_full():
-            return False
-        return self.neighbours.has_read(self.paper.knowing_side[self.paper.question()])
+        """True once a neighbour who knows the current answer has been read."""
+        return any(self.paper_shows(side) not in (None, UNKNOWN) for side in (LEFT, RIGHT))
+
+    def world_speed(self):
+        """How fast the world (teacher, clock, suspicion bar) runs: below 1 in a sugar rush."""
+        return self.energy.world_speed() if self.energy is not None else 1.0
+
+    def focus_speed(self):
+        """How fast you read a neighbour's paper: the character's speed, slower while sleepy."""
+        speed = self.rules["focus_speed"] / self.ease
+        if self.energy is not None:
+            speed *= self.energy.focus_speed()
+        return speed
+
+    def is_sleepy(self):
+        """True during the energy drink addict's sleepy spell (the eyelids close)."""
+        return self.energy is not None and self.energy.is_sleepy()
+
+    def deadline(self):
+        """The nerd's deadline: seconds that must be left on the clock at hand-in (0 = none)."""
+        return self.rules["hand_in_share"] * self.exam_time
+
+    def use_joker(self, direction):
+        """
+        The nerd pressed J: if a joker is left, the right answer is written
+        (only while looking at your paper, like writing). Returns events.
+        """
+        if self.jokers <= 0 or direction != DOWN or not self.can_write():
+            return []
+        self.jokers -= 1
+        self.show_popup("JOKER! The nerd knew this one")
+        return ["joker"] + self.write(self.paper.right_answer(), direction)
 
     def under_suspicion(self):
         """
@@ -138,8 +187,14 @@ class Game:
         # Handing in early pays: the bonus is the share of the time left
         # (0 when the clock ran out and the paper was collected).
         time_share = self.time_left / self.exam_time
+        # The nerd's bonus counts from his deadline: 0 with exactly
+        # hand_in_share of the time left, the full bonus with all of it left.
+        line = self.rules["hand_in_share"]
+        time_share = max(0.0, (time_share - line) / (1 - line))
+        late = self.deadline() > 0 and self.time_left < self.deadline()
         bonuses = [
             ("EARLY BONUS", int(SCORE_TIME_BONUS * time_share)),
+            ("NERD WAS LATE", -self.rules["late_penalty"] if late else 0),
             ("SHARP EYES", self.sharp_eyes * SCORE_SHARP_EYE),
             ("CLOSE CALLS", self.suspicion.close_call_score),
             ("WARNINGS", -self.warnings * SCORE_PER_WARNING),
@@ -253,13 +308,22 @@ class Game:
         if self.popup_timer <= 0:
             self.popup_text = None
 
+        # In a sugar rush the world (the bar, the clock; main.py slows the
+        # teacher too) runs slower, but your eyes do not.
+        world_dt = dt * self.world_speed()
+        if self.energy is not None:
+            for change in self.energy.update(dt):
+                events.append(change)
+                if change == "sleepy":
+                    self.show_popup("ZZZ... SO SLEEPY")
+
         # The suspicion bar. Seen = looking sideways while the teacher
         # watches; staring = looking at the teacher while they look at the class.
         seen = direction in (LEFT, RIGHT) and teacher is not None and teacher.is_watching()
         teacher_sees = (teacher is None or not STARE_ONLY_WHEN_FACING
                         or teacher.is_facing_class())
         staring = direction == SCREEN and teacher_sees
-        events += self.suspicion.update(seen, staring, dt)
+        events += self.suspicion.update(seen, staring, world_dt, away=direction != DOWN)
         if "close_call" in events:
             points = self.suspicion.last_close_call
             name = "RAZOR CLOSE!" if points >= close_call_points(CLOSE_CALL_EDGE) else "CLOSE CALL!"
@@ -273,8 +337,9 @@ class Game:
 
         # Reading a neighbour's paper. While the teacher sees you it does not
         # get sharper: glancing sideways then is all risk and no gain.
-        read = self.neighbours.update(direction, dt, can_focus=not seen)
-        if read and self.neighbours.read_sides == {self.paper.knowing_side[self.paper.question()]}:
+        read = self.neighbours.update(direction, dt, can_focus=not seen, speed=self.focus_speed())
+        if (read and not self.paper.both_know
+                and self.neighbours.read_sides == {self.paper.knowing_side[self.paper.question()]}):
             # The first paper you read for this question was the right one.
             self.sharp_eyes += 1
             self.show_popup(f"SHARP EYE! +{SCORE_SHARP_EYE}")
@@ -282,7 +347,12 @@ class Game:
         events += read
 
         # The exam clock.
-        self.time_left = max(0.0, self.time_left - dt)
+        self.time_left = max(0.0, self.time_left - world_dt)
+        if self.deadline() > 0 and self.time_left < self.deadline() and not self.missed_deadline:
+            # The nerd is too slow: say so once, the points go at the end.
+            self.missed_deadline = True
+            self.show_popup(f"TOO SLOW FOR A NERD! -{self.rules['late_penalty']}")
+            events.append("nerd_late")
         if self.time_left == 0 and self.state == PLAYING:   # not after the last warning
             self.collect_paper(events)
         return events

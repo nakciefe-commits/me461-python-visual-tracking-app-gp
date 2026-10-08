@@ -3,11 +3,11 @@ The game: menus, a run of three exams (the classroom, the teacher, the
 suspicion bar), the score count after each exam and the run's results.
 
 Run it with:   ./run.sh      (or  .venv/bin/python main.py)
-Keys:          Space = calibrate (start screen), F11 = fullscreen on/off,
+Keys:          Space = calibrate (start screen; then once per pose), F11 = fullscreen on/off,
                menus: arrows / Enter / Esc (or the head: tilt up/down, turn right = select,
                       turn left = back), or the mouse,
-               in the game: a / b / c / d = write that answer, s = leave it blank
-                      (both while looking at your paper),
+               in the game: a / b / c / d = write that answer, s = leave it blank,
+                      j = the nerd's joker (all while looking at your paper),
                       r = restart the run, m = main menu, k = recalibrate, Esc = quit,
                       t = always show the classroom and the teacher's state (for testing),
                       Space = skip the scenes after losing, and the score count
@@ -30,6 +30,8 @@ from tracking.camera import Camera
 from logic.disclaimer import Disclaimer
 from logic.guide import Guide
 from logic.bag import Bag
+from logic.character import names as character_names, screen_clarity
+from logic import run_intro
 from logic.highscore import load_top, add_score, save_top, set_name, load_history, remember
 from logic.grade import semester_grade, class_average, curve
 from logic.name_entry import NameEntry
@@ -39,15 +41,16 @@ from logic.slot import reel_position, has_stopped, passed
 from tracking.head_tracker import HeadTracker, Calibration, DOWN, SCREEN, LEFT, RIGHT
 from logic.menu import (Menu, HeadMenuInput, loading_steps, loading_progress,
                   UP, DOWN as MENU_DOWN, SELECT, BACK)
-from ui.draw_menus import BIG_PREVIEW_SIZE, MENU_PREVIEW_SIZE
+from ui.draw_menus import BIG_PREVIEW_SIZE
 from ui.draw_scenes import GAME_OVER_CHAT, CHAT_BLIP_LETTERS, typed_letters
 from ui.draw_notice import DISCLAIMER_LETTERS
 from ui.render import Renderer, camera_to_surface
-from settings import (CAMERA_INDEX, CALIBRATION_TIME, WINDOW_WIDTH, WINDOW_HEIGHT, FPS, FADE_TIME,
+from settings import (CAMERA_INDEX, WINDOW_WIDTH, WINDOW_HEIGHT, FPS, FADE_TIME,
                       FULLSCREEN, MAXIMIZED, LOADING_TIME, SMOOTH_SCALING, SCREEN_FADE_TIME,
-                      HIGH_SCORE_FILE, GAME_OVER_TIME, GRADE_STAMP_DELAY)
+                      HIGH_SCORE_FILE, GAME_OVER_TIME, GRADE_STAMP_DELAY, CHARACTERS,
+                      DEFAULT_CHARACTER, CAROUSEL_SPEED, EXAM_TITLE_TIME, EXAM_TAGLINE_DELAY)
 from ui.sounds import Sounds, tally_sound, talk_sound, TALK_PITCHES
-from logic.tally import parts_shown, is_done, done_time
+from logic.tally import parts_shown, is_done, done_time, jackpot
 from logic.teacher import Teacher
 
 MAX_DT = 0.1   # seconds; a slow frame must not fill a whole bar at once
@@ -56,6 +59,7 @@ HIGH_SCORE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), HIGH_
 # Answer keys -> the letter they write on your paper.
 LETTER_KEYS = {pygame.K_a: "A", pygame.K_b: "B", pygame.K_c: "C", pygame.K_d: "D"}
 BLANK_KEY = pygame.K_s   # leave the current question blank
+JOKER_KEY = pygame.K_j   # the nerd's joker: write the right answer
 # Menu keys -> the same actions the head gives (see menu.py).
 MENU_KEYS = {pygame.K_UP: UP, pygame.K_DOWN: MENU_DOWN,
              pygame.K_RETURN: SELECT, pygame.K_KP_ENTER: SELECT, pygame.K_SPACE: SELECT,
@@ -63,23 +67,24 @@ MENU_KEYS = {pygame.K_UP: UP, pygame.K_DOWN: MENU_DOWN,
 
 # The screens. "Face not found" is not a screen of its own: it is the GAME
 # screen with the game paused. DISCLAIMER is shown once, when the game opens.
+# RUN_INTRO: a short sarcastic briefing timed to the character music, then
+# CHARACTER: who the player is, picked before a run.
 # Before each exam: BRIEFING (the hallway gossip: what happened to the
 # teacher; "I'm ready" goes on), then LOADING (a short "get ready" screen).
 # END is the score count (or game over) after each exam, RUN_END the results
 # of the whole run (three exams) and the top scores.
-DISCLAIMER, START, CALIBRATING, MENU, HELP, SETTINGS, BRIEFING, LOADING, GAME, END, RUN_END = (
-    "DISCLAIMER", "START", "CALIBRATING", "MENU", "HELP", "SETTINGS", "BRIEFING", "LOADING",
-    "GAME", "END", "RUN_END")
+(DISCLAIMER, START, CALIBRATING, MENU, HELP, SETTINGS, RUN_INTRO, CHARACTER, BRIEFING, LOADING,
+ GAME, END, RUN_END) = ("DISCLAIMER", "START", "CALIBRATING", "MENU", "HELP", "SETTINGS",
+                        "RUN_INTRO", "CHARACTER", "BRIEFING", "LOADING", "GAME", "END", "RUN_END")
+# Screens with the character music (the intro is timed to it).
+CHARACTER_MUSIC_SCREENS = (RUN_INTRO, CHARACTER)
 # Screens with a list of items to choose from.
-MENU_SCREENS = (MENU, SETTINGS, BRIEFING, END, RUN_END)
+MENU_SCREENS = (MENU, SETTINGS, CHARACTER, BRIEFING, END, RUN_END)
 # Screens without music: the menu music fades out while loading, then the
 # exam music fades in (see music_track()).
 SILENT_SCREENS = (DISCLAIMER, LOADING)
 TITLES = {MENU: "DON'T GET CAUGHT", SETTINGS: "SETTINGS"}
-
-# Colour of the face drawing for each direction, (Blue, Green, Red) for OpenCV.
-FACE_COLOURS = {DOWN: (240, 150, 80), SCREEN: (60, 200, 240),
-                LEFT: (110, 200, 70), RIGHT: (110, 200, 70)}
+# Colour of the face drawing on the start screen, (Blue, Green, Red) for OpenCV.
 WHITE_BGR = (240, 240, 240)
 
 
@@ -139,12 +144,13 @@ class App:
 
         self.camera = Camera(CAMERA_INDEX)
         self.tracker = HeadTracker()
-        self.calibration = Calibration(self.tracker, CALIBRATION_TIME)
+        self.calibration = Calibration(self.tracker)   # the four poses, see head_tracker.py
         self.game = Game()
         self.teacher = Teacher()
         self.menus = {
             MENU: Menu(["PLAY", "HOW TO PLAY", "SETTINGS", "QUIT"]),
             SETTINGS: Menu(["SOUND", "FULLSCREEN", "RECALIBRATE", "BACK"]),
+            CHARACTER: Menu(character_names()),   # the keys of CHARACTERS in settings.py
             BRIEFING: Menu(["SPIN"]),   # then "I'M READY", see start_spin()
             END: Menu(["NEXT EXAM", "MAIN MENU"]),   # changed after each exam, see go_to()
             RUN_END: Menu(["PLAY AGAIN", "MAIN MENU", "QUIT"]),
@@ -157,6 +163,10 @@ class App:
         # The three exams being played (a new one on PLAY). Not called
         # "self.run": that would hide the main loop, App.run().
         self.current_run = Run()
+        self.character = DEFAULT_CHARACTER       # who the player is (picked on the CHARACTER screen)
+        self.music_clock = 0.0    # seconds since the character music started (if it cannot be asked)
+        self.carousel = 0.0       # where the character row is: slides towards the chosen one
+        self.character_since = 0.0  # seconds since the character screen opened (it slides in)
         self.top = load_top(HIGH_SCORE_PATH)    # the best runs so far, best first
         # Every earlier run and exam score here (the "class"): the curve and the class averages.
         self.history = load_history(HIGH_SCORE_PATH)
@@ -186,6 +196,9 @@ class App:
         self.fade_picture = None
         self.fade_time = 0.0
         self.running = True
+        # "QUIT" or "MAIN MENU" waiting for "Are you sure?" (turn right
+        # again = yes, left = no), or None.
+        self.confirming = None
 
     # ------------------------------------------------------------------
     # Moving between screens
@@ -195,7 +208,10 @@ class App:
         self.fade_picture = self.renderer.screen.copy()
         self.fade_time = 0.0
         self.screen_name = name
-        if name in MENU_SCREENS:
+        self.confirming = None   # a new screen never opens with "Are you sure?"
+        # The character row is sideways: the head turns to move and tilts to choose.
+        self.head_input.horizontal = name == CHARACTER
+        if name in MENU_SCREENS or name == RUN_INTRO:
             # The head may still be turned from before: wait until it is straight.
             self.head_input.reset()
         if name == HELP:
@@ -205,8 +221,13 @@ class App:
         if name == END:
             # One exam is over: keep its result; the menu leads on.
             self.current_run.finish_quiz(self.game)
-            self.record_exam()
-            items = ["SEE RESULTS"] if self.current_run.is_over() else ["NEXT EXAM", "MAIN MENU"]
+            if self.current_run.practice:
+                # The practice exam counts nowhere; next comes the real thing.
+                self.exam_average = None
+                items = ["PLAY FOR REAL", "MAIN MENU"]
+            else:
+                self.record_exam()
+                items = ["SEE RESULTS"] if self.current_run.is_over() else ["NEXT EXAM", "MAIN MENU"]
             self.menus[END] = Menu(items)
             self.end_time = 0.0
         if name == RUN_END:
@@ -286,16 +307,74 @@ class App:
         self.sounds.play("tally_done")
         self.head_input.reset()   # the head may still be turned from the last letter
 
-    def calibrate_then(self, next_screen):
-        """Calibrate, then go to next_screen."""
+    def calibrate_then(self, next_screen, start_now=False):
+        """
+        Calibrate (the four poses), then go to next_screen. start_now: the
+        first pose (looking at the screen) is measured at once; the start
+        screen already asked for it. Otherwise the player presses Space first.
+        """
         self.calibration.restart()
+        if start_now:
+            self.calibration.start()
         self.after_calibration = next_screen
         self.go_to(CALIBRATING)
 
+    def calibration_space(self):
+        """Space (or a click) while calibrating: the player is in the pose, measure it."""
+        if not self.calibration.measuring:
+            self.sounds.play("menu_select")
+            self.calibration.start()
+
     def start_run(self):
-        """A new run: three new exams with new moods, starting with the first."""
-        self.current_run = Run()
+        """A new run with the chosen character: three new exams with new moods, starting with the first."""
+        self.current_run = Run(character=self.character)
         self.start_exam()
+
+    def start_run_intro(self):
+        """PLAY: the sarcastic briefing, with the character music starting right now (it is timed to it)."""
+        self.sounds.cut_to("character")
+        self.music_clock = 0.0
+        self.go_to(RUN_INTRO)
+
+    def music_time(self):
+        """Seconds into the character music: from the player, or our own count if there is no sound."""
+        position = self.sounds.music_position("character")
+        # A player that does not count (no real sound device) says 0: then ours.
+        return position if position is not None and position > 0 else self.music_clock
+
+    def choose_character(self):
+        """After the intro: the character screen, on the one played last."""
+        index = character_names().index(self.character)
+        self.menus[CHARACTER].selected = index
+        self.carousel = float(index)
+        self.character_since = 0.0
+        self.go_to(CHARACTER)
+
+    def intro_screen(self, face_found, dt):
+        """RUN_INTRO: the lines slam in on the music's hits; at the drop, the characters. Turn right / Space skips."""
+        self.music_clock += dt
+        yaw, pitch = self.tracker.relative_angles()
+        action = self.head_input.update(yaw, pitch, dt, face_found)
+        if action == BACK:
+            self.go_to(MENU)
+            return
+        t = self.music_time()
+        if action == SELECT or run_intro.is_over(t):
+            self.choose_character()
+            return
+        self.renderer.draw_run_intro(t)
+
+    def start_practice(self):
+        """The short practice exam after "How to play": straight to the loading screen, no gossip."""
+        self.current_run = Run(practice=True)
+        self.start_loading()
+
+    def restart(self):
+        """R: the practice exam again, or a new run."""
+        if self.current_run.practice:
+            self.start_practice()
+        else:
+            self.start_run()
 
     def start_exam(self):
         """The run's next exam: first the hallway gossip, then (when ready) the loading screen."""
@@ -316,7 +395,12 @@ class App:
 
     def turn_reel(self, dt):
         """Move the slot machine on: a tick per mood passing, a ding and "I'm ready" when it stops."""
+        if self.spin_time is None:
+            return
         if not self.spinning():
+            # Stopped: the clock keeps going, so the machine's screen lights
+            # up and the win flash ends (both are timed from the stop).
+            self.spin_time += dt
             return
         before = self.reel()
         self.spin_time += dt
@@ -335,7 +419,10 @@ class App:
     def begin_playing(self):
         """The loading screen is over: a fresh exam, today's teacher, start the clock."""
         self.game = self.current_run.new_game()
-        self.teacher.set_mood(self.current_run.mood())
+        # The teacher's buddy stretches his busy and watching times.
+        # The practice exam's ease shortens his looks too.
+        self.teacher.set_mood(self.current_run.mood(), self.game.rules["busy_times"],
+                              self.game.rules["watching_times"] * self.game.ease)
         self.renderer.mood = self.current_run.mood()   # its own pictures, if it has any
         self.teacher.reset()
         self.direction = SCREEN
@@ -369,6 +456,9 @@ class App:
             return
         if self.screen_name == RUN_END and self.name_entry is not None and not self.name_entry.done:
             return   # a new top score: no menu until its name is typed
+        if self.confirming is not None:
+            self.answer_confirm(action)
+            return
         if action in (UP, MENU_DOWN):
             menu.move(-1 if action == UP else 1)
             self.sounds.play("menu_move")
@@ -380,10 +470,36 @@ class App:
             self.sounds.play("menu_select")
             self.choose(menu.current())
 
+    def ask_confirm(self, item):
+        """QUIT or MAIN MENU: ask "Are you sure?" first (the head must come straight, then turn right again)."""
+        self.confirming = item
+        self.sounds.play("warning")
+
+    def answer_confirm(self, action):
+        """The answer to "Are you sure?": SELECT (turn right / Enter) = yes, BACK (left / Esc) = no."""
+        item = self.confirming
+        if action == SELECT:
+            self.confirming = None
+            self.sounds.play("menu_select")
+            if item == "QUIT":
+                self.running = False
+            else:
+                self.go_to(MENU)
+        elif action == BACK:
+            self.confirming = None
+            self.sounds.play("menu_back")
+
     def choose(self, item):
         """Do what the selected menu item says."""
-        if item in ("PLAY", "PLAY AGAIN"):
+        if item in ("QUIT", "MAIN MENU"):
+            self.ask_confirm(item)
+        elif self.screen_name == CHARACTER:
+            self.character = item   # the list's items are the characters' keys
             self.start_run()
+        elif item in ("PLAY", "PLAY FOR REAL"):
+            self.start_run_intro()
+        elif item == "PLAY AGAIN":
+            self.start_run()        # the same character again
         elif item == "NEXT EXAM":
             self.start_exam()
         elif item == "SPIN":
@@ -396,10 +512,8 @@ class App:
             self.go_to(HELP)
         elif item == "SETTINGS":
             self.go_to(SETTINGS)
-        elif item in ("MAIN MENU", "BACK"):
+        elif item == "BACK":
             self.go_to(MENU)
-        elif item == "QUIT":
-            self.running = False
         elif item == "SOUND":
             self.sounds.muted = not self.sounds.muted
         elif item == "FULLSCREEN":
@@ -444,23 +558,37 @@ class App:
         elif name == START:
             if key == pygame.K_SPACE:
                 self.sounds.play("menu_select")
-                self.calibrate_then(MENU)
+                self.calibrate_then(MENU, start_now=True)
             elif key == pygame.K_ESCAPE:
                 self.running = False
+        elif name == CALIBRATING and key in (pygame.K_SPACE, pygame.K_RETURN):
+            self.calibration_space()
         elif name == HELP:
             self.guide_key(key)
+        elif name == RUN_INTRO:
+            if key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_RIGHT):
+                self.choose_character()                  # skip, the music goes on
+            elif key in (pygame.K_ESCAPE, pygame.K_BACKSPACE, pygame.K_LEFT):
+                self.go_to(MENU)
+        elif name == CHARACTER and self.confirming is None:
+            # The row is sideways: left / right move, down / Enter choose, up / Esc go back.
+            keys = {pygame.K_LEFT: UP, pygame.K_RIGHT: MENU_DOWN, pygame.K_DOWN: SELECT,
+                    pygame.K_RETURN: SELECT, pygame.K_KP_ENTER: SELECT, pygame.K_SPACE: SELECT,
+                    pygame.K_UP: BACK, pygame.K_ESCAPE: BACK, pygame.K_BACKSPACE: BACK}
+            if key in keys:
+                self.menu_action(keys[key])
         elif name in MENU_SCREENS:
             if key == pygame.K_ESCAPE:
-                # Esc goes back; on the main menu (nowhere to go back to) it quits.
-                if name == MENU:
-                    self.running = False
+                # Esc goes back (or says "no"); on the main menu it asks to quit.
+                if name == MENU and self.confirming is None:
+                    self.ask_confirm("QUIT")
                 else:
                     self.menu_action(BACK)
             elif (name in (END, RUN_END) and key in (pygame.K_SPACE, pygame.K_RETURN)
                   and not self.count_done()):
                 self.end_time = 1e9                  # skip the score count to its end
             elif name in (END, RUN_END) and key == pygame.K_r:
-                self.start_run()
+                self.restart()
             elif name in (END, RUN_END) and key == pygame.K_m:
                 self.go_to(MENU)
             elif key in MENU_KEYS:
@@ -472,14 +600,16 @@ class App:
                 self.game.skip_scene()               # only works after losing
             elif key == pygame.K_k:                  # recalibrate, keep the game
                 self.calibrate_then(GAME)
-            elif key == pygame.K_r:                  # a new run
-                self.start_run()
+            elif key == pygame.K_r:                  # a new run (or the practice again)
+                self.restart()
             elif key == pygame.K_m:                  # give up, back to the main menu
                 self.go_to(MENU)
-            elif key in LETTER_KEYS or key == BLANK_KEY:
+            elif key in LETTER_KEYS or key in (BLANK_KEY, JOKER_KEY):
                 # Only works while looking at your paper; any letter goes,
                 # read or not (a guess). game.write() checks it.
-                if key == BLANK_KEY:
+                if key == JOKER_KEY:
+                    events = self.game.use_joker(self.direction)   # the nerd only
+                elif key == BLANK_KEY:
                     events = self.game.leave_blank(self.direction)
                 else:
                     events = self.game.write(LETTER_KEYS[key], self.direction)
@@ -512,10 +642,12 @@ class App:
             self.play_guide_sounds(self.guide.skip())   # a click does what Space does
         elif name == START and self.renderer.button_rect.collidepoint(pos):
             self.sounds.play("menu_select")
-            self.calibrate_then(MENU)
+            self.calibrate_then(MENU, start_now=True)
+        elif name == CALIBRATING and self.renderer.button_rect.collidepoint(pos):
+            self.calibration_space()
         elif name == GAME:
             self.game.skip_scene()                   # only works after losing
-        elif name in MENU_SCREENS:
+        elif name in MENU_SCREENS and self.confirming is None:   # "Are you sure?": keys or the head
             for i, rect in enumerate(self.renderer.menu_rects):
                 if rect.collidepoint(pos):
                     self.menus[name].selected = i
@@ -526,28 +658,53 @@ class App:
     # 3 + 4. Rules, sounds and drawing for each screen
     # ------------------------------------------------------------------
     def start_screen(self, frame, now, dt):
-        """START and CALIBRATING: a big webcam preview and the Calibrate button."""
+        """START and CALIBRATING: a big webcam preview, the Calibrate button, then the four poses."""
         self.tracker.draw_face(frame, WHITE_BGR)
         camera_surface = camera_to_surface(frame, BIG_PREVIEW_SIZE)
         face_visible = self.tracker.face_visible(now)
         if self.screen_name == START:
             self.renderer.draw_start(camera_surface, face_visible)
             return
+        before = self.calibration.step
         self.calibration.add(face_visible, dt)
-        self.renderer.draw_start(camera_surface, face_visible, self.calibration.seconds_left())
+        if self.calibration.step != before:
+            self.sounds.play("read")   # the ding: this pose is measured
         if self.calibration.done():
+            # The menus ask for the same turns as the game, never more.
+            self.head_input.set_turns(self.tracker.left_threshold, self.tracker.right_threshold)
             self.go_to(self.after_calibration)
+            return
+        self.renderer.draw_start(camera_surface, face_visible, self.calibration)
 
     def loading_screen(self, dt):
-        """LOADING: a few seconds to get ready, with the exam's name and today's gossip."""
+        """
+        LOADING: a few seconds to get ready (the exam's name, a loading bar),
+        then a quick title card: the exam's name slams in, then its
+        sarcastic line ("THE FINAL - God, please help me."). Then the exam.
+        """
+        before = self.loading_time - LOADING_TIME   # seconds into the title card (below 0: still loading)
         self.loading_time += dt
-        time_part = min(1.0, self.loading_time / LOADING_TIME)
-        self.renderer.draw_loading(loading_progress(time_part, self.loading_plan),
-                                   self.current_run.number(), self.current_run.quiz()["title"])
-        if self.loading_time >= LOADING_TIME:
+        since = self.loading_time - LOADING_TIME
+        quiz = self.current_run.quiz()
+        if since < 0:
+            time_part = min(1.0, self.loading_time / LOADING_TIME)
+            character = self.current_run.character
+            self.renderer.draw_loading(loading_progress(time_part, self.loading_plan),
+                                       self.current_run.chapter(), quiz["title"],
+                                       None if character == DEFAULT_CHARACTER else CHARACTERS[character]["name"])
+            return
+        # The two slams of the title card, each with a thud; the school bell
+        # rings for the whole card (it is cut to the card's length).
+        if before < 0 <= since:
+            self.sounds.play("bell")
+        if before < 0 <= since or before < EXAM_TAGLINE_DELAY <= since:
+            self.sounds.play("stamp")
+        self.renderer.draw_exam_title(quiz["title"], quiz.get("tagline", ""), since,
+                                      self.current_run.number(), self.current_run.practice)
+        if since >= EXAM_TITLE_TIME:
             self.begin_playing()
 
-    def menu_screen(self, frame, face_found, dt):
+    def menu_screen(self, face_found, dt):
         """MENU, SETTINGS and END: the head (or keys, or mouse) chooses an item."""
         yaw, pitch = self.tracker.relative_angles()
         action = self.head_input.update(yaw, pitch, dt, face_found)
@@ -565,7 +722,7 @@ class App:
         head_pause = self.head_input.paused_part()
         if name == END:
             self.count_score(dt)
-            self.game_screen(frame, face_found, time.time(), 0.0, over=True)
+            self.game_screen(face_found, time.time(), 0.0, over=True)
             self.renderer.draw_end(self.game, self.current_run, self.chat, self.menu_labels(), selected,
                                    select_progress, back_progress, head_pause, self.end_time,
                                    self.exam_average)
@@ -576,7 +733,17 @@ class App:
             self.renderer.draw_briefing(run.number(), run.quiz()["title"], run.pool(),
                                         run.chosen(), self.spin_time, labels,
                                         self.menus[BRIEFING].selected, select_progress,
-                                        back_progress, head_pause)
+                                        back_progress, head_pause, run.chapter())
+        elif name == CHARACTER:
+            self.music_clock += dt
+            self.character_since += dt
+            # The row slides towards the chosen one, the short way round, slowing down.
+            count = len(self.menus[CHARACTER].items)
+            gap = (selected - self.carousel + count / 2) % count - count / 2
+            self.carousel = (self.carousel + gap * min(1.0, dt * CAROUSEL_SPEED)) % count
+            self.renderer.draw_characters(self.menus[CHARACTER].items, selected, self.carousel,
+                                          self.music_time(), self.character_since, select_progress,
+                                          back_progress, head_pause)
         elif name == RUN_END:
             self.count_score(dt)
             self.renderer.draw_run_end(self.current_run, self.top, self.new_place,
@@ -584,24 +751,28 @@ class App:
                                        back_progress, head_pause, self.end_time, self.name_entry,
                                        self.semester)
         else:
-            self.tracker.draw_face(frame, WHITE_BGR)
             self.renderer.draw_menu(TITLES[name], self.menu_labels(), selected,
                                     select_progress, back_progress,
-                                    camera_to_surface(frame, MENU_PREVIEW_SIZE),
                                     head_pause, self.top if name == MENU else None)
+        if self.confirming is not None:
+            # Leaving in the middle of a run loses it: the question says so.
+            mid_run = name == END and not self.current_run.is_over() and not self.current_run.practice
+            self.renderer.draw_confirm(self.confirming, mid_run, self.head_input.progress(SELECT),
+                                       self.head_input.progress(BACK))
 
-    def guide_screen(self, frame, face_found, now, dt):
-        """HELP: Gemini and Claude teach, the player tries it; when they are done, the main menu."""
+    def guide_screen(self, face_found, now, dt):
+        """HELP: Gemini and Claude teach, the player tries it; when they are done, the practice exam."""
         direction = self.tracker.current_direction(now, face_found)
         if direction is not None:   # face lost: keep the last direction, no pause needed here
             self.guide_direction = direction
         self.play_guide_sounds(self.guide.update(dt, self.guide_direction))
         if self.guide.finished():
-            # Nothing left to draw: the last frame fades into the main menu.
-            self.go_to(MENU)
+            # Nothing left to draw: the last frame fades into the practice exam.
+            self.start_practice()
             return
-        self.tracker.draw_face(frame, FACE_COLOURS[self.guide_direction])
-        self.renderer.draw_guide(self.guide, self.guide_direction, camera_to_surface(frame))
+        # No webcam picture in the guide or the game: the player should not
+        # see their own face there (it is only shown on the start screen and in the menus).
+        self.renderer.draw_guide(self.guide, self.guide_direction)
 
     def play_guide_sounds(self, events):
         """The guide's events are sound names; "talk:GEMINI" is a talking blip in that voice."""
@@ -656,7 +827,10 @@ class App:
             self.sounds.play(tally_sound(i))
         if is_done(parts, self.end_time) and not was_done:
             new_top = self.screen_name == RUN_END and self.new_place is not None
-            self.sounds.play("new_top" if new_top else "tally_done")
+            # A huge score is a jackpot (the reels flash): the fanfare too.
+            exams = len(self.current_run.quizzes) if self.screen_name == RUN_END else 1
+            big = jackpot(max(0, sum(points for _, points in parts)), exams)
+            self.sounds.play("new_top" if new_top or big else "tally_done")
         # The run's letter grade is stamped on a moment after the count.
         # (A flag, not a time check: Space jumps the count straight to its end.)
         stamp_at = done_time(parts) + GRADE_STAMP_DELAY
@@ -693,15 +867,21 @@ class App:
                 and not self.game.in_scene() and self.teacher.erasing() and self.direction != DOWN)
 
     def music_track(self):
-        """The music that should play now: "menu", "exam" or None (silence)."""
+        """The music that should play now: "menu", "exam", "character" or None (silence)."""
         if self.screen_name in SILENT_SCREENS:
             return None
+        if self.screen_name in CHARACTER_MUSIC_SCREENS:
+            return "character"
+        if self.screen_name == BRIEFING and self.current_run.number() == 0:
+            # The first gossip spin keeps the character music going; the
+            # menu theme comes back from the second exam on.
+            return "character"
         if self.screen_name == GAME:
             # The exam music stops when you lose (the alert and the scenes take over).
             return "exam" if self.game.state == PLAYING else None
         return "menu"
 
-    def game_screen(self, frame, face_found, now, dt, over=False):
+    def game_screen(self, face_found, now, dt, over=False):
         """GAME (and, with over=True, the frozen game under the END menu)."""
         paused = False
         self.paused = False
@@ -725,7 +905,9 @@ class App:
             if not in_scene:
                 # Above the exam's hidden suspicion point the teacher keeps
                 # watching you until the bar drains back under it.
-                changes = self.teacher.update(dt, keep_watching=self.game.under_suspicion())
+                # (In the energy drink addict's sugar rush he is slower too.)
+                changes = self.teacher.update(dt * self.game.world_speed(),
+                                              keep_watching=self.game.under_suspicion())
                 heard = self.teacher.sounds(changes, can_hear=self.direction != DOWN)
             # game.update() also runs during the scene: it counts the scene down.
             typed_before = self.typed_chat()
@@ -735,15 +917,15 @@ class App:
                     self.pick_chat()
             self.chat_blips(typed_before)
 
-        self.tracker.draw_face(frame, FACE_COLOURS[self.direction])
         # The classroom is always shown at the end: if you were caught, you
         # see the teacher looking at you.
         view = 1.0 if over else classroom_view(self.direction, self.look_time, self.show_always)
         note = "" if over else self.tracker.status
         yaw, pitch = self.tracker.relative_angles()
+        # Glasses: the classroom is blurry for a moment after looking up.
+        clarity = 1.0 if over else screen_clarity(self.game.rules, self.look_time)
         self.renderer.draw_game(self.game, self.teacher, self.direction, view,
-                                camera_to_surface(frame), yaw, pitch, self.clock.get_fps(),
-                                note, self.show_always)
+                                yaw, pitch, self.clock.get_fps(), note, self.show_always, clarity)
         if over:
             return
         if self.game.in_scene():
@@ -786,7 +968,7 @@ class App:
                     camera_waiting = True
                     self.sounds.loop("chalk", False)   # everything waits: no chalk either
                     if self.screen_name == CALIBRATING:
-                        self.calibration.restart()
+                        self.calibration.restart_pose()   # this pose again; the ones done stay
                     self.renderer.t = previous_time - self.start_time
                     self.renderer.draw_camera_wait(self.camera.status
                                                    or "Waiting for a fresh camera picture...")
@@ -820,12 +1002,14 @@ class App:
                     self.start_screen(frame, now, dt)
                 elif self.screen_name == LOADING:
                     self.loading_screen(dt)
+                elif self.screen_name == RUN_INTRO:
+                    self.intro_screen(face_found, dt)
                 elif self.screen_name == HELP:
-                    self.guide_screen(frame, face_found, now, dt)
+                    self.guide_screen(face_found, now, dt)
                 elif self.screen_name in MENU_SCREENS:
-                    self.menu_screen(frame, face_found, dt)
+                    self.menu_screen(face_found, dt)
                 else:
-                    self.game_screen(frame, face_found, now, dt)
+                    self.game_screen(face_found, now, dt)
 
                 self.crossfade(dt)
                 pygame.display.flip()

@@ -15,7 +15,7 @@ from tracking.head_tracker import DOWN, SCREEN, LEFT, RIGHT
 from ui.draw_game import (LOOK_AWAY_IMAGES, SIDE_NAMES, TOP_BAR, OWN_ANSWER_X, OWN_ANSWER_Y,
                           PENCIL)
 from ui.style import (NEON_CYAN, NEON_YELLOW, NEON_GREEN, NEON_PINK, SHADOW, HUD_PURPLE,
-                      FOOTER_HEIGHT, PREVIEW_SIZE)
+                      FOOTER_HEIGHT)
 
 # The classroom picture for what the teacher is doing in a step.
 GUIDE_CLASSROOM = {"busy": "classroom_board_busy", "watching": "classroom_board_watching"}
@@ -34,14 +34,13 @@ BANNER_MARGIN = 80             # pixels the banner's text keeps free at its side
 GUIDE_CHAT_ROWS = (395, 505)   # pixels, the middle of the older and the newer chat line
 CHAT_SHADE_TOP = 330           # pixels; the bottom is darkened from here, so the chat is readable
 # Looking down or to the side, the papers are in the bottom half: then only
-# the newest line is shown, up here under the banner, and no webcam preview
-# (Claude's logo would cover it).
+# the newest line is shown, up here under the banner.
 GUIDE_CHAT_HIGH_ROW = 220      # pixels, the middle of that line
 GUIDE_HINT = "Space = next   Esc = back to the menu"
 
 
 class GuideDrawing:
-    def draw_guide(self, guide, direction, camera_surface):
+    def draw_guide(self, guide, direction):
         """One frame of the guide (not finished). direction: where the player looks."""
         self.guide_view(guide, direction)
 
@@ -65,8 +64,6 @@ class GuideDrawing:
         self.shadow_text(f"STEP {guide.step + 1} / {len(guide.steps)}", self.hud_small, NEON_CYAN,
                          (title.right + 24, 20))
 
-        if not papers:
-            self.preview(camera_surface, self.width - PREVIEW_SIZE[0] - 12, TOP_BAR + 8)
         self.task_banner(guide)
         self.footer(GUIDE_HINT)
         self.screen.blit(self.scanlines, (0, 0))
@@ -94,8 +91,7 @@ class GuideDrawing:
 
     def task_banner(self, guide):
         """What to do now, with a bar for how far it is; "NICE!" once it is done."""
-        # Centred left of the webcam preview, like the texts in the game.
-        x = (self.width - PREVIEW_SIZE[0] - 12) // 2
+        x = self.width // 2
         task = guide.task()
         if task is None or not guide.last_line() or not guide.typed():
             return
@@ -104,7 +100,7 @@ class GuideDrawing:
             return
         kind, what = task
         text = TASK_TEXTS.get(task, f"LOOK DOWN + PRESS {what}")
-        # A long text gets the smaller font, so it stays left of the webcam preview.
+        # A long text gets the smaller font, so it keeps clear of the edges.
         font = self.hud_big if self.hud_big.size(text)[0] <= 2 * x - BANNER_MARGIN else self.hud
         band = pygame.Rect(0, 0, font.size(text)[0] + 60, 80)
         band.center = (x, BANNER_Y + 8)

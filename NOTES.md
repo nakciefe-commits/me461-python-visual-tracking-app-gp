@@ -2206,3 +2206,772 @@ optional side views), the dean's visit D1–D6, the new phone N1–N2.
   desk is not in those pictures.
 - Each prompt asks Gemini to keep the camera angle and the teacher's head
   in place: the warning scene zooms in on fixed spots of his face.
+
+---
+
+## Commit #40 — Calibration with four poses: screen, left, right, down
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+First item of update 2 (PLAN.md section 12). Calibration only measured
+"looking at the screen", and every player had to turn 18° to copy and tilt
+23° to look down, whoever they were. Now it asks for four poses, one after
+the other, each with a big arrow and one line saying what to do: look at
+the screen, turn left, turn right, look down, each only *as far as you
+would in the game while still seeing the screen*. The player gets into the
+pose and presses Space; it is measured for a second (ding). The thresholds
+are then 60 % of the way to each pose, so the game fits how this player
+sits and moves. The menus use the same left/right turn.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `tracking/head_tracker.py` | `CALIBRATION_POSES`, `pose_threshold()`; `HeadTracker.left_threshold` / `right_threshold` / `down_threshold` and `set_thresholds()`. |
+| `logic/menu.py` | `HeadMenuInput.set_turns()`; `pose()` takes the turns (defaults: the old fixed one). |
+| `main.py` | `calibration_space()`: Space / Enter / a click on the button measures the pose; `calibrate_then(..., start_now)`. |
+| `ui/draw_menus.py` | `POSE_TEXTS`, `READY_TEXT`, `pose_arrow()` (an arrow beside the preview, or a target for the screen). |
+| `settings.py` | `CALIBRATION_SAMPLE_TIME` (1 s), `CALIBRATION_SHARE` (0.6), `CALIBRATION_MIN_ANGLE` (8°), `CALIBRATION_MAX_ANGLE` (35°). |
+| Tests | The screen pose averages, nothing before Space, four poses set the thresholds and the game uses them, a lost face repeats the pose, looking down survives a hidden face, wrong way keeps the default, the limits; calibrated menu turns. 229 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `tracking/head_tracker.py` | `Calibration` rewritten: poses in turn, `start()`, `restart_pose()`, `progress()`; `raw_direction()` uses the tracker's thresholds. |
+| `main.py` | The start screen's Space measures the screen pose at once (it already asked for it); Recalibrate and K wait for Space. A camera gap repeats only the current pose. After calibrating, the menus get the turns. |
+| `ui/draw_menus.py` | `draw_start()` takes the calibration: step "2/4", the pose, the hint, "READY (SPACE)" or the bar. |
+| `README.md`, `LEARN.md`, `PLAN.md` | Calibration. |
+
+### Removed
+
+| File | What |
+|---|---|
+| `settings.py` | `CALIBRATION_TIME` (now `CALIBRATION_SAMPLE_TIME`, per pose). |
+
+### Details worth knowing
+
+- The screen pose is measured first, because the others are measured
+  from it.
+- `YAW_THRESHOLD` and `PITCH_DOWN_THRESHOLD` are still used before
+  calibration and for a pose that went the wrong way or moved less than
+  `CALIBRATION_MIN_ANGLE / CALIBRATION_SHARE` (13°).
+- Looking down often hides the face from MediaPipe, so the down pose keeps
+  measuring with the last angles seen instead of starting over.
+- The menus never ask for more than `MENU_YAW_THRESHOLD`, but a player who
+  turns little gets a smaller menu turn too.
+- **A person should try:** calibrate with small turns (only the eyes off
+  the screen's edge) and with big ones, and check that copying, looking down
+  and the menus all feel right; if the game reacts too early, raise
+  `CALIBRATION_SHARE` (e.g. 0.7), too late, lower it.
+
+### Next
+
+The score count as a table (PLAN.md 12, item 2).
+
+---
+
+## Commit #41 — The score count as a table
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+Item 2 of update 2 (PLAN.md 12). The score count after an exam was a row
+of question cards with the points floating over them and the bonuses
+spread over one or two lines; the team found it hard to read. Now it is
+two tables, still counted up like Balatro: on the left one row per
+question (Q1, what you wrote, the answer key, RIGHT / WRONG / BLANK, the
+points), and under them the grade; on the right one row per bonus. A row
+glows in its colour when its turn comes and its points pop in, while the
+big score counts up and thumps as before. The answer key of a row stays
+"?" until its turn.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `ui/draw_results.py` | `question_table()`, `bonus_table()`, `table_frame()`, `table_row()`, `row_points()`, `aligned()`; `QUESTION_TABLE`, `BONUS_TABLE`, `TABLE_HEADER`, `TABLE_ROW`, `QUESTION_COLUMNS`, `RESULT_NAMES`, `ROW_FLASH_TIME`, `ROW_POP`. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `ui/draw_results.py` | `draw_tally()` draws the two tables; the score, the run total and the menu moved down a little (`TALLY_SCORE_Y` 352, `TALLY_RUN_Y` 400, `END_MENU_TOP` 450, `END_MENU_GAP` 50). |
+| `README.md`, `LEARN.md` | The tables. |
+
+### Removed
+
+| File | What |
+|---|---|
+| `ui/draw_results.py` | The cards: `TALLY_CARDS_TOP`, `TALLY_CARD`, `TALLY_CARD_GAP`, `TALLY_POP`, `TALLY_POP_TIME`, `TALLY_BONUS_Y`, `TALLY_BONUS_ROW`, `TALLY_BONUS_GAP`. |
+
+### Details worth knowing
+
+- The timing did not change (`logic/tally.py`), so the tests did not.
+- The tables have room for 5 questions + the grade and 7 bonuses (the
+  characters, item 6, add one or two).
+- The small points are plain text with a shadow, not neon: the pink and
+  cyan ghosts made "+333" look like "#333".
+- Checked: tests pass; drew the screen mid-count and at the end.
+
+### Next
+
+The practice exam after How to play (PLAN.md 12, item 3).
+
+---
+
+## Commit #42 — A practice exam after How to play
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+Item 3 of update 2 (PLAN.md 12). After the guide, the player went back to
+the main menu having never played a real exam. Now the guide leads into a
+**practice exam**: two questions, 60 seconds, the teacher in a new
+"practice" mood (reading the paper with his tea: busy 6–9 s, looks of
+2.5–3.5 s, never leaves the board). It is a normal exam in every way
+(loading screen saying "ME461 - PRACTICE", the classroom, the score
+table), but it counts for nothing: no top score, no class average, no
+grade. The end menu offers "Play for real" (a new run) or "Main menu".
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `settings.py` | `PRACTICE_QUIZ` (2 questions, 60 s, hidden point 0.8); the `"practice"` mood. |
+| `logic/run.py` | `Run(practice=True)`, `Run.quizzes`, `chapter()`. |
+| `main.py` | `start_practice()`, `restart()` (R: the practice again, or a new run); "PLAY FOR REAL". |
+| Tests | The practice is one short exam with the practice mood; it is at least as easy as the Quiz; chapters. 232 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | The finished guide starts the practice instead of going to the menu; END after the practice does not record the exam. |
+| `logic/run.py` | `quiz()` and `is_over()` use the run's own list of exams. |
+| `logic/guide.py` | The last step announces the practice exam. |
+| `ui/draw_menus.py` | `draw_loading()` takes the chapter text (`run.chapter()`). |
+| `ui/draw_results.py` | After the practice: "PRACTICE - NOT COUNTED" instead of the run total. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The practice exam. |
+
+### Details worth knowing
+
+- The practice skips the gossip slot machine: it would be a one-mood reel.
+- Esc in the guide still goes straight back to the menu, without the practice.
+- **A person should try:** finish How to play and play the practice; is it
+  easy enough to win the first time, and short enough not to bore?
+
+### Next
+
+Answer keys without streaks (PLAN.md 12, item 4).
+
+---
+
+## Commit #43 — Answer keys without streaks
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+Item 4 of update 2 (PLAN.md 12). Each right letter was drawn on its own,
+so "A A A B" came often enough that the team thought it was a bug. The key
+is still random, but now never has the same letter twice in a row, and no
+letter more than twice in one exam. The neighbour who knows the answer is
+also never the same side three times in a row.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `logic/exam_paper.py` | `answer_key()`, `knowing_sides()`. |
+| `settings.py` | `MAX_SAME_LETTER` (2), `MAX_SIDE_STREAK` (2). |
+| Tests | 500 seeds: no letter twice in a row, none too often, no long side streaks; every letter and both sides still come. 236 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `logic/exam_paper.py` | `ExamPaper` uses them. |
+| `LEARN.md`, `PLAN.md` | The rule. |
+
+### Details worth knowing
+
+- Why not a Tetris bag (each letter once)? With 4 questions the last
+  letter could then be worked out from the first three without copying.
+  "At most twice" leaves it open.
+- If the limits are set so low that an exam cannot be filled, it falls
+  back to "anything but the last letter" instead of crashing.
+
+### Next
+
+The slot-machine score (PLAN.md 12, item 5).
+
+---
+
+## Commit #44 — The slot-machine score
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+Item 5 of update 2 (PLAN.md 12). The team wanted the score to feel like a
+slot machine while it counts, more so the bigger it is (Balatro). The big
+number is now a row of reels, one per digit, in the same gold frame with
+bulbs as the MOOD-O-MATIC: while a part counts up every reel spins (the
+units fastest, blurred), and when it stops each reel clunks onto its
+digit. How wild it gets grows with the score as it climbs: the reels
+shake harder, the bulbs chase faster, more sparks fly out with every
+part, and the digits glow pink. A huge score (70 % of
+`TALLY_FX_FULL_SCORE`, 4200 for an exam) ends with "JACKPOT!" flashing,
+the digits flashing red and the fanfare. The run's total uses the same
+machine (its jackpot needs three times as much).
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `logic/tally.py` | `running_value()` (the score with its fraction), `is_counting()`, `strength()`, `jackpot()`. |
+| `ui/draw_results.py` | `slot_score()`, `reel_frame()`, `reel_cell()`, `sparks()`; `REEL_*`, `DRUM_*`, `SPARK_*`, `JACKPOT_FLASH`, `RUN_TOTAL_SHIFT`. |
+| `settings.py` | `TALLY_FX_FULL_SCORE` (6000), `TALLY_JACKPOT_SHARE` (0.7), `TALLY_SHAKE` (7 px), `TALLY_SPARKS` (36). |
+| `main.py` | The fanfare for a jackpot. |
+| Tests | The value rolls smoothly, counting only while a part counts, the strength grows with the score (and needs more for a run), the jackpot. 240 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `logic/tally.py` | `running_score()` is `running_value()` as a whole number. |
+| `ui/draw_results.py` | The exam's score and the run's total use `slot_score()`; a little more room under the tables (`TALLY_SCORE_Y` 356, `TALLY_RUN_Y` 412, `END_MENU_TOP` 460, `RUN_TOTAL_Y` 302). |
+| `README.md`, `LEARN.md` | The slot machine. |
+
+### Removed
+
+| File | What |
+|---|---|
+| `ui/draw_results.py` | `thumped()` (the label still thumps, inside `slot_score()`). |
+
+### Details worth knowing
+
+- While counting, every reel shows `value / 10^place` with its fraction,
+  so all reels spin, the higher ones slower: that is what makes it look
+  like a slot machine rather than a car's odometer. Stopped, they snap to
+  the whole digits.
+- The sparks of a part always come out the same (`random.Random(part)`),
+  so they do not flicker from frame to frame.
+- The label's room is as wide as "JACKPOT!", so the reels do not jump
+  when it flashes.
+- Checked: drew the count mid-way (spinning, sparks) and at the end
+  (jackpot), and the run's total. **A person should try:** is the shake too
+  much? (`TALLY_SHAKE`); does a normal exam (2000–3000) feel calm and a
+  great one wild? (`TALLY_FX_FULL_SCORE`).
+
+### Next
+
+Characters (PLAN.md 12, item 6).
+
+---
+
+## Commit #45 — Characters
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+Item 6 of update 2 (PLAN.md 12.2). Before a run the player now picks who
+they are on a new "WHO ARE YOU?" screen: a list on the left, and a card
+with a neon portrait drawn in code, a one-line story and the + and −
+lines. Each character bends one rule with an advantage and a price:
+
+- **NPC with a Monster bag** — the plain game.
+- **The guy with the cap** — staring and copying fill the suspicion bar
+  slower (×0.75 / ×0.8), but while he is not looking at his paper the bar
+  creeps up (full in 45 s), even when the teacher is busy.
+- **Glasses** — reads a neighbour's paper 25 % faster, but every time he
+  looks at the teacher the classroom is blurry and takes 0.9 s to get sharp.
+- **The nerd** — one joker per exam (J while looking down writes the right
+  answer), but must hand in with 30 % of the time left or lose 1000 points
+  ("TOO SLOW FOR A NERD!" when the moment passes, "NERD WAS LATE" in the
+  score table).
+- **Energy drink addict** — a coin toss every exam: a sugar rush (the
+  teacher, the clock and the bar run at 85 %, his eyes at full speed) or a
+  crash (every 8–14 s a sleepy spell of 3.5 s: eyelids close, "Z z z",
+  reading at 40 %).
+- **The teacher's buddy** — the teacher is busy 35 % longer, but watches
+  35 % longer too.
+- **Lazy but funny** — both neighbours show him the answer, but the bar
+  fills faster when the teacher sees him (×1.4 copying, ×1.3 staring), and
+  there is no sharp-eye bonus.
+
+All the numbers are one table, `CHARACTERS` in `settings.py`; the rules
+read them through `logic/character.py`, so tuning a character, or adding
+one, needs no new code. In the game a badge at the top left says who you
+are, with the nerd's jokers and deadline or the energy drink's day; the
+loading screen says "PLAYING AS". "Play again" keeps the character; the
+practice exam is always the NPC. The guide mentions the characters.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `logic/character.py` | `DEFAULTS`, `rules()`, `names()`, `screen_clarity()`, `Energy` (`RUSH` / `CRASH`). |
+| `ui/draw_characters.py` | The character screen: `draw_characters()`, `character_list()`, `character_card()`, `portrait()` and one `portrait_<key>()` per character. |
+| `settings.py` | `CHARACTERS` (with what each rule means), `DEFAULT_CHARACTER`. |
+| `logic/game.py` | `character`, `rules`, `jokers`, `use_joker()`, `deadline()`, `missed_deadline`, `energy`, `world_speed()`, `focus_speed()`, `is_sleepy()`; the "NERD WAS LATE" part. |
+| `logic/exam_paper.py` | `both_know`, `right_answer()`. |
+| `ui/draw_game.py` | `character_badge()`, `eyelids()`; the classroom blurred by `clarity`; the joker hint. |
+| `ui/sounds.py` | `joker`, `nerd_late`, `sleepy`, `awake`. |
+| `main.py` | The CHARACTER screen, `choose_character()`, `self.character`, the J key. |
+| `tests/test_character.py` | Every character's rule, its price, and that `CHARACTERS` has no unknown (misspelled) rules. 257 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `logic/suspicion.py` | `SuspicionBar(seen_speed, stare_speed, creep_time)`; `update(..., away=)`. |
+| `logic/neighbours.py` | `update(..., speed=)`. |
+| `logic/teacher.py` | `set_mood(mood, busy_times, watching_times)`. |
+| `logic/run.py` | `Run(character=)`, given to every `Game`. |
+| `logic/game.py` | The clock and the bar run on `dt * world_speed()`; `knows_answer()` checks both sides; no sharp eye when both know. |
+| `main.py` | PLAY and "Play for real" go to the character screen; the teacher runs on `dt * world_speed()` and gets the buddy's times. |
+| `ui/draw_menus.py` | `draw_loading(..., character)`: "PLAYING AS". |
+| `ui/render.py` | `CharacterDrawing` in the Renderer. |
+| `logic/guide.py` | One line about the characters. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The characters. |
+
+### Details worth knowing
+
+- The cap's bar creeps up instead of draining whenever he looks at the
+  screen or a neighbour without anything suspicious happening; only
+  looking down drains it. A full creep is a normal warning.
+- The sugar rush slows the world, not the player: the clock, the bar and
+  the teacher get `dt * 0.85`, reading gets the full `dt`.
+- The tables of the score count have room for the extra "NERD WAS LATE" row.
+- Checked: tests pass; drew the character screen for all seven, the
+  nerd's badge looking down, the glasses' blur and the sleepy eyelids;
+  ran the real `App` with a fake camera through: Play → character → spin
+  → exam with the joker → the score count, one exam with every character,
+  and the guide → practice → "Play for real" → the character screen.
+  **A person should try:** play a run with each character and say which
+  feels too strong or too weak (the numbers are all in `CHARACTERS`); is
+  the glasses' blur fair; are the sleepy spells annoying in a good way;
+  can the nerd make the 30 %?
+
+### Next
+
+Play update 2 with the webcam and tune (PLAN.md 12.3).
+
+---
+
+## Commit #46 — The New Era guy's bar, a Monster laptop, funnier characters
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+After trying the characters the team asked for four things. The cap's
+creeping bar was too slow to matter: it now fills in 30 s instead of 45.
+In exchange his normal bar (staring and being seen copying) fills slower
+than before: ×0.6 staring (a warning after 5 s instead of 3) and ×0.65
+seen (caught after 1.08 s instead of 0.7). Everyone else's bar is
+unchanged. "The guy with the cap" is
+**the New Era guy**: a stiff, flat-brim cap with the gold sticker still on
+(the portrait was redrawn). The "Monster bag" is a bag for a **Monster
+gaming laptop** (the computer brand), not energy drinks: new story and a
+new portrait (a laptop bag, the laptop's edge glowing in changing colours).
+And every character's lines were rewritten to be funnier. The nerd's
+early bonus now counts from his 30 % line: 0 with 30 % of the time left,
+growing to the full +1000 with all of it left (before, he got the normal
+bonus on top of the deadline); later than 30 % is still −1000.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `settings.py` | The cap: `creep_time` 45 → 30, `stare_speed` 0.75 → 0.6, `seen_speed` 0.8 → 0.65; new name, story and +/- lines for every character. |
+| `logic/game.py` | The early bonus is measured from `hand_in_share` (the nerd's line; 0 for everyone else, so nothing changes for them). |
+| `tests/test_character.py` | The nerd's early bonus: 0 at the line, half way between the line and the start = half the bonus. 258 tests. |
+| `ui/draw_characters.py` | `portrait_cap()`: a New Era cap (tall crown with "NY", a flat brim, the gold sticker); `portrait_npc()`: a laptop bag with a glowing gaming laptop. `GREY_BAG`, `CAP_NAVY`, `GOLD_STICKER` instead of `MONSTER_GREEN`. |
+| `README.md`, `PLAN.md` | The names and the cap's 30 s. |
+
+### Details worth knowing
+
+- The cap's key in `CHARACTERS` is still `"cap"`.
+- Checked: tests pass (258); drew the two new portraits and cards.
+  **A person should try:** does the New Era guy now have to look at his
+  paper often enough, and is his slower bar worth it?
+
+### Next
+
+Play update 2 with the webcam and tune (PLAN.md 12.3).
+
+---
+
+## Commit #47 — Fewer sugar rushes, an easier practice, the forgotten line, no face on screen
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+Four requests after playing:
+
+- **The sugar rush came too often.** The energy drink addict's coin toss
+  is now a chance: 50 % in the first exam, 15 % less after every sugar
+  rush earlier in the run (50 → 35 → 20 %).
+- **A joke about the hidden suspicion line, in the guide.** A new guide
+  step: you don't have to empty the bar, but leave it too high and he
+  keeps staring at you; how high is too high? "I put a random line in the
+  code." "Where is it?" "No idea. I forgot. Good luck!" (That line is the
+  exam's `"suspicious"` point in `QUIZZES`: 60 / 45 / 30 %.)
+- **The practice exam at 75 %.** `PRACTICE_QUIZ` has `"ease": 0.75`:
+  the suspicion bar fills at 75 % of its speed, the teacher's looks are
+  75 % as long, and a paper is read in 75 % of the time.
+- **No face on screen.** The webcam picture is gone from the game, the
+  guide and the menus; it is only on the start screen, while calibrating
+  (the poses need it). The "HEAD CONTROL" box sits at the bottom right on
+  every menu.
+
+The team also asked for the suspicion bar's drain value, to tune it:
+`SUSPICION_DRAIN_TIME = 10.0` in `settings.py` (seconds for a full bar to
+empty; lower = faster). Not changed: the team will try values.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `logic/character.py` | `rush_chance()`; `Energy(rng, rules, rushes_before)`; `rush_chance`, `rush_chance_drop` in `DEFAULTS`. |
+| `logic/run.py` | `rushes()`; each result remembers `"rush"`. |
+| `logic/game.py` | `Game(rushes_before=, ease=)`: the bar's speeds x ease, reading / ease. |
+| `logic/guide.py` | The step about the forgotten line. |
+| `settings.py` | The energy drink: `rush_chance` 0.5, `rush_chance_drop` 0.15; `PRACTICE_QUIZ` `"ease": 0.75`. |
+| Tests | The rush chance drops, a run counts its rushes, the practice is easier; the crash test steps until the spell starts (it failed when the first spell came early). 261 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | No webcam picture in the game, the guide and the menus; `menu_screen()`, `guide_screen()`, `game_screen()` no longer take the frame; the teacher's looks x `game.ease`. |
+| `ui/draw_game.py`, `ui/draw_guide.py`, `ui/draw_menus.py` | The preview is gone; the texts that sat left of it are centred. `MENU_PREVIEW_SIZE` is now `INDICATOR_WIDTH` (also used by the briefing, characters and results). |
+| `README.md`, `LEARN.md`, `PLAN.md` | The above. |
+
+### Details worth knowing
+
+- The tracker still draws on the start screen only; the yaw/pitch numbers
+  and "face lost..." stay at the top right of the game.
+- **A person should try:** with no face on screen, is it still clear when
+  tracking is lost? (The game pauses with "FACE NOT FOUND", as before.)
+  Try `SUSPICION_DRAIN_TIME` at 6–8 s.
+
+### Next
+
+Play with the webcam and tune (PLAN.md 12.3).
+
+---
+
+## Commit #48 — A briefing timed to the character music; the sliding character screen
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+The team added a song for choosing the character
+(`assets/sounds/character_[cut_180sec].mp3`) and asked for a cool,
+sarcastic intro timed to it, then a Hotline Miami-like sliding character
+screen where the chosen one stands out.
+
+Claude cannot hear, so the song was measured with numpy instead (decoded
+with pygame): the onsets (where the sound suddenly changes) give the tempo
+by autocorrelation, **147 BPM**; the strongest hits come every 1.633 s
+(a bar of 4 beats) from **0.81 s**; and the loudness jumps to twice its
+level at **11.84 s** (the drop), which is on the same beat grid.
+
+- **The briefing** (new screen RUN_INTRO, after PLAY): the music starts at
+  once, and on each bar's hit a new line slams in, huge and tilted, with a
+  white flash and a shake, over rushing diagonal stripes whose colours
+  change each line: "3 EXAMS." "1 SEMESTER." "0 HOURS OF STUDYING."
+  "YOUR FAMILY EXPECTS..." "...THE MAXIMUM SCORE." "NO PRESSURE." "(A LOT
+  OF PRESSURE.)". The line thumps on every beat in between. Space / Enter /
+  turning right skips it; left goes back.
+- **The character screen** at the drop: the row of portraits slides in
+  from the right with a white flash. The chosen one is in the middle, big,
+  in a yellow frame with a pink halo that flares on every bar, thumping on
+  every beat; the others are smaller and darker the further away. Tilting
+  up/down slides the row (smoothly, the short way round). Under it the
+  name (big), the story and the + / − lines.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `logic/run_intro.py` | `INTRO_LINES`, `BEAT`, `BAR`, `line_time()`, `current_line()`, `since_line()`, `is_over()`, `since_beat()`, `beat_number()`, `since_bar()`. |
+| `ui/draw_run_intro.py` | `draw_run_intro()`, `intro_line_image()`, `intro_stripes()`. |
+| `ui/sounds.py` | The `"character"` track; `cut_to()` (start at once, no fade), `music_position()`. |
+| `main.py` | RUN_INTRO: `start_run_intro()`, `intro_screen()`, `music_time()`; `self.carousel`, `self.character_since`. |
+| `settings.py` | `CHARACTER_MUSIC_BPM` (147), `INTRO_FIRST_HIT` (0.81 s), `INTRO_DROP` (11.84 s), `CAROUSEL_SPEED`. |
+| `tests/test_run_intro.py` | Lines one per bar, all before the drop, the drop on a beat, beats and bars. 266 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `ui/draw_characters.py` | The list and card became the sliding row (`carousel()`, `chosen_glow()`, `portrait_image()`, `character_info()`). |
+| `main.py` | PLAY and "Play for real" go to the briefing; the character music on RUN_INTRO and CHARACTER. |
+| `ui/render.py` | `RunIntroDrawing` in the Renderer. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The briefing and the row. |
+
+### Details worth knowing
+
+- The intro follows the music player's position (`get_pos()`), not a timer
+  of its own, so a slow frame does not knock it off the beat. Without a
+  real sound device the player says 0, and `music_time()` counts by itself.
+- The file name has brackets in it; the code uses it as it is. Renaming it
+  means changing `MUSIC_FILES` in `ui/sounds.py`.
+- Choosing PLAY with the head: the briefing waits until the head is
+  straight before turning right can skip it.
+- Checked: drew the briefing at several moments and the row (still,
+  sliding, opening); ran the real `App` (fake camera, no sound device):
+  PLAY → briefing → characters at the drop, Space skips, the row slides.
+  **A person should listen:** do the lines land on the hits? If they are
+  a little early or late, change `INTRO_FIRST_HIT` (and `INTRO_DROP` by the
+  same amount).
+
+### Next
+
+Play with the webcam and tune (PLAN.md 12.4).
+
+---
+
+## Commit #49 — Exam title cards, the character music on the first spin, a cleaner intro
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+- **Title cards.** After the loading bar fills, a quick card (1.8 s) in
+  the briefing's style: the exam's name slams in with a flash and a thud,
+  then its sarcastic line: "THE QUIZ — This gotta be easy... right?",
+  "THE MIDTERM — I can handle this. Probably. Maybe not.", "THE FINAL —
+  God, please help me.", and for the practice "It doesn't even count.
+  Relax." Each exam has its own colours; the card fades to black into the
+  exam.
+- **Music.** The first exam's gossip slot machine keeps the character
+  music going (it follows the character screen); from the second exam on
+  it is the menu theme again.
+- **The briefing.** The team liked how it sits on the rhythm, but the
+  line before (small and faded above the new one) is gone: only the newest
+  line is on screen.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `settings.py` | A `"tagline"` for each exam in `QUIZZES` and for `PRACTICE_QUIZ`; `EXAM_TITLE_TIME` (1.8 s), `EXAM_TAGLINE_DELAY` (0.45 s). |
+| `ui/draw_run_intro.py` | `draw_exam_title()`, `EXAM_PALETTES`, `TITLE_Y`, `TAGLINE_Y`. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | `loading_screen()`: the bar, then the title card (a `"stamp"` thud on each slam), then the exam; `music_track()`: the character music on the first BRIEFING. |
+| `ui/draw_run_intro.py` | The faded line before is no longer drawn. |
+| `README.md`, `LEARN.md` | The above. |
+
+### Details worth knowing
+
+- A long tagline is made smaller to fit (the midterm's).
+- Checked: tests pass (266); drew all four cards; ran the real `App`:
+  the first BRIEFING plays "character", the second "menu", and LOADING
+  goes through the card into the game.
+  **A person should try:** is 1.8 s too long when you just want to play?
+  (`EXAM_TITLE_TIME`)
+
+---
+
+## Commit #50 — The school bell, a sideways character row, "Are you sure?"
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+- **The school bell** (the team's file, `School Bell Sound Effect ...mp3`,
+  3.4 s) rings on the title card before each exam, and only there. It is
+  cut to the card's length (`EXAM_TITLE_TIME`, 1.8 s) and fades out over
+  its last 0.35 s, so bell and card end together; a different card length
+  cuts it to that. Without the file, a bell made in code rings instead.
+- **The character row is chosen sideways:** turn left / right to go to the
+  previous / next character, look down (hold) to play as him, look up
+  (hold) to go back. Keys: ← → move, ↓ / Enter choose, ↑ / Esc back.
+- **"ARE YOU SURE?"** for QUIT and MAIN MENU (and Esc on the main menu):
+  a box over the menu; turn right *again* (the head must come straight
+  first) or Enter = yes, turn left or Esc = no. A bar under each answer
+  fills while the head is turned. Going to the main menu in the middle of
+  a run says the run is lost.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `ui/sounds.py` | `"bell"` in `SOUND_FILES`; `SOUND_LENGTHS`, `CUT_FADE_TIME`; `fade_out()`, `cut_sound()`, `Sounds.cut()`, `school_bell()` (the stand-in). |
+| `logic/menu.py` | `HORIZONTAL`, `HeadMenuInput.horizontal`. |
+| `main.py` | `self.confirming`, `ask_confirm()`, `answer_confirm()`; the character row's keys. |
+| `ui/draw_menus.py` | `draw_confirm()`. |
+| Tests | `tests/test_sounds.py` (cutting and fading a sound, the bell's length); the sideways menu. 272 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | The title card rings the bell; `go_to()` sets the sideways head on the character screen and clears the question; clicks wait while it is asked. |
+| `ui/draw_characters.py` | The hint for the sideways controls. |
+| `README.md`, `LEARN.md` | The above. |
+
+### Details worth knowing
+
+- R and M in the game, and Esc in the game, still act at once (only the
+  menu items and Esc on the main menu ask).
+- **A person should try:** is looking down to pick a character easy, or
+  does it fire while just looking at the keyboard? (`MENU_PITCH_THRESHOLD`,
+  `MENU_SELECT_TIME`); listen to the cut bell.
+
+---
+
+## Commit #51 — A real slot machine for the gossip; the helicopter signature
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+- **The gossip screen** was a flat rectangle with the machine and the
+  story floating in it. Now it is one slot machine in the middle of the
+  screen, drawn in code: a cabinet with a dome and a neon edge, a drop
+  shadow, "MOOD-O-MATIC" glowing on the dome with bulbs round it
+  (blinking while waiting, chasing while spinning, all flashing when it
+  stops), the gold-framed reel with a glass gleam, the lever fixed to its
+  side. The moods on the reel are wrapped to two lines instead of being
+  shrunk. Under the reel, built into the machine, a glowing screen: before
+  the spin it blinks "PULL THE LEVER"; after it, the story and the + / −
+  lines light up there. "SPIN" / "I'M READY" sit on the machine's base.
+  (A first try printed the story on a typewritten receipt; the team wants
+  only the slot machine, so it was dropped.)
+- **The disclaimer's signature** is someone trying to draw a helicopter:
+  body, window, tail with its rotor, mast, the big rotor scribbled back
+  and forth, skids, in a shaky hand, drawn stroke by stroke. Nothing else
+  on the notice changed.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `ui/draw_briefing.py` | Rewritten: `cabinet_shape()`, `cabinet()`, `marquee_image()`, `reel_frame_gold()`, `reel_line()`, `glass()`, `slot_lever()`, `info_screen()`; `draw_briefing(..., chapter)`. The box (`BRIEFING_PANEL`) and `slot_cabinet()` / `mood_story()` are gone. |
+| `ui/draw_notice.py` | `signature()` draws `helicopter_strokes()`; `shaky()`, `oval()`, `line()`. |
+| `main.py` | Passes `run.chapter()` to the gossip screen ("CHAPTER 1/3"). |
+| `README.md`, `LEARN.md` | The machine and the helicopter. |
+
+### Details worth knowing
+
+- The cabinet's shape and gradient are made once (`neon_cache`); the
+  outline for the neon edge comes from `pygame.mask`.
+- Checked: tests pass (272); drew the gossip screen before, during and
+  after a spin for every mood, and the signature half and fully drawn.
+
+---
+
+## Commit #52 — Fix: the gossip machine's screen stayed dark
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+The team saw the story and the + / − lines hidden behind black on the
+MOOD-O-MATIC's screen. `turn_reel()` in `main.py` stopped counting
+`spin_time` once the reel stopped, but the screen lights up over
+`INFO_LIGHT_TIME` *after* the stop (and the bulbs' win flash ends after
+`WIN_FLASH_TIME`), so the screen stayed almost black and the bulbs
+flashed forever. The clock now keeps going after the stop.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | `turn_reel()`: after the stop, `spin_time` keeps counting. |
+
+### Details worth knowing
+
+- The test drawings in #51 set `spin_time` by hand, past the light-up, so
+  they did not show it. This time it was checked through the real `App`:
+  spin, wait 6 s, the screen is lit.
+
+---
+
+## Commit #53 — Casino bulbs round the slot machine
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+The team wanted small yellow bulbs all round the MOOD-O-MATIC, blinking
+like a casino sign: one lit, the next dark, then the other way round. They
+sit on its neon edge, one every 24 pixels along the outline; every other
+one is lit and they swap every 0.35 s (three times as fast while the reel
+spins), so the light seems to jump along. The old row of bulbs inside the
+dome is gone: the two rows were too busy together.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `ui/draw_briefing.py` | `edge_bulb_spots()` (made once from the outline), `edge_bulbs()`; `EDGE_BULB_GAP`, `EDGE_BULB_SWAP`; the dome's own bulbs removed. |
+| `LEARN.md` | The bulbs. |
+
+### Details worth knowing
+
+- Checked through the real `App` (spin, wait, draw): the bulbs follow the
+  dome and the rounded corners evenly. Tests pass (272).
+
+---
+
+## Commit #54 — The moods do what their gossip says
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+The team asked whether the teacher really behaves as each mood's + / −
+lines promise. Every line was checked against the numbers, with
+`normal_day` (busy 3.5–6.5 s, looks 4–7 s, moves 40 %) as the plain
+teacher. Most were right; these were not:
+
+| Mood | Line | Was | Now |
+|---|---|---|---|
+| `phone_fight` | "+ Long calls, and he stays at his desk" | started at the **board**, moved 15 % of the time | starts at the desk (`"place": "DESK"`), moves 5 % |
+| `phone_fight` | "− When he looks, he looks for a while" | looks 4.5–6.5 s (avg 5.5 = normal) | 5.0–7.5 s |
+| `traffic` | "− Long, angry looks" | 4.5–7.0 s (+5 %) | 5.0–8.0 s (+18 %) |
+| `motorcycle` | "− Long, angry stares" | 4.5–7.5 s (+9 %) | 5.0–8.0 s (+18 %) |
+| `paranoid` | "− Long looks" | 4.5–7.0 s (+5 %) | line removed (it still barely works and keeps moving) |
+| `lost_bet` | "− Long looks" | 4.5–7.5 s (+9 %) | line removed (short busy times, moves a lot) |
+
+For the Final's moods the line was removed rather than the looks made
+longer, because the team finds the game hard already.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `tests/test_moods.py` | Reads every + / − line, finds its promise by keywords ("long busy", "quick", "never leaves the desk", "keeps moving"...) and checks the numbers against `normal_day` (10 % longer / shorter at least); every line must be checked by some keyword; good-only days are not harder than plain, bad-only days not easier. 275 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `settings.py` | The numbers and lines above; the comment over `MOODS` points to the test. |
+
+### Details worth knowing
+
+- The test was tried against the old numbers: it fails on `phone_fight`.
+- A new mood line needs its words in `KEYWORDS` (`test_every_line_is_checked`
+  says so), so a promise can never go unchecked.
+- `phone_fight` at the desk means no chalk sound on that day (he is on the
+  phone): that matches the story ("arguing at his desk").

@@ -12,7 +12,9 @@ which says how the head is rotated. From that we compute two angles:
     yaw    turning left/right   (0 = straight at the camera)
     pitch  nodding up/down      (0 = straight at the camera)
 The angles are compared with the player's own "straight at the screen"
-angles, which are measured at the start (calibration).
+angles, which are measured at the start (calibration). Calibration also
+measures how far this player turns left, right and down, and sets the
+thresholds from that (see Calibration at the bottom).
 """
 
 import math
@@ -23,7 +25,8 @@ from mediapipe.tasks.python import vision
 
 from settings import (FACE_MODEL_FILE, MIN_FACE_CONFIDENCE, FACE_LOST_GRACE,
                       LOST_DOWN_PITCH, YAW_THRESHOLD, PITCH_DOWN_THRESHOLD,
-                      YAW_SIGN, PITCH_SIGN, SMOOTHING, HOLD_TIME)
+                      YAW_SIGN, PITCH_SIGN, SMOOTHING, HOLD_TIME, CALIBRATION_SAMPLE_TIME,
+                      CALIBRATION_SHARE, CALIBRATION_MIN_ANGLE, CALIBRATION_MAX_ANGLE)
 
 DOWN, SCREEN, LEFT, RIGHT = "DOWN", "SCREEN", "LEFT", "RIGHT"
 
@@ -66,6 +69,11 @@ class HeadTracker:
         self.pitch = 0.0
         self.neutral_yaw = 0.0    # the player's "looking at the screen" angles,
         self.neutral_pitch = 0.0  # set by calibrate()
+        # Degrees from the neutral angles at which a direction starts. The
+        # fixed ones from settings.py until calibration measures this player.
+        self.left_threshold = YAW_THRESHOLD
+        self.right_threshold = YAW_THRESHOLD
+        self.down_threshold = PITCH_DOWN_THRESHOLD
 
         self.last_seen = None     # time (seconds) of the last frame with a face
         self.last_raw_pitch = 0.0 # unsmoothed pitch of the last frame with a face
@@ -149,6 +157,12 @@ class HeadTracker:
         self.neutral_pitch = pitch
         self.direction = self.candidate = SCREEN
 
+    def set_thresholds(self, left, right, down):
+        """The degrees (from neutral) at which LEFT, RIGHT and DOWN start."""
+        self.left_threshold = left
+        self.right_threshold = right
+        self.down_threshold = down
+
     def relative_angles(self):
         """Yaw and pitch measured from the calibrated screen angles."""
         return self.yaw - self.neutral_yaw, self.pitch - self.neutral_pitch
@@ -157,11 +171,11 @@ class HeadTracker:
         """Classify the current angles, without any hold time."""
         yaw, pitch = self.relative_angles()
         # DOWN is checked first: looking down at the paper wins over a small turn.
-        if pitch < -PITCH_DOWN_THRESHOLD:
+        if pitch < -self.down_threshold:
             return DOWN
-        if yaw > YAW_THRESHOLD:
+        if yaw > self.left_threshold:
             return LEFT
-        if yaw < -YAW_THRESHOLD:
+        if yaw < -self.right_threshold:
             return RIGHT
         return SCREEN
 
@@ -237,39 +251,103 @@ class HeadTracker:
             self.detector.close()
 
 
+# The poses calibration asks for, in order.
+CALIBRATION_POSES = (SCREEN, LEFT, RIGHT, DOWN)
+
+
+def pose_threshold(reached, default):
+    """
+    The threshold for one direction, from how far (degrees from neutral,
+    positive = the right way) the player turned in that pose: a share of
+    the way there, within the limits in settings.py. A pose that went the
+    wrong way, or hardly moved, cannot be trusted: then `default`.
+    """
+    if reached * CALIBRATION_SHARE < CALIBRATION_MIN_ANGLE:
+        return default
+    return min(CALIBRATION_MAX_ANGLE, reached * CALIBRATION_SHARE)
+
+
 class Calibration:
     """
-    Measures the player's "looking at the screen" angles: collects the angles
-    for `duration` seconds and gives their average to the tracker. If the face
-    is lost on the way, it starts over.
+    Measures the player's four poses, one after the other (CALIBRATION_POSES):
+    looking at the screen, then turned left, right and down as far as they
+    would in the game while still seeing the screen. For each pose the
+    player gets into it and presses Space (start()); the angles are then
+    collected for `duration` seconds and averaged.
+
+    - SCREEN becomes the neutral angles (everything is measured from them).
+    - LEFT, RIGHT and DOWN set the thresholds (pose_threshold()).
+
+    If the face is lost while measuring, that pose starts over, except DOWN:
+    looking down often hides the face, so the last angles seen are used.
     """
 
-    def __init__(self, tracker, duration):
+    def __init__(self, tracker, duration=CALIBRATION_SAMPLE_TIME):
         self.tracker = tracker
         self.duration = duration
         self.restart()
 
     def restart(self):
+        """From the first pose again."""
+        self.step = 0
+        self.reached = {}   # pose -> its average (yaw, pitch)
+        self.restart_pose()
+
+    def restart_pose(self):
+        """Measure the current pose again (Space must be pressed again)."""
+        self.measuring = False
         self.yaws = []
         self.pitches = []
         self.elapsed = 0.0
 
-    def done(self):
-        return self.elapsed >= self.duration
+    def pose(self):
+        """The pose being asked for (SCREEN, LEFT, RIGHT, DOWN), or None when done."""
+        return None if self.done() else CALIBRATION_POSES[self.step]
 
-    def seconds_left(self):
-        return max(0.0, self.duration - self.elapsed)
+    def start(self):
+        """Space: the player is in the pose, measure it now."""
+        if not self.done():
+            self.measuring = True
+
+    def done(self):
+        return self.step >= len(CALIBRATION_POSES)
+
+    def progress(self):
+        """0..1, how far the current pose's measuring is."""
+        return min(1.0, self.elapsed / self.duration)
 
     def add(self, face_visible, dt):
         """Call once per frame while calibrating."""
-        if self.done():
+        if self.done() or not self.measuring:
             return
-        if not face_visible:
-            self.restart()
+        if not face_visible and (self.pose() != DOWN or self.tracker.last_seen is None):
+            self.restart_pose()
             return
         self.yaws.append(self.tracker.yaw)
         self.pitches.append(self.tracker.pitch)
         self.elapsed += dt
+        if self.elapsed >= self.duration:
+            self.finish_pose()
+
+    def finish_pose(self):
+        """The pose is measured: keep its average; after the last one, set the tracker."""
+        average = (sum(self.yaws) / len(self.yaws), sum(self.pitches) / len(self.pitches))
+        self.reached[self.pose()] = average
+        if self.pose() == SCREEN:
+            # Measured first, because the other poses are measured from it.
+            self.tracker.calibrate(*average)
+        self.step += 1
+        self.restart_pose()
         if self.done():
-            self.tracker.calibrate(sum(self.yaws) / len(self.yaws),
-                                   sum(self.pitches) / len(self.pitches))
+            self.set_thresholds()
+
+    def set_thresholds(self):
+        """All four poses are in: give the tracker this player's thresholds."""
+        neutral_yaw, neutral_pitch = self.reached[SCREEN]
+        # Positive = the right way: yaw grows to the player's left, pitch grows upwards.
+        left = self.reached[LEFT][0] - neutral_yaw
+        right = neutral_yaw - self.reached[RIGHT][0]
+        down = neutral_pitch - self.reached[DOWN][1]
+        self.tracker.set_thresholds(pose_threshold(left, YAW_THRESHOLD),
+                                    pose_threshold(right, YAW_THRESHOLD),
+                                    pose_threshold(down, PITCH_DOWN_THRESHOLD))
