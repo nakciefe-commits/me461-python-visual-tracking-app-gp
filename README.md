@@ -23,8 +23,11 @@ glances), see `PLAN.md` section 11.
 ## Windows: double-click `run.bat` (no Python needed)
 
 Version **0.1 beta**. Download the project (the `release-0.1-beta`
-branch: green "Code" button → "Download ZIP", then unzip it) and
-double-click `run.bat`. It sets everything up by itself, once:
+branch: green "Code" button → "Download ZIP"), **unzip it first**
+(right-click the ZIP → "Extract All..."), open the new folder and
+double-click `run.bat` there. (Double-clicking it *inside* the ZIP does
+not work: Windows then runs `run.bat` alone, without the game's files; it
+says so and stops.) It sets everything up by itself, once:
 
 1. If the computer has no usable Python (64-bit, 3.10–3.14), it installs
    Python 3.14 for your user only (no admin password): with `winget` if

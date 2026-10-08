@@ -15,6 +15,12 @@ REM   4. Starts the game.
 REM Work from the folder this file is in, wherever it was started from.
 cd /d "%~dp0"
 
+REM The game's files must be next to this file. They are not when run.bat is
+REM double-clicked inside a ZIP: Windows then copies only run.bat to a
+REM temporary folder and runs it there.
+if not exist "main.py" goto not_unzipped
+if not exist "requirements.txt" goto not_unzipped
+
 set "PYVER=3.14.0"
 set "PYURL=https://www.python.org/ftp/python/%PYVER%/python-%PYVER%-amd64.exe"
 REM Where a per-user Python 3.14 is installed (by winget or the python.org installer).
@@ -81,6 +87,17 @@ echo.
 echo Python could not be found or installed automatically.
 echo Install 64-bit Python 3.14 from https://www.python.org/downloads/
 echo and tick "Add python.exe to PATH" in the installer. Then run this again.
+pause
+exit /b 1
+
+:not_unzipped
+echo.
+echo The game's files are not next to run.bat (no main.py or requirements.txt in
+echo   %CD%
+echo ).
+echo Did you double-click run.bat inside the ZIP file? Windows then runs it alone.
+echo Unzip first: right-click the ZIP, "Extract All...", open the new folder
+echo and double-click run.bat there.
 pause
 exit /b 1
 

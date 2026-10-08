@@ -3088,3 +3088,36 @@ properly for Windows.
 - Installing Python per user puts it in
   `%LOCALAPPDATA%\Programs\Python\Python314`; `run.bat` uses that path
   directly, because the new PATH only reaches new windows.
+
+---
+
+## Commit #57 — run.bat: stop with a clear message when it is not next to the game
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+The first try on a Windows computer without Python: `run.bat` installed
+Python 3.14.7 with winget and made `.venv`, then failed: "Could not open
+requirements file: requirements.txt". The folder sent to that computer had
+every file, so `run.bat` was not run from it. Most likely it was
+double-clicked inside the ZIP: Windows then copies only `run.bat` to a
+temporary folder and runs it there, away from the game's files. Now
+`run.bat` checks first that `main.py` and `requirements.txt` are next to
+it; if not, it installs nothing and says to unzip the folder first
+("Extract All...") and run it from there. The README says so too.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `run.bat` | The check, and the `:not_unzipped` message (with the folder it was run from). |
+| `README.md` | "Unzip it first" in the Windows section. |
+
+### Details worth knowing
+
+- The good news from that try: installing Python without Python (winget)
+  and making `.venv` worked on a real Windows computer.
+- **A person should try** again: unzip, run `run.bat` from the folder. If
+  it still says `requirements.txt` is missing, the message shows the folder
+  it ran in: that tells where it really started.
