@@ -5,6 +5,9 @@ Change a value here, save, and run the game again. No other file needs to
 change. Each value says its unit (seconds, degrees, pixels).
 """
 
+# --- Version ---
+GAME_VERSION = "0.1 beta"   # shown in the window title and on the main menu
+
 # --- Webcam ---
 CAMERA_INDEX = 0            # 0 = first webcam; try 1 if the wrong one opens
 CAMERA_FALLBACK_INDICES = (1,)  # tried only before the first working camera is found; () disables fallback

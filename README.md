@@ -20,6 +20,21 @@ glances), see `PLAN.md` section 11.
   with **64-bit** Python 3 (3.12 is the safest choice on Windows, see below)
 - A webcam
 
+## Play without Python (Windows .exe)
+
+Version **0.1 beta** comes as one Windows program, `DontGetCaught-0.1-beta.exe`
+(about 200 MB): Python, the libraries, the pictures, the sounds and the
+face model are all inside it. Double-click it; you only need a webcam.
+The first start takes a few seconds (it unpacks itself). Windows may warn
+that the program is unknown (it is not signed): "More info" → "Run anyway".
+The top scores are kept in `highscore.json` next to the .exe, and any error
+in `dont-get-caught-log.txt` there.
+
+It is built on GitHub's Windows computers (`.github/workflows/build-windows.yml`,
+on every push to the `release-0.1-beta` branch; the .exe is under the run's
+"Artifacts"), with `packaging/build_exe.py` (PyInstaller). It is never
+committed to git.
+
 ## Setup and run
 
 The start script creates the `.venv` environment and installs the libraries

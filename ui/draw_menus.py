@@ -16,6 +16,7 @@ import numpy as np
 import pygame
 
 from tracking.head_tracker import SCREEN, LEFT, RIGHT, DOWN, CALIBRATION_POSES
+from settings import GAME_VERSION
 from ui.style import (WHITE, NEON_PINK, NEON_CYAN, NEON_YELLOW, NEON_RED, SHADOW,
                       HUD_PURPLE, FOOTER_HEIGHT, GLOW_BLUR, SHADOW_OFFSET, TITLE_PULSE,
                       TITLE_WOBBLE, TITLE_WOBBLE_SPEED, mix)
@@ -413,6 +414,8 @@ class MenuDrawing:
             self.menu_items(labels, selected, items_top, select_progress, cx=cx)
             self.top_scores(top, TOP_PANEL)
 
+        if top is not None:   # the main menu: which version this is, bottom left
+            self.shadow_text(f"v{GAME_VERSION}", self.small, WHITE, (16, self.height - FOOTER_HEIGHT - 26))
         # Who is in control (the head or the keys), at the bottom right. No
         # webcam picture: the player's face is only shown while calibrating.
         self.head_indicator(head_pause, self.width - INDICATOR_WIDTH - 16,

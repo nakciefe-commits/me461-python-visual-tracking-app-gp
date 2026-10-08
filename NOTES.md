@@ -2975,3 +2975,48 @@ longer, because the team finds the game hard already.
   says so), so a promise can never go unchecked.
 - `phone_fight` at the desk means no chalk sound on that day (he is on the
   phone): that matches the story ("arguing at his desk").
+
+---
+
+## Commit #55 — Version 0.1 beta as a Windows .exe (branch `release-0.1-beta`)
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+The team wants a version anyone can play, on computers without Python:
+**0.1 beta**, as one Windows .exe that has everything inside (Python,
+OpenCV, MediaPipe, pygame, the pictures, the sounds, the face model). A
+.exe can only be built on Windows, so GitHub builds it on its own Windows
+computers on every push to this branch, runs the tests first, and keeps
+the .exe as the run's artifact. The .exe is never committed (it is about
+200 MB, over GitHub's 100 MB file limit, and the team asked to keep it off
+`main`). This branch is `main` (b6a7d33) plus the build.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `packaging/build_exe.py` | Runs PyInstaller: one file, no console window, `assets/` and `face_landmarker.task` inside, all of MediaPipe; named from the version (`DontGetCaught-0.1-beta`). |
+| `.github/workflows/build-windows.yml` | Windows build: Python 3.14, the libraries + PyInstaller, the tests, the build, the .exe uploaded as an artifact. |
+| `settings.py` | `GAME_VERSION = "0.1 beta"`. |
+| `main.py` | `FROZEN`, `GAME_FOLDER`: inside the .exe it works from the unpacked folder (`sys._MEIPASS`), keeps `highscore.json` next to the .exe and writes messages and errors to `dont-get-caught-log.txt` there (there is no console). |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | The window title says the version; `HIGH_SCORE_PATH` uses `GAME_FOLDER`. |
+| `ui/draw_menus.py` | "v0.1 beta" at the bottom left of the main menu. |
+| `.gitignore` | `dist/`, `packaging/work/`, the log. |
+| `README.md` | How to play the .exe and how it is built. |
+
+### Details worth knowing
+
+- PyInstaller is a build tool, not a game library: it is installed only
+  to build (in the workflow), not in `requirements.txt`.
+- Checked: a Linux build of the same script (211 MB) started from an
+  empty folder: the face model loaded from inside, the camera opened, it
+  ran without errors and wrote its log next to itself. The Windows build
+  runs on GitHub. **A person should try** the .exe on a Windows computer
+  without Python: does it start, does the webcam work, are scores kept?
