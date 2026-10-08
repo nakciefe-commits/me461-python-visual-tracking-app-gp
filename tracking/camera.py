@@ -6,6 +6,14 @@ Instead of making the game wait, a background "thread" (a second worker
 inside the same program) reads frames all the time and keeps the newest one.
 The game takes a copy of the newest picture without waiting. Missing or stale
 pictures pause the game while this worker retries, instead of closing it.
+
+On Windows there are two camera systems (camera_systems()): DirectShow,
+which opens a webcam quickly, and Media Foundation, Windows' own, which is
+slow to open but works with every webcam. Each webcam is tried with both
+before the next webcam is tried, so a webcam that only works with one of
+them still works without changing any setting. Windows also gets a small
+picture size and a one-picture buffer (less delay), and, when a webcam
+opens but sends nothing, a hint about Windows' camera privacy setting.
 """
 
 import sys
@@ -14,21 +22,50 @@ import time
 
 import cv2
 
-from settings import (WINDOWS_DIRECTSHOW, CAMERA_FALLBACK_INDICES, CAMERA_WARMUP_TIME,
+from settings import (WINDOWS_DIRECTSHOW, WINDOWS_CAMERA_SIZE, CAMERA_FALLBACK_INDICES, CAMERA_WARMUP_TIME,
                       CAMERA_STALE_TIME, CAMERA_RECONNECT_TIME, CAMERA_RETRY_INTERVAL,
                       CAMERA_READ_RETRY, CAMERA_STOP_TIMEOUT)
 
 
-def open_device(index):
+# The camera systems' names, for the messages.
+SYSTEM_NAMES = {cv2.CAP_DSHOW: "DirectShow", cv2.CAP_MSMF: "Media Foundation"}
+PRIVACY_HINT = ("Windows: Settings > Privacy & security > Camera > allow desktop apps "
+                "to use the camera. Close other apps that use it (Teams, Zoom, browser).")
+
+
+def camera_systems():
     """
-    Open webcam number `index` with OpenCV. On Windows the default camera
-    system (Media Foundation) can take 10+ seconds to open a webcam;
-    DirectShow opens it much faster. If a webcam does not work with it, set
-    WINDOWS_DIRECTSHOW = False in settings.py.
+    The camera systems to try, in order. None = let OpenCV choose (Linux,
+    Mac). On Windows: DirectShow first (it opens a webcam in a moment;
+    Media Foundation can take 10+ seconds), then Media Foundation (it works
+    with every webcam), or the other way round with WINDOWS_DIRECTSHOW = False.
     """
-    if sys.platform == "win32" and WINDOWS_DIRECTSHOW:
-        return cv2.VideoCapture(index, cv2.CAP_DSHOW)
-    return cv2.VideoCapture(index)
+    if sys.platform != "win32":
+        return [None]
+    if WINDOWS_DIRECTSHOW:
+        return [cv2.CAP_DSHOW, cv2.CAP_MSMF]
+    return [cv2.CAP_MSMF, cv2.CAP_DSHOW]
+
+
+def open_device(index, system=None):
+    """
+    Open webcam number `index` with OpenCV, with that camera system (None =
+    OpenCV chooses). On Windows it also asks for WINDOWS_CAMERA_SIZE and a
+    buffer of one picture, so the game always gets the newest one.
+    """
+    if system is None:
+        return cv2.VideoCapture(index)
+    capture = cv2.VideoCapture(index, system)
+    width, height = WINDOWS_CAMERA_SIZE
+    capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    return capture
+
+
+def describe(index, system):
+    """'Camera 0', or 'Camera 0 (DirectShow)' on Windows."""
+    return f"Camera {index}" if system is None else f"Camera {index} ({SYSTEM_NAMES.get(system, system)})"
 
 
 class Camera:
@@ -37,9 +74,13 @@ class Camera:
         # Preserve the preferred camera. Fallback is only for initial discovery;
         # after receiving pictures, reconnection stays with that same device.
         self.indices = tuple(dict.fromkeys((index, *CAMERA_FALLBACK_INDICES)))
-        self.next_index = 0
+        # Every (webcam, camera system) to try, the preferred webcam's first.
+        self.attempts = [(i, system) for i in self.indices for system in camera_systems()]
+        self.next_attempt = 0
         self.selected_index = None
+        self.selected_system = None
         self.pending_index = index
+        self.pending_system = self.attempts[0][1]
         self.capture = None
         self.frame = None
         self.last_frame_time = None
@@ -64,26 +105,28 @@ class Camera:
 
     def open_capture(self):
         """Try one device. isOpened() alone does not prove it produces images."""
-        index = self.selected_index
+        index, system = self.selected_index, self.selected_system
         if index is None:
-            index = self.indices[self.next_index]
-            self.next_index = (self.next_index + 1) % len(self.indices)
+            index, system = self.attempts[self.next_attempt]
+            self.next_attempt = (self.next_attempt + 1) % len(self.attempts)
+        name = describe(index, system)
         capture = None
         try:
-            capture = open_device(index)
+            capture = open_device(index, system)
             if not capture.isOpened():
                 capture.release()
-                self.set_status(f"Camera {index} could not open; retrying. Check other camera apps.")
+                self.set_status(f"{name} could not open; retrying. Check other camera apps.",
+                                PRIVACY_HINT if system is not None else None)
                 return False
         except cv2.error as error:
             if capture is not None:
                 capture.release()
-            self.set_status(f"Camera {index} could not open; retrying.", str(error))
+            self.set_status(f"{name} could not open; retrying.", str(error))
             return False
         self.capture = capture
-        self.pending_index = index
+        self.pending_index, self.pending_system = index, system
         self.opened_at = time.monotonic()
-        self.set_status(f"Camera {index} opened; waiting for its first picture...")
+        self.set_status(f"{name} opened; waiting for its first picture...")
         return True
 
     def close_capture(self):
@@ -106,7 +149,7 @@ class Camera:
                     ok, frame = self.capture.read()
                 except cv2.error as error:
                     ok, frame = False, None
-                    self.set_status(f"Camera {self.pending_index} read failed; retrying.", str(error))
+                    self.set_status(f"{describe(self.pending_index, self.pending_system)} read failed; retrying.", str(error))
                 if self.stop.is_set():
                     break
                 now = time.monotonic()
@@ -117,8 +160,9 @@ class Camera:
                         recovering = bool(self.status)
                         self.status = ""
                     self.selected_index = self.index = self.pending_index
+                    self.selected_system = self.pending_system
                     if recovering:
-                        print(f"Camera {self.index} is sending pictures.")
+                        print(f"{describe(self.index, self.selected_system)} is sending pictures.")
                     continue
 
                 # A temporary false/empty read is not a permanent disconnection.
@@ -127,7 +171,13 @@ class Camera:
                 reference = self.opened_at if last_good is None else last_good
                 timeout = CAMERA_WARMUP_TIME if last_good is None else CAMERA_RECONNECT_TIME
                 if now - reference >= timeout:
-                    self.set_status(f"Camera {self.pending_index} stopped sending pictures; reconnecting...")
+                    name = describe(self.pending_index, self.pending_system)
+                    if last_good is None and self.pending_system is not None:
+                        # Opened but never sent a picture: on Windows that is
+                        # often the privacy setting, or the other camera system works.
+                        self.set_status(f"{name} sends no pictures; trying the next way. {PRIVACY_HINT}")
+                    else:
+                        self.set_status(f"{name} stopped sending pictures; reconnecting...")
                     self.close_capture()
                     self.stop.wait(CAMERA_RETRY_INTERVAL)
                 else:

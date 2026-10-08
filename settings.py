@@ -17,7 +17,12 @@ CAMERA_RECONNECT_TIME = 1.0  # seconds without a good picture before reopening t
 CAMERA_RETRY_INTERVAL = 0.5  # seconds between open/reconnect attempts
 CAMERA_READ_RETRY = 0.05     # seconds between failed frame reads (avoid a busy loop)
 CAMERA_STOP_TIMEOUT = 1.0    # seconds to wait for the reader on exit; some drivers block in read()
-WINDOWS_DIRECTSHOW = True   # Windows only: False = use Windows' default camera system instead
+# Windows only. Windows has two camera systems: DirectShow (opens a webcam
+# fast) and Media Foundation (its default, slow to open but works with every
+# webcam). Both are tried, the first one here first; a webcam that sends no
+# pictures with one is tried with the other.
+WINDOWS_DIRECTSHOW = True   # Windows only: True = DirectShow first, False = Media Foundation first
+WINDOWS_CAMERA_SIZE = (640, 480)  # Windows only: pixels asked of the webcam (some send huge, slow pictures otherwise)
 FACE_MODEL_FILE = "face_landmarker.task"
 
 # --- Face finding ---

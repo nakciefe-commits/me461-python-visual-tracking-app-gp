@@ -17,23 +17,26 @@ glances), see `PLAN.md` section 11.
 ## Requirements
 
 - **Linux** (developed on Ubuntu 26.04, Python 3.14) or **Windows 10/11**
-  with **64-bit** Python 3 (3.12 is the safest choice on Windows, see below)
+  (Python is optional there: `run.bat` installs it if it is missing)
 - A webcam
 
-## Play without Python (Windows .exe)
+## Windows: double-click `run.bat` (no Python needed)
 
-Version **0.1 beta** comes as one Windows program, `DontGetCaught-0.1-beta.exe`
-(about 200 MB): Python, the libraries, the pictures, the sounds and the
-face model are all inside it. Double-click it; you only need a webcam.
-The first start takes a few seconds (it unpacks itself). Windows may warn
-that the program is unknown (it is not signed): "More info" → "Run anyway".
-The top scores are kept in `highscore.json` next to the .exe, and any error
-in `dont-get-caught-log.txt` there.
+Version **0.1 beta**. Download the project (the `release-0.1-beta`
+branch: green "Code" button → "Download ZIP", then unzip it) and
+double-click `run.bat`. It sets everything up by itself, once:
 
-It is built on GitHub's Windows computers (`.github/workflows/build-windows.yml`,
-on every push to the `release-0.1-beta` branch; the .exe is under the run's
-"Artifacts"), with `packaging/build_exe.py` (PyInstaller). It is never
-committed to git.
+1. If the computer has no usable Python (64-bit, 3.10–3.14), it installs
+   Python 3.14 for your user only (no admin password): with `winget` if
+   Windows has it, otherwise downloaded from python.org.
+2. It makes the `.venv` folder and installs the libraries into it.
+3. It starts the game.
+
+The first start needs the internet and takes a few minutes; after that it
+starts at once. If the webcam does not work: allow it in Windows
+(Settings → Privacy & security → Camera → "Let desktop apps access your
+camera") and close other apps that use it (Teams, Zoom, a browser). The
+game tries both of Windows' camera systems by itself.
 
 ## Setup and run
 
@@ -57,15 +60,12 @@ libraries from `requirements.txt` the first time it runs, and again whenever
 
 **Windows:**
 
-1. Install **64-bit Python 3** from <https://www.python.org/downloads/>
-   (3.12 is the safest). In the installer, tick **"Add python.exe to PATH"**.
-2. Get the code: `git clone` as above (or GitHub → Code → Download ZIP, and
-   unzip it). `python3-venv` is not needed.
-3. Double-click **`run.bat`**. It does the same job as `run.sh`, and stops
-   with a clear message on 32-bit Python (MediaPipe needs 64-bit). If
-   installing the libraries fails because MediaPipe has no package for your
-   Python version, install Python 3.12, delete the `.venv` folder and run
-   `run.bat` again.
+1. Get the code: `git clone` as above (or GitHub → Code → Download ZIP, and
+   unzip it).
+2. Double-click **`run.bat`**. It uses a Python that is already there if it
+   can (64-bit, 3.10–3.14; it skips the Microsoft Store's fake `python`),
+   and otherwise installs Python 3.14 for your user by itself (see "Windows:
+   double-click run.bat" above). Then it does the same job as `run.sh`.
 
 Run the game natively on Windows, not in WSL or a Linux virtual machine: the
 webcam does not work there without extra setup. **Webcam not working?** See
@@ -301,9 +301,11 @@ Go through these in order. After each change, start the game again.
    - Windows: `.venv\Scripts\python -c "import cv2; [print(i, cv2.VideoCapture(i, cv2.CAP_DSHOW).isOpened()) for i in range(4)]"`
    - Linux: `.venv/bin/python -c "import cv2; [print(i, cv2.VideoCapture(i).isOpened()) for i in range(4)]"`
 5. **Windows only: the picture is black or frozen, or the game keeps waiting
-   for the camera.** In `settings.py` set `WINDOWS_DIRECTSHOW = False`. The
-   game then uses Windows' default camera system (Media Foundation). It can
-   take 10+ seconds to open, so wait a bit.
+   for the camera.** The game tries each webcam with both of Windows'
+   camera systems by itself: DirectShow first (fast), then Media Foundation
+   (Windows' own; it can take 10+ seconds to open, so wait a bit). The
+   waiting screen says which one it is trying. To try Media Foundation
+   first, set `WINDOWS_DIRECTSHOW = False` in `settings.py`.
 6. **The picture works but the face is not found, or the game is slow.**
    Turn on a light in front of you. A dark room makes webcams send fewer
    frames per second and hides the face. Avoid a bright window behind you.

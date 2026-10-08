@@ -21,22 +21,7 @@ The program is one loop that repeats about 30 times a second:
 
 import os
 import random
-import sys
 import time
-
-# The game packed into one .exe (packaging/build_exe.py, PyInstaller): the
-# pictures, sounds and the face model are unpacked into a temporary folder
-# (sys._MEIPASS) each time it starts, so we work from there; but the top
-# scores must survive, so they are kept next to the .exe. The .exe has no
-# console window, so messages and errors go to a log file next to it.
-FROZEN = getattr(sys, "frozen", False)
-if FROZEN:
-    os.chdir(sys._MEIPASS)
-    GAME_FOLDER = os.path.dirname(sys.executable)
-    sys.stdout = sys.stderr = open(os.path.join(GAME_FOLDER, "dont-get-caught-log.txt"), "w",
-                                   buffering=1, encoding="utf-8")
-else:
-    GAME_FOLDER = os.path.dirname(os.path.abspath(__file__))
 
 import pygame
 
@@ -69,8 +54,8 @@ from logic.tally import parts_shown, is_done, done_time, jackpot
 from logic.teacher import Teacher
 
 MAX_DT = 0.1   # seconds; a slow frame must not fill a whole bar at once
-# The top scores file sits next to this file (or the .exe), wherever the game is started from.
-HIGH_SCORE_PATH = os.path.join(GAME_FOLDER, HIGH_SCORE_FILE)
+# The top scores file sits next to this file, wherever the game is started from.
+HIGH_SCORE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), HIGH_SCORE_FILE)
 # Answer keys -> the letter they write on your paper.
 LETTER_KEYS = {pygame.K_a: "A", pygame.K_b: "B", pygame.K_c: "C", pygame.K_d: "D"}
 BLANK_KEY = pygame.K_s   # leave the current question blank

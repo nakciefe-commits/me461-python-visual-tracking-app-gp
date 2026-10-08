@@ -3020,3 +3020,71 @@ the .exe as the run's artifact. The .exe is never committed (it is about
   ran without errors and wrote its log next to itself. The Windows build
   runs on GitHub. **A person should try** the .exe on a Windows computer
   without Python: does it start, does the webcam work, are scores kept?
+
+---
+
+## Commit #56 — No .exe: run.bat installs Python by itself; Windows camera made sturdier (branch `release-0.1-beta`)
+
+- **Date:** 8 Oct 2026
+
+### Summary
+
+The team dropped the .exe (#55): Windows players use **`run.bat`**, and it
+must work on a computer without Python. And the camera should be set up
+properly for Windows.
+
+- **`run.bat`** now finds a usable Python (an existing `.venv`, then
+  `py -3.14` / `-3.13` / `-3.12`, then `python`): it must run (the
+  Microsoft Store's `python` shortcut does not), be 64-bit and 3.10–3.14
+  (MediaPipe). If there is none it installs **Python 3.14 for this user
+  only, without an admin password**: with `winget` (`Python.Python.3.14`)
+  if Windows has it, otherwise it downloads the installer from python.org
+  with PowerShell and runs it quietly. Then `.venv`, the libraries, the
+  game, as before. A `.venv` that no longer works is made again.
+- **Windows camera.** Windows has two camera systems: DirectShow (opens a
+  webcam fast) and Media Foundation (slow to open, works with every
+  webcam). Before, only one was used and a webcam that did not work with it
+  needed `WINDOWS_DIRECTSHOW = False` by hand. Now each webcam is tried with
+  both (DirectShow first) before the next webcam; once one sends pictures it
+  is kept. On Windows the game also asks for 640×480 and a one-picture
+  buffer (less delay), and when a webcam opens but sends nothing, the
+  waiting screen names the camera system and tells where Windows' camera
+  privacy setting is.
+- The .exe build (`packaging/`, the GitHub workflow, the code for running
+  inside a .exe) is removed again; the version name "0.1 beta" stays.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `tracking/camera.py` | `camera_systems()`, `open_device(index, system)`, `describe()`, `SYSTEM_NAMES`, `PRIVACY_HINT`; `Camera.attempts` (every webcam × camera system), `selected_system`, `pending_system`. |
+| `settings.py` | `WINDOWS_CAMERA_SIZE` (640×480); `WINDOWS_DIRECTSHOW` now means "DirectShow first". |
+| `tests/test_camera.py` | `WindowsTests`: the systems' order, the size and buffer, the same webcam with the other system before the next webcam. The other camera tests act as on Linux everywhere (they failed on GitHub's Windows computer, which sends the extra DirectShow code). 278 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `run.bat` | Rewritten as above (CRLF line endings, like before). |
+| `main.py` | The .exe code (`FROZEN`, `GAME_FOLDER`, the log) removed. |
+| `README.md` | "Windows: double-click run.bat"; the Windows setup and webcam tips. |
+| `.gitignore` | The .exe build folders removed. |
+
+### Removed
+
+| File | What |
+|---|---|
+| `packaging/build_exe.py`, `.github/workflows/build-windows.yml` | The .exe build. |
+
+### Details worth knowing
+
+- **Not run on Windows by anyone yet** (this computer is Linux). Checked
+  here: the python.org download link answers (HTTP 200) and winget has
+  `Python.Python.3.14`; the camera logic is tested with a fake Windows.
+  **A person should try**, on a Windows computer *without* Python: unzip,
+  double-click `run.bat`, wait for Python and the libraries, play; then
+  double-click it again (it should start at once). And a webcam that only
+  works with Media Foundation.
+- Installing Python per user puts it in
+  `%LOCALAPPDATA%\Programs\Python\Python314`; `run.bat` uses that path
+  directly, because the new PATH only reaches new windows.

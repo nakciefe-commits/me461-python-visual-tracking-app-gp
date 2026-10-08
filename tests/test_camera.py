@@ -20,6 +20,10 @@ class CameraTests(unittest.TestCase):
         self.now = 100.0
         self.image = np.ones((2, 3, 3), dtype=np.uint8)
         self.factory = self.start_patch('tracking.camera.cv2.VideoCapture')
+        # These tests are about opening and reconnecting, not about the
+        # operating system: they act as on Linux everywhere (on Windows the
+        # camera is opened with DirectShow, see WindowsTests below).
+        self.start_patch('tracking.camera.sys.platform', 'linux')
         self.start_patch('tracking.camera.threading.Thread')
         self.start_patch('tracking.camera.time.monotonic', side_effect=lambda: self.now)
         self.start_patch('builtins.print')
@@ -202,6 +206,51 @@ class CameraTests(unittest.TestCase):
         self.assertTrue(self.camera.stop.is_set())
         self.camera.thread.join.assert_called_once_with(timeout=CAMERA_STOP_TIMEOUT)
         capture.release.assert_not_called()  # only the worker may release it
+
+
+
+
+class WindowsTests(unittest.TestCase):
+    """
+    On Windows a webcam is tried with both camera systems: DirectShow (fast
+    to open) first, then Media Foundation (works with every webcam).
+    """
+
+    def test_systems_on_windows(self):
+        from tracking import camera
+        with patch('tracking.camera.sys.platform', 'win32'):
+            with patch('tracking.camera.WINDOWS_DIRECTSHOW', True):
+                self.assertEqual(camera.camera_systems(), [cv2.CAP_DSHOW, cv2.CAP_MSMF])
+            with patch('tracking.camera.WINDOWS_DIRECTSHOW', False):
+                self.assertEqual(camera.camera_systems(), [cv2.CAP_MSMF, cv2.CAP_DSHOW])
+        with patch('tracking.camera.sys.platform', 'linux'):
+            self.assertEqual(camera.camera_systems(), [None])   # OpenCV chooses
+
+    def test_windows_asks_for_a_small_picture_and_one_frame_buffer(self):
+        from tracking import camera
+        with patch('tracking.camera.cv2.VideoCapture') as factory:
+            capture = camera.open_device(1, cv2.CAP_DSHOW)
+        factory.assert_called_once_with(1, cv2.CAP_DSHOW)
+        asked = {call.args[0]: call.args[1] for call in capture.set.call_args_list}
+        self.assertEqual(asked[cv2.CAP_PROP_BUFFERSIZE], 1)
+        self.assertIn(cv2.CAP_PROP_FRAME_WIDTH, asked)
+
+    def test_same_webcam_with_the_other_system_before_the_next_webcam(self):
+        with patch('tracking.camera.sys.platform', 'win32'), \
+                patch('tracking.camera.WINDOWS_DIRECTSHOW', True), \
+                patch('tracking.camera.CAMERA_FALLBACK_INDICES', (0,)), \
+                patch('tracking.camera.threading.Thread'), \
+                patch('builtins.print'):
+            from tracking.camera import Camera as WindowsCamera
+            camera = WindowsCamera(1)
+            self.assertEqual(camera.attempts, [(1, cv2.CAP_DSHOW), (1, cv2.CAP_MSMF),
+                                               (0, cv2.CAP_DSHOW), (0, cv2.CAP_MSMF)])
+            with patch('tracking.camera.cv2.VideoCapture') as factory:
+                factory.return_value.isOpened.return_value = False   # nothing opens
+                for _ in range(3):
+                    camera.open_capture()
+            self.assertEqual([call.args for call in factory.call_args_list],
+                             [(1, cv2.CAP_DSHOW), (1, cv2.CAP_MSMF), (0, cv2.CAP_DSHOW)])
 
 
 if __name__ == '__main__':
