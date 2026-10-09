@@ -39,6 +39,7 @@ SHAKE_PIXELS = 14              # how far the screen shakes when the teacher arri
 SHAKE_TIME = 0.6               # seconds the shaking takes to calm down
 SCENE_STRIP = 100              # pixels, height of the text strips at the top and bottom of a scene
 ALERT_RED = (235, 30, 30)      # the Metal Gear "!"
+GAME_OVER_RED = (200, 20, 30)  # the plain, still "GAME OVER" over the chat
 EXCLAIM_ABOVE = 85             # pixels from the teacher's face up to the middle of the "!"
 EXCLAIM_POP_TIME = 0.15        # seconds the "!" takes to pop from big to its size
 CAUGHT_TEXTS = ("CAUGHT COPYING!", "\"SO... YOU'RE CHEATING, HUH?\"")
@@ -475,7 +476,10 @@ class SceneDrawing:
         """
         cx = self.width // 2
         self.screen.fill(BLACK)
-        self.shout("GAME OVER", self.menu_title_font, NEON_RED, (cx, 62))
+        # Plain red and still: no neon copies, no rocking or thumping. There is
+        # no music here, so the screen is serious.
+        title = self.menu_title_font.render("GAME OVER", True, GAME_OVER_RED)
+        self.screen.blit(title, title.get_rect(center=(cx, 62)))
         # Plain (narrower) font, so it stays clear of the logos at the sides.
         self.shadow_text(subtitle, self.medium, WHITE, (cx, 116), center=True)
         # The chat is over when the last line has been typed: then both laugh.

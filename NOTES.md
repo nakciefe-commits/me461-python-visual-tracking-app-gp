@@ -3596,3 +3596,33 @@ changed.
 
 - Save the settings (sound, grade roast) between games.
 
+---
+
+## Commit #66 — A plain, still "GAME OVER"
+
+- **Date:** 9 Oct 2026
+
+### Summary
+
+On the game over screen (Gemini and Claude talking after a failed exam)
+the title "GAME OVER" is now plain red and still: no pink and cyan neon
+copies, no rocking, no thumping on the beat. No music plays there, so the
+screen should feel serious; the jokes in the chat do the rest.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `ui/draw_scenes.py` | `chat_screen()` draws the title as plain text in `GAME_OVER_RED` instead of `shout()`. |
+
+### Details worth knowing
+
+- The same title stays under the end menu after the chat (`draw_end()`
+  uses `chat_screen()` too).
+- **A person should try:** fail an exam (caught, and 3 warnings) and look
+  at the title during and after the chat.
+
+### Next
+
+- Save the settings (sound, grade roast) between games.
+
