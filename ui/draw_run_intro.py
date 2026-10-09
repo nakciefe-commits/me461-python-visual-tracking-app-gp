@@ -11,13 +11,19 @@ Like a chapter screen in Hotline Miami: diagonal neon stripes rush across
 a dark screen, and on every strong hit of the music a new line slams in,
 huge and tilted, with a white flash and the screen shaking. The text
 thumps a little on every beat in between. The colours change with each line.
+It builds up from soft to hard: the first line lands gently, and every
+line slams harder than the one before (bigger, more shake, a brighter
+flash, faster stripes). The last one, "DON'T GET CAUGHT.", comes a
+bar after the drop, fills the screen, stays longer and swaps red and
+white on every beat.
 """
 
 import math
 
 import pygame
 
-from logic.run_intro import INTRO_LINES, current_line, since_line, since_beat
+from logic.run_intro import (INTRO_LINES, FINAL_LINE, current_line, since_line, since_beat,
+                             beat_number, intensity)
 from settings import INTRO_FIRST_HIT, EXAM_TAGLINE_DELAY, EXAM_TITLE_TIME
 from ui.style import WHITE, NEON_PINK, NEON_CYAN, NEON_YELLOW, NEON_GREEN, SHADOW, mix
 
@@ -37,6 +43,18 @@ SHAKE = 16                     # pixels the screen shakes right after a hit (the
 SHAKE_TIME = 0.35              # seconds the shake takes to calm down
 BEAT_THUMP = 0.05              # how much bigger the line is right on each beat
 LINE_TILT = 6                  # degrees each line is tilted (left, right, left...)
+# Soft to hard: (times on the first line, times on the last line) for each
+# effect above; the lines in between go evenly from one to the other.
+BUILD_SHAKE = (0.3, 2.5)       # times SHAKE
+BUILD_SLAM = (0.6, 1.4)        # times SLAM_SIZE
+BUILD_FLASH = (0.35, 1.25)     # times the flash (it is capped at fully white)
+BUILD_STRIPES = (0.6, 2.0)     # times STRIPE_SPEED
+BUILD_THUMP = (0.6, 3.0)       # times BEAT_THUMP
+# The last line, the game's name.
+FINAL_PALETTES = [((255, 30, 50), (40, 0, 5), WHITE),          # swapped on every beat
+                  ((255, 255, 255), (90, 0, 10), (255, 40, 60))]
+FINAL_MARGIN = 30              # pixels left free at each side: the title is as wide as it fits
+FINAL_TILT = 3                 # degrees the title rocks left and right on the beats
 INTRO_LINE_Y = 300             # pixels, the middle of the big line
 # The title card's palette for each exam of the run (the last one for the practice).
 EXAM_PALETTES = [INTRO_PALETTES[1], INTRO_PALETTES[2], INTRO_PALETTES[4], INTRO_PALETTES[3]]
@@ -45,20 +63,33 @@ TAGLINE_Y = 370                # pixels, the middle of its sarcastic line
 INTRO_HINT = "SPACE / ENTER / turn your head RIGHT = skip      LEFT = back to the menu"
 
 
+def grow(soft_hard, build):
+    """How strong an effect is: the soft number at build 0 (first line), the hard one at 1 (last)."""
+    soft, hard = soft_hard
+    return soft + (hard - soft) * build
+
+
 class RunIntroDrawing:
     def draw_run_intro(self, t):
         """One frame of the intro, t seconds into the music."""
         line = current_line(t)
-        palette = INTRO_PALETTES[(line or 0) % len(INTRO_PALETTES)]
-        stripe, background, text_colour = palette
+        final = line == FINAL_LINE
+        build = intensity(line)   # 0 on the first line .. 1 on the last: everything grows
         since = since_line(t)
+        if final:
+            # The title's colours swap on every beat.
+            palette = FINAL_PALETTES[beat_number(t) % 2]
+        else:
+            palette = INTRO_PALETTES[(line or 0) % len(INTRO_PALETTES)]
+        stripe, background, text_colour = palette
         self.screen.fill(background)
-        self.intro_stripes(t, stripe)
+        self.intro_stripes(t * grow(BUILD_STRIPES, build), stripe)
 
-        # Right after a hit the whole picture shakes, calming down.
+        # Right after a hit the whole picture shakes, calming down (harder each line).
         calm = max(0.0, 1 - since / SHAKE_TIME)
-        dx = SHAKE * calm * math.sin(t * 90)
-        dy = SHAKE * calm * math.cos(t * 70)
+        shake = SHAKE * grow(BUILD_SHAKE, build) * calm
+        dx = shake * math.sin(t * 90)
+        dy = shake * math.cos(t * 70)
 
         cx = self.width // 2
         header = "ME461  //  SEMESTER BRIEFING"
@@ -73,10 +104,13 @@ class RunIntroDrawing:
         else:
             # The line: slams down from big, then thumps on every beat.
             slam = max(0.0, 1 - since / SLAM_TIME)
-            thump = BEAT_THUMP * max(0.0, 1 - since_beat(t) / 0.15)
-            scale = 1 + (SLAM_SIZE - 1) * slam ** 2 + thump
+            thump = BEAT_THUMP * grow(BUILD_THUMP, build) * max(0.0, 1 - since_beat(t) / 0.15)
+            scale = 1 + (SLAM_SIZE * grow(BUILD_SLAM, build) - 1) * slam ** 2 + thump
             tilt = LINE_TILT if line % 2 else -LINE_TILT
-            image = self.intro_line_image(INTRO_LINES[line], text_colour)
+            if final:
+                # Rocks left, right, left... one way per beat.
+                tilt = FINAL_TILT if beat_number(t) % 2 else -FINAL_TILT
+            image = self.intro_line_image(INTRO_LINES[line], text_colour, fill=final)
             self.blit_turned(image, (cx + dx, INTRO_LINE_Y + dy), tilt, scale)
 
             # Bars under it, one per line: how far through the briefing.
@@ -87,20 +121,23 @@ class RunIntroDrawing:
                 pygame.draw.rect(self.screen, stripe if lit else SHADOW, box)
 
         # The white flash of the hit, on top of everything.
-        flash = max(0.0, 1 - since / FLASH_TIME)
+        flash = min(1.0, grow(BUILD_FLASH, build) * max(0.0, 1 - since / FLASH_TIME))
         if flash > 0:
             self.darken(int(200 * flash), colour=WHITE)
         self.screen.blit(self.scanlines, (0, 0))
         self.footer(INTRO_HINT)
 
-    def intro_line_image(self, text, colour):
-        """The big neon line, made once per line and colour (it is the same every frame)."""
-        key = ("intro", text, colour)
+    def intro_line_image(self, text, colour, fill=False):
+        """
+        The big neon line, made once per line and colour (it is the same every
+        frame). fill=True stretches it to the whole width (for the title).
+        """
+        key = ("intro", text, colour, fill)
         if key not in self.neon_cache:
             image = self.neon_text(text, self.menu_title_font, colour, glow=True)
-            # Too wide for the window: made smaller once, here.
-            limit = self.width - 80
-            if image.get_width() > limit:
+            # Too wide for the window (or the title): resized once, here.
+            limit = self.width - (2 * FINAL_MARGIN if fill else 80)
+            if image.get_width() > limit or fill:
                 image = pygame.transform.smoothscale_by(image, limit / image.get_width())
             self.neon_cache[key] = image
         return self.neon_cache[key]

@@ -3121,3 +3121,438 @@ it; if not, it installs nothing and says to unzip the folder first
 - **A person should try** again: unzip, run `run.bat` from the folder. If
   it still says `requirements.txt` is missing, the message shows the folder
   it ran in: that tells where it really started.
+
+---
+
+## Commit #58 — New characters, a quicker sarcastic guide, a heartbeat on razor close calls
+
+- **Date:** 9 Oct 2026
+
+### Summary
+
+- **Characters.** The teacher's buddy (they go fishing together) did not
+  make much sense and was not funny; he is now **the front-row student**
+  ("great lecture, hocam" after every class), with the same numbers and
+  the same apple portrait. Three new ones, each with a code-drawn portrait:
+  - **The 7th-year legend** (older than the professor; grey hair at the
+    sides, a grey beard, a "#7" mug, steaming): the teacher's looks are
+    25 % shorter, but the bar fills ×1.3 when he is seen copying.
+  - **Not a ME student** (took ME461 as an elective; a drop of sweat, a
+    wrench held by the wrong end): the teacher thinks he's just lost, so
+    staring at the teacher fills the bar at ×0.45 (the joke is that ME is
+    hard, not that he is slow: the texts were softened for that), but it's all Greek to him: the neighbours' answers show up as
+    α β γ δ, and the player works out which letter it is. The pictures
+    (`left_greek_A` … `right_greek_D`) are made with the prompts G1–G8 in
+    `IMAGE_PROMPTS.md` and are in `assets/images/` (all 8 checked: the
+    paper did not move); if one is missing, the Greek letter is on a note.
+  - **The "quick question" guy** (a hand always up, a "?" bubble): the
+    teacher is busy 30 % longer, but the bar creeps up (full in 40 s)
+    while he is not looking at his paper.
+  Ten characters now; the row is ordered NPC, cap, glasses, nerd, energy,
+  front-row student, 7th-year legend, not a ME student, "quick question",
+  lazy. The team chose these with care: the characters are types from a
+  real class, so none of them is named with an insult ("suck-up" was
+  dropped) or could point at real classmates (an exchange student and a
+  "5th-year retaker" were tried and dropped for that).
+- **The opening notice** is rewritten: it now says first of all that the
+  game is fiction and that **all its characters are imaginary**, any
+  resemblance to real students, professors or classrooms coincidental
+  ("Yes, even the teacher. He is imaginary too. Probably.").
+- **How to play** was too slow and too long (41 lines, about 2 minutes of
+  talking). Now 23 lines, about 45 seconds: it still teaches every
+  mechanic, with small tips ("guessing loses points: it's called math",
+  "copy NOW, not 'in a sec'", "glance up: paranoia pays"), all sarcastic.
+  Typing 40 → 65 letters/s, the pause after a line 1.6 → 0.9 s, after a
+  task 1.0 → 0.5 s, holding a direction 0.8 → 0.5 s.
+- **Heartbeat.** A razor close call (getting away with the bar above
+  `CLOSE_CALL_EDGE`) now plays a hard, fast heartbeat (170 bpm, 1.8 s),
+  and meanwhile the music sounds far away: muffled with a long echo, the
+  real music almost silent, then it fades back.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `settings.py` | Characters `veteran`, `notme`, `asker`; `HEARTBEAT_BPM` (170), `HEARTBEAT_TIME` (1.8 s), `HEARTBEAT_MUSIC_DUCK` (0.1), `FAR_MUSIC_CUTOFF` (600 Hz), `FAR_MUSIC_ECHO` (1.6 s). |
+| `ui/draw_characters.py` | `portrait_veteran()`, `portrait_notme()`, `portrait_asker()` and their colours. |
+| `ui/sounds.py` | `heart_thump()`, `heartbeat()` (the "heartbeat" sound; `heartbeat.mp3` replaces it if added), `far_away()`, `SOUND_DUCKS`, `FAR_TRACKS`, `Sounds.far_music()`, `Sounds.load_samples()`, `track_samples`. |
+| `tests/test_character.py` | `teacher_as()`; tests for the front-row student, the 7th-year legend, not a ME student, the "quick question" guy. |
+| `tests/test_sounds.py` | `HeartbeatTests`, `FarAwayTests`. 290 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `settings.py` | `buddy` → `frontrow` (new name and texts, same numbers); faster `GUIDE_*` timings. |
+| `ui/draw_characters.py` | `portrait_buddy()` → `portrait_frontrow()`. Lazy but funny has a new, cool portrait (`portrait_lazy()`: a pompadour, aviator shades with a glint, a smirk, a popped collar, a comedian's microphone, sparkles; `sparkle()`); the old one (HA, pizza) is gone, its pizza was hardly seen. `face()` lost its `grin`. |
+| `ui/draw_notice.py` | `DISCLAIMER_LINES` rewritten (all characters imaginary). |
+| `logic/character.py` | The `greek` rule, `GREEK`, `neighbour_letter()`. |
+| `ui/draw_game.py` | The Greek pictures (`PAPER_IMAGES`), or the Greek letter on the note; its hint line. |
+| `IMAGE_PROMPTS.md` | Prompts G1–G8 for the Greek pictures. |
+| `logic/guide.py` | `GUIDE_STEPS` rewritten: shorter, sarcastic, with tips; the same tasks in the same order. |
+| `logic/game.py` | A razor close call also adds a `"heartbeat"` event. |
+| `ui/sounds.py` | `play()` of a `SOUND_DUCKS` sound starts the far-away music; `music()` keeps the real music down meanwhile; `load_track()` also loads the exam track whole. |
+| `tests/test_game.py` | The razor close call has a heartbeat, a normal one does not. |
+| `main.py` | A comment (the buddy is gone). |
+| `README.md`, `PLAN.md`, `LEARN.md` | The new characters, the shorter guide, the heartbeat. |
+
+### Removed
+
+| File | What |
+|---|---|
+| `settings.py` | The teacher's buddy (`buddy`). |
+
+### Details worth knowing
+
+- pygame streams the music from the file (`pygame.mixer.music`), and a
+  stream cannot get effects. So the "far away" music is made by hand:
+  the exam track is also loaded whole (it is an 11 s loop, about 0.04 s to
+  load), and at a razor close call the next 1.8 s of it, from where the
+  stream is now, are muffled and echoed with the FFT (about 0.02 s) and
+  played as a normal sound. Only tracks in `FAR_TRACKS` (short loops) are
+  loaded like that.
+- The heartbeat thumps go through `tanh` (overdrive): a pure 75 Hz note is
+  barely heard on laptop speakers; the overtones make it heard.
+- **A person should try:** the character screen (do the new portraits
+  read well, is the hand clear, do the + / − lines fit); the guide from
+  start to end (too fast now? every line readable?); and a razor close
+  call in an exam (look sideways while he watches until the bar is above
+  80 %, then look down): is the heartbeat hard enough, is the far-away
+  music clear and does it come back smoothly? Also with the sound off.
+
+### Next
+
+- Balance the new characters after a few runs (the numbers are in
+  `CHARACTERS`).
+- A real `heartbeat.mp3` could replace the made one, if the team finds a
+  good one.
+
+---
+
+## Commit #59 — The grade roast after the final, with a show for good grades
+
+- **Date:** 9 Oct 2026
+
+### Summary
+
+After the final, once the semester grade is stamped (and a new top
+score's name is typed), Gemini and Claude come back over the results
+screen and roast the letter in two or three sarcastic lines, like the game
+over chat ("CC. Wow, I thought you were special." / "NAAHHH. Average.
+Always was."; "CB. Hey, wow, you have some potential!"; "AA? ... You
+are... \"the one\" :O"). Every letter has two or three conversations, picked
+with a Bag. It can be turned off in Settings (**GRADE ROAST ON/OFF**); any
+key, a click or the head (select / back) hurries it, then closes it; on its
+own it closes 3 s after the last line.
+
+A good grade gets a show first, bigger step by step; below BB nothing:
+
+| Grade | Show |
+|---|---|
+| BB | the letter slams down big, "RESPECTABLE.", a little confetti, a chord |
+| BA | the same, bigger, pink to yellow, light rays turning behind it, more confetti, the fanfare |
+| AA | an explosion and a white flash, the screen shakes, gold shimmering letters, gold rays, fireworks bursting all over (each with its bang and crackle), "LEGENDARY CHEATER", confetti everywhere |
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `logic/verdict.py` | `VERDICTS` (the lines per letter), `Verdict` (typing, skip, finished, hype, `firework_times()`), `HYPE_SOUNDS`. |
+| `settings.py` | `VERDICT_DELAY`, `VERDICT_TYPE_SPEED`, `VERDICT_LINE_PAUSE`, `VERDICT_HOLD`, `VERDICT_FADE`, `VERDICT_HYPE`, `VERDICT_REVEAL`, `VERDICT_FIREWORK_EVERY`. |
+| `ui/draw_scenes.py` | `draw_verdict()`, `hype_show()`, `hype_colour()`, `light_rays()`, `firework_burst()`, `spark_at()`, `aa_flash_and_shake()` and their constants. |
+| `ui/sounds.py` | `boom()` and `firework()` (the "boom" and "firework" sounds). |
+| `tests/test_verdict.py` | Every letter has a roast, the lines fit, typing, skip, hold, laughing, the hype and the fireworks. 301 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `main.py` | `roast_on`, `verdict`, `verdict_bags`; `update_verdict()`; the "GRADE ROAST" setting; keys, clicks and the head skip the roast while it plays; `play_guide_sounds()` also plays the roast's sounds. |
+| `ui/draw_results.py` | `confetti()` takes how many pieces. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The grade roast. |
+
+### Details worth knowing
+
+- The setting is not saved between games (like the sound setting): it is
+  on every time the game starts.
+- A frame of the AA show takes about 7 ms to draw here (the worst ~20 ms),
+  so it should not slow the game.
+- **A person should try:** finish a run with a bad grade, a BB, a BA and an
+  AA (the grade is on a curve: an AA needs a run far above the others;
+  for a quick look, a fresh `highscore.json` uses the share of right
+  answers, 90 % = AA). Are the jokes readable in time, is the AA show epic
+  enough and not too long, is the boom too loud, does Space / the head
+  skip it well? Turn it off in Settings and check that it does not come.
+  Also with a new top score: the roast must wait until the name is typed.
+
+### Next
+
+- Save the settings (sound, grade roast) between games.
+
+---
+
+## Commit #60 — The briefing goes from soft to hard and ends on "DON'T GET CAUGHT."
+
+- **Date:** 9 Oct 2026
+
+### Summary
+
+The sarcastic briefing before the character screen now builds up. The
+lines still come one per bar, evenly, but the first one lands softly and
+every line slams harder than the one before: it starts bigger, the screen
+shakes more, the flash is brighter, the thump on each beat is stronger and
+the stripes rush faster. A new last line, **"DON'T GET CAUGHT."**, comes
+on the next bar like the others (one beat after the music's drop), fills
+the whole width, swaps red and white on every beat and stays 8 beats
+instead of 4; then the characters slide in.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `logic/run_intro.py` | The line "DON'T GET CAUGHT.", `FINAL_LINE`, `INTRO_END`, `intensity(line)`. |
+| `settings.py` | `INTRO_TITLE_BEATS` (beats the title stays). |
+| `ui/draw_run_intro.py` | `grow()`, `BUILD_*` pairs (each effect's strength on the first and the last line), `FINAL_PALETTES`, `FINAL_MARGIN`, `FINAL_TILT`; `intro_line_image(..., fill=True)` for the full-width title. |
+| `tests/test_run_intro.py` | Every line one per bar, the title last and staying longer, the rising intensity. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `logic/run_intro.py` | `is_over()` is true from `INTRO_END` (the title gone), no longer from the drop. |
+| `ui/draw_run_intro.py` | `draw_run_intro()` scales its effects by `intensity()` and draws the title specially. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The build-up and the new line. |
+
+### Details worth knowing
+
+- With one line per bar only 7 fit before the drop (11.84 s), so the
+  title comes on bar 8 (12.24 s, a beat after the drop) and the
+  characters at about 15.5 s instead of at the drop. The character
+  screen keeps thumping on the beat, so it stays in time.
+- A first try sped the last lines up (every 2 beats); the team did not
+  want that: the timing stays even, only the strength grows.
+- The build-up numbers are drawing constants in `ui/draw_run_intro.py`
+  (like the other ones there), not in `settings.py`.
+- **A person should try:** press PLAY with sound and watch to the
+  characters: do the lines land on the hits, does it feel soft at first
+  and hard at the end, is "DON'T GET CAUGHT." readable and long enough
+  (`INTRO_TITLE_BEATS`), is the shake/flash of the last lines too much
+  (lower the second number of `BUILD_SHAKE` / `BUILD_FLASH`)? Also once
+  without a sound device.
+
+### Next
+
+- Save the settings (sound, grade roast) between games.
+
+---
+
+## Commit #61 — The mugshot: your photo on the torn exam, "GOT CAUGHT!"
+
+- **Date:** 9 Oct 2026
+
+### Summary
+
+After losing an exam (caught, or the last warning), before the GAME OVER
+chat, a new scene: the screen goes black and silent, and the exam paper
+(the JAZZ QUIZ, torn in half and taped back together, under one lamp in a
+dark room) slowly fades in. Clipped to it is a photo of the player's face,
+taken by the webcam the moment they lost and cropped around the face.
+After 2.5 s a whiteboard marker squeaks and "GOT CAUGHT!" is written over
+the paper in red, from left to right. Space skips it like the other
+scenes after losing.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `logic/mugshot.py` | `crop_box()`: the part of the webcam picture to cut out so the face is in the middle of the photo, inside the picture. |
+| `ui/draw_mugshot.py` | `MugshotDrawing`: `load_mugshot()` (finds the green rectangle and the writing), `take_mugshot()`, `draw_mugshot()`, a plain version without the pictures. |
+| `assets/images/torn.jpeg`, `got_caught.jpeg` | The paper, and the same paper with "GOT CAUGHT!" (made with Gemini, prompts M1/M2 in `IMAGE_PROMPTS.md`). |
+| `settings.py` | `MUGSHOT_SCENE_TIME`, `MUGSHOT_FADE_TIME`, `MUGSHOT_WRITE_DELAY`, `MUGSHOT_WRITE_TIME`, `MUGSHOT_FACE_ZOOM`, `MUGSHOT_FACE_LOWER`. |
+| `ui/sounds.py` | `marker()`: a whiteboard marker writing (squeaky strokes, a long underline); the "pen" sound, replaced by `marker.mp3` if the team adds one. |
+| `tracking/head_tracker.py` | `face_box()`: the box around the face points. |
+| `tests/test_mugshot.py` | The crop: face in the middle, stays inside, shrinks to fit, no face. Also tests for the marker sound and the new scene order (`test_game.py`, `test_sounds.py`). 311 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `logic/game.py` | `MUGSHOT_SCENE` between the warning/caught scene and game over (`start_mugshot()`), with a `"pen"` event at `MUGSHOT_WRITE_DELAY`. |
+| `main.py` | Keeps the newest webcam picture (`self.frame`); on `"lost"` it calls `renderer.take_mugshot()`. |
+| `ui/render.py`, `ui/draw_scenes.py` | `MugshotDrawing` added to the Renderer; `draw_scene()` draws the mugshot. |
+| `IMAGE_PROMPTS.md` | The mugshot prompts (M1, M2). |
+| `README.md`, `LEARN.md`, `PLAN.md` | The mugshot. |
+
+### Details worth knowing
+
+- The photo is only kept in memory and replaced at the next loss; it is
+  never written to disk.
+- The photo goes where the picture is pure green (green clearly above red
+  and blue), so the paperclip on its edge stays on top. A new paper picture
+  needs no measuring, only a green rectangle.
+- "Writing" is the written picture shown from left to right over the
+  plain one, only between the columns where the two differ.
+- The photo is mirrored, like every other picture of the player.
+- **A person should try:** get caught with the webcam on (and once with
+  3 warnings): is your face well in the middle of the photo (tune
+  `MUGSHOT_FACE_ZOOM` / `MUGSHOT_FACE_LOWER`), is the fade slow enough, does
+  the marker sound like a whiteboard marker and match the writing, is it
+  too long (`MUGSHOT_SCENE_TIME`)? Space must skip it. Also move half out
+  of the picture when you lose.
+
+### Next
+
+- Save the settings (sound, grade roast) between games.
+
+---
+
+## Commit #62 — A debug panel (F3) that shows how the head tracking works
+
+- **Date:** 9 Oct 2026
+
+### Summary
+
+F3 turns a technical panel on and off, on every screen, for showing the
+course staff how the game works. It sits on the right side of the window,
+over whatever is shown, and follows the data from top to bottom:
+
+1. the webcam picture with MediaPipe's face mesh, the box around the 478
+   face points and the arrow where the nose points; how many milliseconds
+   MediaPipe took and the game's frames per second;
+2. the head's 3×3 rotation matrix from MediaPipe and the yaw and pitch
+   worked out from it;
+3. a yaw/pitch chart split by the player's calibrated thresholds into
+   LEFT / SCREEN / RIGHT / DOWN (the area the head is in lights up), with
+   this frame's raw angle (hollow dot) and the smoothed one (full dot);
+4. the decision: the raw direction, a bar filling for HOLD_TIME, and the
+   direction the game uses (with the tracker's note when the face is lost);
+5. yaw and pitch over the last 4 s, with the thresholds dashed;
+6. during an exam: suspicion and warnings, the teacher's place, state and
+   time, and how long each neighbour has been looked at.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `ui/draw_debug.py` | `DebugDrawing`: `draw_debug()`, `angle_chart()`, `rotation_and_angles()`, `decision_line()`, `angle_graph()`, `game_state_lines()`. |
+| `settings.py` | `DEBUG_HISTORY_TIME`, `DEBUG_ANGLE_RANGE`. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `tracking/head_tracker.py` | Keeps `raw_yaw`, `raw_pitch` (before smoothing) and `rotation` (the 3×3 matrix) of the last frame; `draw_face()` can also draw the face box. |
+| `main.py` | F3 (`self.debug`), works first, even while typing a name; times `tracker.read()` (`track_ms`); `draw_debug()` after the crossfade, with the face drawn on a copy of the webcam picture. |
+| `ui/render.py` | `DebugDrawing` added to the Renderer. |
+| `README.md`, `LEARN.md`, `PLAN.md` | The debug panel. |
+
+### Details worth knowing
+
+- The panel only reads; it changes nothing in the game. Drawing it takes
+  under 1 ms; the extra cost is copying and shrinking the webcam picture.
+- The chart is mirrored like the camera: turning to your left moves the
+  dot left.
+- No tests: it only draws. 311 tests still pass.
+- **A person should try:** press F3 on the start screen, in the menus and
+  in an exam: does the mesh follow the face, do the dots and the lit area
+  move the right way when turning left, right and looking down, does the
+  graph cross the dashed lines when the direction changes? Look down until
+  the face is lost: the note "head down" must show. Is the text readable
+  on a projector?
+
+### Next
+
+- Save the settings (sound, grade roast) between games.
+
+---
+
+## Commit #63 — A fast nod down counts as DOWN; the debug panel writes a log
+
+- **Date:** 9 Oct 2026
+
+### Summary
+
+Sometimes looking down at the paper did not count: the game stayed on the
+classroom. MediaPipe often loses the face during a quick nod, before the
+head is `LOST_DOWN_PITCH` (8°) down, and then the old rule ("lost while
+already tilted down") did not fire. Now the tracker also looks at which way
+the head was going (the team's idea): if the face vanished while the pitch
+was falling at least `LOST_DOWN_SPEED` (40°/s) over the last
+`PITCH_TREND_TIME` (0.3 s), it counts as DOWN ("head down").
+
+To find out what really happens on a player's computer, the debug panel
+(F3) now also writes every frame's tracking numbers to `debug_log.csv`
+while it is on, and shows the nod speed.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `tracking/head_tracker.py` | `pitch_history`, `remember_pitch()`, `pitch_speed()`, `went_down()`. |
+| `settings.py` | `LOST_DOWN_SPEED`, `PITCH_TREND_TIME`, `DEBUG_LOG_FILE`. |
+| `main.py` | `toggle_debug()` opens and closes the log, `log_debug()` writes a row per frame. |
+| `tests/test_head_tracker.py` | Lost while nodding down fast = DOWN (and stays), slow or upwards = not, the history length. 315 tests. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `tracking/head_tracker.py` | `current_direction()` uses `went_down()`; `reset_tracking()` forgets the old nod. |
+| `ui/draw_debug.py` | Shows the nod speed (green when fast enough to count). |
+| `.gitignore` | `debug_log.csv`. |
+| `README.md`, `LEARN.md` | The new rule and the log. |
+
+### Details worth knowing
+
+- The log's angles are measured from the calibrated neutral, like the
+  thresholds. Columns: time, screen, face_found, raw_yaw, raw_pitch, yaw,
+  pitch, pitch_speed, raw_direction, direction, status, track_ms.
+- If the look is still missed, the log shows which case it is: the face
+  is lost (face_found 0) but the nod was too slow (then lower
+  `LOST_DOWN_SPEED`), or the face is still found but the pitch never gets
+  below the down threshold (then calibration / `PITCH_DOWN_THRESHOLD`).
+- **A person should try:** press F3, look down at the paper quickly and
+  slowly, ten times each, and check the classroom goes dark every time.
+  Then send `debug_log.csv`.
+
+### Next
+
+- Tried by the team (9 Oct 2026): after recalibrating (`k`) looking down
+  worked well. A bad calibration (e.g. the DOWN pose not held far enough
+  down) makes the down threshold wrong, so recalibrate first when looks
+  are missed. If they still are, look at a `debug_log.csv` and tune.
+
+---
+
+## Commit #64 — Where the music comes from (README)
+
+- **Date:** 9 Oct 2026
+
+### Summary
+
+The README now says where the three music tracks come from. The team
+made all three with Suno, each from a sample: the menu theme from "Bastır"
+(Murda and EGE!), the character music from "Blizzard" (Hotline Miami 2),
+the exam music from the opening of "Endo's Game" (the film *Marty
+Supreme*). It also says why Hotline Miami: an action crime game in an 80s
+Vice City world, which the author loves, and copying in an exam as a
+"crime" fits the game's satire. No code changed.
+
+### Changed
+
+| File | Change |
+|---|---|
+| `README.md` | "Music": a table of the tracks and their samples, and why Hotline Miami. |
+| `PLAN.md` | Points to it. |
+
+### Details worth knowing
+
+- NOTES #28, #33 and #48 are left as they were written; this entry adds
+  what they did not say.
+- The tracks use other artists' music: fine for a course project, but
+  check the rights before the game is shared publicly.
+
+### Next
+
+- Save the settings (sound, grade roast) between games.
+

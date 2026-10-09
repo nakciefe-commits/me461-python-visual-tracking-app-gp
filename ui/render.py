@@ -10,6 +10,8 @@ The drawing code is split over a few files, one per kind of screen:
     draw_run_intro.py the sarcastic briefing before it, timed to its music
     draw_game.py    the classroom, your paper, the neighbours, the strips
     draw_scenes.py  warning, caught and game over scenes
+    draw_mugshot.py the mugshot after losing: your photo on the taped-up exam
+    draw_debug.py   the debug panel (F3): what the head tracking sees and decides
     draw_guide.py   how to play: Gemini and Claude teach the game
     draw_results.py the score count after an exam, the run's results, top scores
 
@@ -35,6 +37,8 @@ from ui.draw_run_intro import RunIntroDrawing
 from ui.draw_guide import GuideDrawing
 from ui.draw_game import GameDrawing, LOOK_AWAY_IMAGES, PAPER_IMAGES
 from ui.draw_menus import MenuDrawing, BUTTON_TEXT, BUTTON_HEIGHT, BUTTON_PADDING
+from ui.draw_debug import DebugDrawing, DEBUG_CAMERA_SIZE
+from ui.draw_mugshot import MugshotDrawing
 from ui.draw_notice import NoticeDrawing
 from ui.draw_results import ResultsDrawing
 from ui.draw_scenes import SceneDrawing, SCENE_PICTURE_TOP, GEMINI, CLAUDE, LOGO_GLOW
@@ -76,7 +80,8 @@ def load_classroom(name, width, height, top=CLASSROOM_TOP):
 
 
 class Renderer(NeonStyle, NoticeDrawing, MenuDrawing, BriefingDrawing, GameDrawing, SceneDrawing,
-               ResultsDrawing, GuideDrawing, CharacterDrawing, RunIntroDrawing):
+               ResultsDrawing, GuideDrawing, CharacterDrawing, RunIntroDrawing, MugshotDrawing,
+               DebugDrawing):
     def __init__(self, screen):
         self.screen = screen
         self.width, self.height = screen.get_size()
@@ -84,6 +89,7 @@ class Renderer(NeonStyle, NoticeDrawing, MenuDrawing, BriefingDrawing, GameDrawi
         self.mood = None   # today's teacher mood; main.py sets it before each exam (see picture())
         self.load_fonts()
         self.load_pictures()
+        self.load_mugshot()   # the torn exam paper for the mugshot (draw_mugshot.py)
 
         # Made once, because making them is slow.
         self.exclaim = self.make_exclaim()   # the Metal Gear "!"

@@ -18,13 +18,14 @@ thresholds from that (see Calibration at the bottom).
 """
 
 import math
+from collections import deque
 
 import cv2
 import mediapipe as mp
 from mediapipe.tasks.python import vision
 
 from settings import (FACE_MODEL_FILE, MIN_FACE_CONFIDENCE, FACE_LOST_GRACE,
-                      LOST_DOWN_PITCH, YAW_THRESHOLD, PITCH_DOWN_THRESHOLD,
+                      LOST_DOWN_PITCH, LOST_DOWN_SPEED, PITCH_TREND_TIME, YAW_THRESHOLD, PITCH_DOWN_THRESHOLD,
                       YAW_SIGN, PITCH_SIGN, SMOOTHING, HOLD_TIME, CALIBRATION_SAMPLE_TIME,
                       CALIBRATION_SHARE, CALIBRATION_MIN_ANGLE, CALIBRATION_MAX_ANGLE)
 
@@ -77,8 +78,12 @@ class HeadTracker:
 
         self.last_seen = None     # time (seconds) of the last frame with a face
         self.last_raw_pitch = 0.0 # unsmoothed pitch of the last frame with a face
+        self.pitch_history = deque()   # (time, raw pitch) of the last PITCH_TREND_TIME seconds with a face
         self.landmarks = None     # the 478 face points of the last frame (for drawing)
         self.nose_vector = None   # where the nose points, camera space (for drawing)
+        self.raw_yaw = 0.0        # unsmoothed angles of the last frame with a face (debug panel)
+        self.raw_pitch = 0.0
+        self.rotation = None      # the head's 3x3 rotation matrix from MediaPipe (debug panel)
 
         self.direction = SCREEN   # the direction we currently believe
         self.candidate = SCREEN   # a new direction waiting for HOLD_TIME to pass
@@ -113,6 +118,7 @@ class HeadTracker:
         # the direction the nose points, in camera space (x right, y up,
         # z towards the camera).
         m = result.facial_transformation_matrixes[0]
+        self.rotation = [[m[row][col] for col in range(3)] for row in range(3)]
         nose_x, nose_y, nose_z = m[0][2], m[1][2], m[2][2]
         self.nose_vector = (nose_x, nose_y)
 
@@ -121,12 +127,43 @@ class HeadTracker:
         raw_yaw = YAW_SIGN * math.degrees(math.atan2(nose_x, nose_z))
         raw_pitch = PITCH_SIGN * math.degrees(math.asin(max(-1.0, min(1.0, nose_y))))
         self.last_raw_pitch = raw_pitch
+        self.raw_yaw, self.raw_pitch = raw_yaw, raw_pitch
+        self.remember_pitch(now, raw_pitch)
 
         # Smoothing: move only part of the way towards the new value, so one
         # noisy frame cannot make the angle jump.
         self.yaw += SMOOTHING * (raw_yaw - self.yaw)
         self.pitch += SMOOTHING * (raw_pitch - self.pitch)
         return True
+
+    def remember_pitch(self, now, raw_pitch):
+        """Keep the last PITCH_TREND_TIME seconds of pitch, to see which way the head is moving."""
+        self.pitch_history.append((now, raw_pitch))
+        while now - self.pitch_history[0][0] > PITCH_TREND_TIME:
+            self.pitch_history.popleft()
+
+    def pitch_speed(self):
+        """
+        How fast the head was nodding in the last frames with a face, in
+        degrees per second (negative = going down); 0 if not enough frames.
+        """
+        if len(self.pitch_history) < 2:
+            return 0.0
+        (first_time, first_pitch), (last_time, last_pitch) = self.pitch_history[0], self.pitch_history[-1]
+        if last_time <= first_time:
+            return 0.0
+        return (last_pitch - first_pitch) / (last_time - first_time)
+
+    def went_down(self):
+        """
+        True if the face vanished on its way down to the paper: it was
+        already tilted down (LOST_DOWN_PITCH), or it was moving down fast
+        (LOST_DOWN_SPEED) - a quick nod loses the face before it is far down.
+        """
+        if self.last_seen is None:
+            return False
+        pitch_when_lost = self.last_raw_pitch - self.neutral_pitch
+        return pitch_when_lost < -LOST_DOWN_PITCH or self.pitch_speed() < -LOST_DOWN_SPEED
 
     def face_visible(self, now):
         """
@@ -146,6 +183,7 @@ class HeadTracker:
         self.nose_vector = None
         self.yaw = self.neutral_yaw
         self.pitch = self.last_raw_pitch = self.neutral_pitch
+        self.pitch_history.clear()   # an old nod must not count after the gap
         self.direction = self.candidate = SCREEN
         self.candidate_since = 0.0
         self.status = "waiting for camera"
@@ -205,10 +243,9 @@ class HeadTracker:
             return self.update_direction(now)
 
         # Looking down at the paper hides the face (the camera mostly sees
-        # the top of the head). So if the face vanished while tilting down,
-        # the player is reading the paper, not gone.
-        pitch_when_lost = self.last_raw_pitch - self.neutral_pitch
-        if self.last_seen is not None and pitch_when_lost < -LOST_DOWN_PITCH:
+        # the top of the head). So if the face vanished while tilting down
+        # (or while moving down fast), the player is reading the paper, not gone.
+        if self.went_down():
             self.status = "head down"
             self.direction = self.candidate = DOWN
             return DOWN
@@ -224,16 +261,21 @@ class HeadTracker:
     # ------------------------------------------------------------------
     # Drawing
     # ------------------------------------------------------------------
-    def draw_face(self, frame, colour):
+    def draw_face(self, frame, colour, box_colour=None):
         """
         Draw what the tracker sees onto a BGR frame (before mirroring it):
         the face outline, eyes and lips, and an arrow showing where the nose
-        points. `colour` is (Blue, Green, Red).
+        points. `colour` is (Blue, Green, Red). With box_colour, also the
+        box around all the face points (face_box(), the debug panel).
         """
         if self.landmarks is None:
             return
         height, width = frame.shape[:2]
         points = [(int(p.x * width), int(p.y * height)) for p in self.landmarks]
+        if box_colour is not None:
+            left, top, right, bottom = self.face_box()
+            cv2.rectangle(frame, (int(left * width), int(top * height)),
+                          (int(right * width), int(bottom * height)), box_colour, 1)
 
         for line in FACE_LINES:
             cv2.line(frame, points[line.start], points[line.end], colour, 1, cv2.LINE_AA)
@@ -245,6 +287,18 @@ class HeadTracker:
         tip = points[NOSE_TIP]
         end = (int(tip[0] + nose_x * ARROW_LENGTH), int(tip[1] - nose_y * ARROW_LENGTH))
         cv2.arrowedLine(frame, tip, end, colour, 3, cv2.LINE_AA, tipLength=0.25)
+
+    def face_box(self):
+        """
+        Where the face is in the last frame, as (left, top, right, bottom),
+        each 0..1 of the frame's width/height (unmirrored), or None if no
+        face was found. For cropping the mugshot photo.
+        """
+        if self.landmarks is None:
+            return None
+        xs = [p.x for p in self.landmarks]
+        ys = [p.y for p in self.landmarks]
+        return min(xs), min(ys), max(xs), max(ys)
 
     def close(self):
         if self.detector is not None:

@@ -9,6 +9,9 @@ Almost all of it is numbers that the rules already have (how fast a paper
 gets sharp, how fast the bar fills, how long the teacher is busy), so a
 character is only data: rules() fills in what a character does not list.
 
+Not a ME student reads the neighbours' answers as Greek letters (A-D =
+α β γ δ, neighbour_letter()): the player has to work out which one it is.
+
 The energy drink addict is the only one with a state of his own (Energy
 below): every exam a coin toss gives him a sugar rush (the world runs
 slower for him) or a crash (sleepy spells, when he reads slowly).
@@ -20,6 +23,7 @@ No pygame and no camera here, so it is tested on its own
 from settings import CHARACTERS, DEFAULT_CHARACTER
 
 RUSH, CRASH = "RUSH", "CRASH"   # the energy drink addict's two kinds of day
+GREEK = {"A": "α", "B": "β", "C": "γ", "D": "δ"}   # what not a ME student sees on a neighbour's paper
 
 # What every rule is for a character that does not mention it: no change.
 # (What each one means is explained above CHARACTERS in settings.py.)
@@ -28,7 +32,7 @@ DEFAULTS = {
     "screen_focus_time": 0.0, "screen_blur_start": 1.0,
     "jokers": 0, "hand_in_share": 0.0, "late_penalty": 0,
     "busy_times": 1.0, "watching_times": 1.0,
-    "both_know": False,
+    "both_know": False, "greek": False,
     "energy": False, "rush_chance": 0.5, "rush_chance_drop": 0.0, "rush_speed": 1.0, "crash_every": (10.0, 10.0), "crash_time": 0.0,
     "crash_focus": 1.0,
 }
@@ -56,6 +60,13 @@ def screen_clarity(character_rules, look_time):
         return 1.0
     start = character_rules["screen_blur_start"]
     return start + (1 - start) * min(1.0, look_time / focus_time)
+
+
+def neighbour_letter(character_rules, letter):
+    """What the player sees for `letter` on a neighbour's paper: Greek for not a ME student ("?" stays "?")."""
+    if character_rules["greek"]:
+        return GREEK.get(letter, letter)
+    return letter
 
 
 def rush_chance(character_rules, rushes_before):

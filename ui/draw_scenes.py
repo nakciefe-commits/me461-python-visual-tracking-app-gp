@@ -3,18 +3,22 @@ Drawing the scenes: short moments where the game is frozen (game.py says
 which one plays and for how long).
     warning    the teacher walks up to your desk and points at you
     caught     a Metal Gear "!", then the teacher tears up your exam
+    mugshot    your taped-up exam with your photo (in draw_mugshot.py)
     game over  the Gemini and Claude logos, with faces, make fun of you
+And the grade roast after the final (draw_verdict()): the same two logos
+comment on your semester grade, over the results screen.
 Part of Renderer (see render.py).
 """
 
 import math
+import random
 
 import pygame
 
-from logic.game import WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE
+from logic.game import WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE, MUGSHOT_SCENE
 from settings import (MAX_WARNINGS, WARNING_SCENE_TIME, TEACHER_APPROACH_TIME, CAUGHT_SCENE_TIME,
-                      CAUGHT_EXCLAIM_TIME, GAME_OVER_TIME)
-from ui.style import BLACK, WHITE, NEON_RED, NEON_YELLOW, mix, menu_font
+                      CAUGHT_EXCLAIM_TIME, GAME_OVER_TIME, VERDICT_FADE)
+from ui.style import BLACK, WHITE, NEON_RED, NEON_YELLOW, NEON_PINK, NEON_CYAN, NEON_GREEN, mix, menu_font
 from logic.teacher import BOARD, DESK
 
 # The scenes (see game.py). Their pictures are optional: without them the
@@ -118,6 +122,30 @@ CLAUDE_RAYS = [(0, 1.0), (31, 0.85), (58, 1.0), (92, 0.9), (121, 1.0), (149, 0.8
                (180, 1.0), (211, 0.9), (238, 1.0), (272, 0.85), (301, 1.0), (329, 0.9)]
 BLINK_EVERY = 3.2              # seconds between blinks
 BLINK_TIME = 0.15              # seconds a blink takes
+VERDICT_DARKEN = 225           # 0-255, how dark the results screen gets behind the grade roast
+# The show for a good grade (hype 1 = BB, 2 = BA, 3 = AA; see logic/verdict.py).
+HYPE_TITLES = {1: "RESPECTABLE.", 2: "CERTIFIED SNEAKY", 3: "LEGENDARY CHEATER"}   # under the big letter
+HYPE_CONFETTI = {1: 25, 2: 60, 3: 140}     # pieces of confetti
+LETTER_SHOW_Y = 270            # pixels, the middle of the big letter during the show
+LETTER_TOP_Y = 66              # pixels, where it goes when the chat starts
+LETTER_SCALE = {1: 2.2, 2: 2.8, 3: 3.6}    # how big the letter is during the show (x the big font)
+LETTER_SLAM_TIME = 0.3         # seconds the letter takes to slam down from huge
+LETTER_SLAM_FROM = 3.0         # it starts this many times bigger
+LETTER_RISE_TIME = 0.4         # seconds it takes to go up when the chat starts
+HYPE_TITLE_GAP = 125           # pixels from the big letter's middle down to its title (during the show)
+GOLD = (255, 200, 40)          # the AA's letters
+RAYS = 14                      # light rays behind the big letter (BA and AA)
+RAY_SPEED = 25                 # degrees per second they turn
+RAY_LENGTH = 700               # pixels
+FLASH_TIME_AA = 0.5            # seconds of the white flash when an AA lands
+SHAKE_AA = 22                  # pixels the screen shakes when an AA lands ...
+SHAKE_FIREWORK = 6             # ... and on each firework during the show
+FIREWORK_TIME = 1.4            # seconds a firework's sparks fly
+FIREWORK_SPARKS = 70           # sparks in one firework
+FIREWORK_SPEED = (200, 520)    # pixels per second, slowest and fastest spark
+FIREWORK_TRAIL = 0.09          # seconds of flight each spark's trail shows
+FIREWORK_GRAVITY = 180         # pixels per second², the sparks fall
+FIREWORK_COLOURS = [GOLD, NEON_PINK, NEON_CYAN, NEON_GREEN, NEON_YELLOW, WHITE]
 END_TEXTS = {   # lose_reason -> big text on the end screen
     "caught": "CAUGHT COPYING!",
     "warnings": "TOO MANY WARNINGS",
@@ -208,6 +236,8 @@ class SceneDrawing:
             self.draw_warning_scene(game, teacher)
         elif game.scene == CAUGHT_SCENE:
             self.draw_caught_scene(game, teacher)
+        elif game.scene == MUGSHOT_SCENE:
+            self.draw_mugshot(game)            # see draw_mugshot.py
         elif game.scene == GAME_OVER_SCENE:
             self.draw_game_over(game, chat)
     # ------------------------------------------------------------------
@@ -458,3 +488,124 @@ class SceneDrawing:
             letters = int((elapsed - start) * CHAT_TYPE_SPEED)
             self.chat_line(who, message, letters, CHAT_TOP + i * CHAT_ROW, laughing)
         self.screen.blit(self.scanlines, (0, 0))
+
+    def draw_verdict(self, verdict):
+        """
+        The grade roast (logic/verdict.py) over the results screen: it
+        darkens, and Gemini and Claude's lines are typed out in the same
+        bubbles as the game over chat. A good grade first gets a show (its
+        hype): the letter slams down big in the middle, with confetti (BB),
+        light rays (BA), and for an AA a flash, a shake and fireworks; then
+        it goes up to the top and the chat starts.
+        """
+        t, hype = verdict.time, verdict.hype
+        self.darken(int(VERDICT_DARKEN * min(1.0, t / VERDICT_FADE)))
+        if hype:
+            self.hype_show(verdict)
+        else:
+            cx = self.width // 2
+            self.shout("THE VERDICT", self.menu_title_font, NEON_YELLOW, (cx, 62))
+            self.shadow_text(f"SEMESTER GRADE: {verdict.letter}", self.medium, WHITE, (cx, 116), center=True)
+        for i, ((who, message), letters) in enumerate(zip(verdict.lines, verdict.letters())):
+            if letters == 0:
+                break   # not said yet
+            self.chat_line(who, message, letters, CHAT_TOP + i * CHAT_ROW, verdict.laughing())
+        self.footer("Space = skip")
+        if hype >= 3:
+            self.aa_flash_and_shake(verdict)
+
+    def hype_show(self, verdict):
+        """The big letter with its effects, more the higher the hype."""
+        t, hype = verdict.time, verdict.hype
+        cx = self.width // 2
+        # Where the letter is: in the middle during the show, then it rises to the top.
+        rise = min(1.0, max(0.0, (t - verdict.reveal) / LETTER_RISE_TIME))
+        rise = rise * rise * (3 - 2 * rise)   # smoothstep: starts and stops gently
+        y = LETTER_SHOW_Y + (LETTER_TOP_Y - LETTER_SHOW_Y) * rise
+        scale = LETTER_SCALE[hype] + (1 - LETTER_SCALE[hype]) * rise
+        # The slam: it starts huge and lands, like a stamp.
+        slam = min(1.0, t / LETTER_SLAM_TIME)
+        scale *= 1 + (LETTER_SLAM_FROM - 1) * (1 - slam) ** 2
+        if hype >= 2:
+            self.light_rays((cx, y), t, hype, 1 - 0.6 * rise)
+        if hype >= 3:
+            for i, start in enumerate(verdict.firework_times()):
+                if 0 <= t - start < FIREWORK_TIME:
+                    self.firework_burst(i, t - start)
+        self.confetti(t, HYPE_CONFETTI[hype])
+        colour = self.hype_colour(hype, t)
+        angle = 4 * math.sin(t * 5) * (1 - rise) if hype >= 3 else 0
+        pulse = 1 + 0.06 * math.sin(t * 10) * (1 - rise) if hype >= 2 else 1
+        self.blit_turned(self.neon_text(verdict.letter, self.hud_huge, colour, glow=True),
+                         (cx, int(y)), angle, scale * pulse)
+        # Its title under it, while it is in the middle.
+        if slam >= 1 and rise < 1:
+            title = self.neon_text(HYPE_TITLES[hype], self.hud_big, WHITE if hype < 3 else GOLD)
+            title.set_alpha(int(255 * (1 - rise)))
+            self.blit_turned(title, (cx, int(y + HYPE_TITLE_GAP * (1 - rise))))
+
+    @staticmethod
+    def hype_colour(hype, t):
+        """The big letter's colour: yellow (BB), pink to yellow (BA), gold flashing rainbow (AA)."""
+        if hype == 1:
+            return NEON_YELLOW
+        if hype == 2:
+            return mix(NEON_PINK, NEON_YELLOW, 0.5 + 0.5 * math.sin(t * 4))
+        return mix(GOLD, WHITE, 0.5 + 0.5 * math.sin(t * 9))   # shimmering gold
+
+    def light_rays(self, centre, t, hype, strength):
+        """Rays of light turning slowly behind the big letter (stage lights)."""
+        layer = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        colour = GOLD if hype >= 3 else NEON_PINK
+        for k in range(RAYS):
+            angle = math.radians(k * 360 / RAYS + t * RAY_SPEED)
+            spread = math.radians(360 / RAYS / 4)   # each ray is a quarter of its slice
+            tip_a = (centre[0] + RAY_LENGTH * math.cos(angle - spread), centre[1] + RAY_LENGTH * math.sin(angle - spread))
+            tip_b = (centre[0] + RAY_LENGTH * math.cos(angle + spread), centre[1] + RAY_LENGTH * math.sin(angle + spread))
+            pygame.draw.polygon(layer, (*colour, int(70 * strength)), [centre, tip_a, tip_b])
+        self.screen.blit(layer, (0, 0))
+
+    def firework_burst(self, number, since):
+        """
+        Firework number `number`, `since` seconds after it went off: a ring of
+        sparks flying out and falling, fading. Where it is and its colour
+        come from a fixed seed, so it does not flicker.
+        """
+        burst = random.Random(number * 31 + 1)
+        centre = (burst.uniform(0.12, 0.88) * self.width, burst.uniform(0.12, 0.55) * self.height)
+        colour = burst.choice(FIREWORK_COLOURS)
+        fade = 1 - since / FIREWORK_TIME
+        if since < 0.12:   # the flash of the bang in the middle
+            pygame.draw.circle(self.screen, mix(colour, WHITE, 0.5), (int(centre[0]), int(centre[1])),
+                               int(26 * (1 - since / 0.12)) + 3)
+        for _ in range(FIREWORK_SPARKS):
+            angle = burst.uniform(0, 2 * math.pi)
+            speed = burst.uniform(*FIREWORK_SPEED)
+            # A trail: from where the spark was a moment ago to where it is now.
+            tail, head = (self.spark_at(centre, angle, speed, max(0.0, since - FIREWORK_TRAIL)),
+                          self.spark_at(centre, angle, speed, since))
+            spark = mix(BLACK, mix(colour, WHITE, 0.3 * fade), max(0.0, fade))
+            pygame.draw.line(self.screen, spark, tail, head, max(1, int(3 * fade + 1)))
+            pygame.draw.circle(self.screen, mix(spark, WHITE, 0.5), head, max(1, int(2 * fade + 1)))
+
+    @staticmethod
+    def spark_at(centre, angle, speed, since):
+        """Where a firework's spark is `since` seconds after the bang (air slows it down, gravity pulls it)."""
+        flown = (1 - math.exp(-2.5 * since)) / 2.5
+        return (int(centre[0] + math.cos(angle) * speed * flown),
+                int(centre[1] + math.sin(angle) * speed * flown + FIREWORK_GRAVITY * since ** 2 / 2))
+
+    def aa_flash_and_shake(self, verdict):
+        """An AA lands: a white flash, and the whole screen shakes (a little again on each firework)."""
+        t = verdict.time
+        flash = max(0.0, 1 - t / FLASH_TIME_AA)
+        if flash > 0:
+            self.darken(int(255 * flash ** 2), colour=WHITE)
+        shake = SHAKE_AA * max(0.0, 1 - t / 0.8)
+        for start in verdict.firework_times():
+            if start < verdict.reveal and 0 <= t - start < 0.2:
+                shake = max(shake, SHAKE_FIREWORK * (1 - (t - start) / 0.2))
+        if shake >= 1:
+            picture = self.screen.copy()
+            self.screen.fill(BLACK)
+            self.screen.blit(picture, (random.uniform(-shake, shake), random.uniform(-shake, shake)))

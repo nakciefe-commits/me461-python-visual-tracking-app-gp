@@ -580,14 +580,14 @@ class ResultsDrawing:
             date = self.small.render(entry["date"], True, colour if i == highlight else GREY)
             self.screen.blit(date, date.get_rect(midright=(x + width - 14, row_y)))
 
-    def confetti(self, since):
+    def confetti(self, since, count=CONFETTI_COUNT):
         """
         Confetti raining down for a new top score: each piece has its own
         place, speed, swing and colour (always the same, from a fixed seed),
         and falls from the top, wrapping round to the top again.
         """
         pieces = random.Random(7)
-        for _ in range(CONFETTI_COUNT):
+        for _ in range(count):
             x0 = pieces.uniform(0, self.width)
             speed = CONFETTI_FALL * pieces.uniform(0.6, 1.4)
             swing = pieces.uniform(10, 30)

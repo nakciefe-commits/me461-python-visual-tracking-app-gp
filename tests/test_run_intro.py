@@ -7,7 +7,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from logic.run_intro import (INTRO_LINES, BEAT, BAR, line_time, current_line, since_line, is_over,
-                             since_beat, beat_number, since_bar)
+                             since_beat, beat_number, since_bar, intensity, FINAL_LINE, INTRO_END)
 from settings import CHARACTER_MUSIC_BPM, INTRO_FIRST_HIT, INTRO_DROP
 
 
@@ -22,10 +22,23 @@ class RunIntroTests(unittest.TestCase):
         self.assertEqual(current_line(INTRO_FIRST_HIT + BAR + 0.01), 1)
         self.assertAlmostEqual(since_line(INTRO_FIRST_HIT + BAR + 0.25), 0.25)
 
-    def test_every_line_comes_before_the_drop(self):
-        self.assertLess(line_time(len(INTRO_LINES) - 1), INTRO_DROP)
-        self.assertFalse(is_over(INTRO_DROP - 0.01))
-        self.assertTrue(is_over(INTRO_DROP))
+    def test_every_line_comes_one_per_bar(self):
+        for i in range(len(INTRO_LINES)):
+            self.assertAlmostEqual(line_time(i), INTRO_FIRST_HIT + i * BAR)
+
+    def test_title_is_last_and_stays_longer(self):
+        self.assertEqual(INTRO_LINES[FINAL_LINE], "DON'T GET CAUGHT.")
+        self.assertEqual(current_line(INTRO_END - 0.01), FINAL_LINE)
+        self.assertGreater(INTRO_END - line_time(FINAL_LINE), BAR)
+        self.assertFalse(is_over(INTRO_END - 0.01))
+        self.assertTrue(is_over(INTRO_END))
+
+    def test_intensity_rises(self):
+        self.assertEqual(intensity(None), 0.0)
+        self.assertEqual(intensity(0), 0.0)
+        self.assertEqual(intensity(FINAL_LINE), 1.0)
+        for i in range(1, len(INTRO_LINES)):
+            self.assertGreater(intensity(i), intensity(i - 1))
 
     def test_drop_is_on_a_beat(self):
         # The measured drop must sit on the beat grid, or the thumps would be off.

@@ -260,6 +260,14 @@ safe       "hmm" sound   copying = caught
   > one is laughing. His face and the torn paper are in the middle of the
   > picture; nothing important in the top quarter or the bottom tenth. My
   > empty desk is at the bottom. Square picture, no added text.
+- **Mugshot** (`MUGSHOT_SCENE_TIME`, 5.5 s, Space skips, NOTES #61): after
+  every loss, before game over. Black and silent; the exam paper (torn in
+  half, taped back together) fades in with the webcam photo taken the
+  moment you lost, cropped to your face, clipped on it; after
+  `MUGSHOT_WRITE_DELAY` the teacher writes "GOT CAUGHT!" over it in red
+  marker (a marker sound made in code, or `marker.mp3`). Pictures `torn`
+  and `got_caught` (IMAGE_PROMPTS.md); the photo goes where the picture is
+  pure green. The photo is only kept in memory.
 - **Game over screen** (`GAME_OVER_TIME`, 8 s, Space skips): after every
   loss, black with "GAME OVER"; the Gemini and Claude logos, drawn in code
   with cartoon faces, make fun of you in a two-line chat that depends on how
@@ -297,6 +305,7 @@ logic/               The rules, no drawing, no camera, all tested
   menu.py            Menus: selected item; head tilt/turn -> up/down/select/back; loading bar
   disclaimer.py      The opening notice: typed, signed, stamped
   guide.py           How to play: Gemini and Claude's lines, the tasks to try
+  verdict.py         The grade roast after the final (lines per letter, the AA/BA/BB show)
   character.py       The characters' rules (from CHARACTERS), glasses' blur, the energy drink
 tracking/
   camera.py          Reads the webcam in a background thread
@@ -377,6 +386,8 @@ main menu and the results; tests (152).
 5. **Difficulty and score:** ✅ score, top scores, levels (Quiz → Midterm →
    Final) with moods. Still: the teacher checks more often as the exam goes
    on (phase B); Easy/Normal/Hard; letter grades (11.6.5).
+5b. **Showing how it works:** ✅ the debug panel (F3, NOTES #62): the
+   tracking pipeline step by step, for the presentation.
 6. **Final testing and README:** fresh `git clone` on another computer,
    screenshot, credits and licences for art and sounds. Try `run.bat` on a
    real Windows computer (written on Linux, not yet run on Windows).
@@ -398,7 +409,8 @@ main menu and the results; tests (152).
   has sound on/off, fullscreen and recalibrate).
 - **Background music:** ✅ `theme.mp3` (made by the team with Suno) loops:
   normal in the menus (NOTES #28). ✅ A tenser track for the exam,
-  `thrilling.mp3`, quieter than the theme (NOTES #33).
+  `thrilling.mp3`, quieter than the theme (NOTES #33). All three tracks are
+  Suno-made from samples; README "Music" lists them (NOTES #64).
 
 ---
 
@@ -776,7 +788,10 @@ speeds, the teacher's times) plus one new rule.
 | **Glasses** | Reading a neighbour's paper is a bit quicker. | Looking at the teacher, the classroom is blurry first and has to come into focus. |
 | **The nerd** | Starts every exam with one joker (J while looking down: writes the right answer). | Must hand the exam in early (a share of the time left), or loses points; his early bonus counts only from that line. |
 | **Energy drink addict** | A coin toss each exam: **sugar rush** — the world runs a bit slower for you. | **Crash** — now and then you get sleepy: reading gets slower, your eyelids close. |
-| **The teacher's buddy** | He checks on you less often (longer busy times). | When he does look, he looks longer. |
+| **The front-row student** (was the teacher's buddy, NOTES #58) | He checks on you less often (longer busy times). | When he does look, he looks longer. |
+| **The 7th-year legend** (NOTES #58) | Has seen it all: the teacher's looks are shorter. | The teacher has seen him too: the bar fills faster when he is seen copying. |
+| **Not a ME student** (NOTES #58) | The teacher thinks he's just lost: staring at the teacher barely fills the bar. | It's all Greek to him: the neighbours' answers show up as α β γ δ (pictures `left_greek_*` / `right_greek_*`, prompts in IMAGE_PROMPTS.md; a note if one is missing). |
+| **The "quick question" guy** (NOTES #58) | Keeps the teacher explaining: longer busy times. | The teacher keeps an eye on him: the bar creeps up while he is not looking at his paper. |
 | **Lazy but funny** | Both neighbours like you: both show the right answer. | The teacher gets alarmed faster: the bar fills faster when he sees you. No sharp-eye bonus (nothing to find). |
 
 The character is on the loading screen ("PLAYING AS") and on a badge in
@@ -786,7 +801,8 @@ played as the NPC.
 ### 12.3 The briefing and the sliding character screen (NOTES #48)
 
 PLAY starts the character music and a sarcastic briefing timed to it (a
-line per bar: "3 EXAMS." ... "(A LOT OF PRESSURE.)"); at the drop the
+line per bar: "3 EXAMS." ... "(A LOT OF PRESSURE.)", "DON'T GET CAUGHT.",
+soft to hard, the title staying 8 beats, NOTES #60); then the
 characters slide in as a Hotline Miami-like row, the chosen one big in the
 middle and thumping to the beat. Timing numbers measured from the file:
 147 BPM, first hit 0.81 s, drop 11.84 s (`settings.py`).

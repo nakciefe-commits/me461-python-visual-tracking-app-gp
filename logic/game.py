@@ -36,6 +36,7 @@ from logic.suspicion import SuspicionBar, close_call_points
 from logic.character import rules as character_rules, Energy, RUSH
 from settings import (MAX_WARNINGS, POPUP_TIME, EXAM_TIME, ANSWERS_NEEDED, WARNING_SCENE_TIME,
                       CAUGHT_SCENE_TIME, CAUGHT_EXCLAIM_TIME, GAME_OVER_TIME,
+                      MUGSHOT_SCENE_TIME, MUGSHOT_WRITE_DELAY,
                       STARE_ONLY_WHEN_FACING, SCORE_PER_POINT, SCORE_TIME_BONUS,
                       CLOSE_CALL_EDGE, SCORE_PER_WARNING, SUSPICIOUS_AT, SCORE_NINJA,
                       SCORE_ALMOST_NINJA, SCORE_SHARP_EYE, DEFAULT_CHARACTER)
@@ -45,8 +46,11 @@ PLAYING, WON, LOST = "PLAYING", "WON", "LOST"
 # The scenes: short moments where the game is frozen and something is shown.
 #   WARNING_SCENE  the teacher comes over and points at you (after a warning)
 #   CAUGHT_SCENE   a Metal Gear "!", then the teacher tears up your exam
+#   MUGSHOT_SCENE  after losing: your taped-up exam with your webcam photo
+#                  clipped on, and the teacher writes "GOT CAUGHT!" on it
 #   GAME_OVER_SCENE  after losing, before the end menu (render: two logos talk)
 WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE = "WARNING_SCENE", "CAUGHT_SCENE", "GAME_OVER_SCENE"
+MUGSHOT_SCENE = "MUGSHOT_SCENE"
 
 
 class Game:
@@ -241,14 +245,25 @@ class Game:
         rip_at = CAUGHT_SCENE_TIME - CAUGHT_EXCLAIM_TIME   # seconds left at that moment
         if self.scene == CAUGHT_SCENE and before > rip_at >= self.scene_time:
             events.append("rip")
+        # The moment the teacher starts writing on the mugshot: a pen sound.
+        pen_at = MUGSHOT_SCENE_TIME - MUGSHOT_WRITE_DELAY
+        if self.scene == MUGSHOT_SCENE and before > pen_at >= self.scene_time:
+            events.append("pen")
         if self.scene_time == 0:
             self.popup_text = None   # the scene showed the message already
-            # Lost, and the warning or caught scene is over: game over.
-            if self.state == LOST and self.scene != GAME_OVER_SCENE:
+            # Lost, and the warning or caught scene is over: the mugshot,
+            # then game over.
+            if self.state == LOST and self.scene in (WARNING_SCENE, CAUGHT_SCENE):
+                self.start_mugshot(events)
+            elif self.state == LOST and self.scene == MUGSHOT_SCENE:
                 self.start_game_over(events)
             else:
                 self.scene = None
         return events
+
+    def start_mugshot(self, events):
+        # Silent: it fades in on a black screen; only the pen is heard later.
+        self.start_scene(MUGSHOT_SCENE, MUGSHOT_SCENE_TIME)
 
     def start_game_over(self, events):
         self.start_scene(GAME_OVER_SCENE, GAME_OVER_TIME)
@@ -285,7 +300,7 @@ class Game:
         if reason == "caught":
             self.start_scene(CAUGHT_SCENE, CAUGHT_SCENE_TIME)
         elif not self.in_scene():
-            self.start_game_over(events)
+            self.start_mugshot(events)
 
     # ------------------------------------------------------------------
     # Every frame
@@ -326,8 +341,10 @@ class Game:
         events += self.suspicion.update(seen, staring, world_dt, away=direction != DOWN)
         if "close_call" in events:
             points = self.suspicion.last_close_call
-            name = "RAZOR CLOSE!" if points >= close_call_points(CLOSE_CALL_EDGE) else "CLOSE CALL!"
-            self.show_popup(f"{name} +{points}")
+            razor = points >= close_call_points(CLOSE_CALL_EDGE)
+            self.show_popup(f"{'RAZOR CLOSE!' if razor else 'CLOSE CALL!'} +{points}")
+            if razor:
+                events.append("heartbeat")   # that was too close: the player's heart pounds
         if self.suspicion.is_full():
             if seen:
                 events.append("caught")

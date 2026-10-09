@@ -29,6 +29,10 @@ FACE_MODEL_FILE = "face_landmarker.task"
 MIN_FACE_CONFIDENCE = 0.4   # 0..1; lower keeps the face longer while turning, but may see faces that aren't there
 FACE_LOST_GRACE = 0.6       # seconds the face may vanish before the game pauses (it often vanishes mid-turn)
 LOST_DOWN_PITCH = 8         # degrees; face vanished while tilted at least this far down → counts as DOWN
+# ... or while the head was moving down fast: a quick nod loses the face
+# before it is 8 degrees down, so the way the head was going counts too.
+LOST_DOWN_SPEED = 40        # degrees per second; face vanished while the pitch fell at least this fast → DOWN
+PITCH_TREND_TIME = 0.3      # seconds of pitch looked back at to measure how fast the head moves
 
 # --- Head direction (degrees, measured from the calibrated "screen" angle) ---
 # These two are used until calibration has measured the player's own poses
@@ -80,14 +84,15 @@ SCREEN_FADE_TIME = 0.4      # seconds the old screen takes to fade out when the 
 # different song needs these three numbers measured again.
 CHARACTER_MUSIC_BPM = 147   # beats per minute of the character music
 INTRO_FIRST_HIT = 0.81      # seconds into the music of the first strong hit (a new line slams in on each bar)
-INTRO_DROP = 11.84          # seconds into the music of the drop: the intro ends, the characters slide in
+INTRO_DROP = 11.84          # seconds into the music of the drop (the last line comes a beat after it)
+INTRO_TITLE_BEATS = 8       # beats "DON'T GET CAUGHT." stays (the other lines stay 4), then the characters slide in
 CAROUSEL_SPEED = 12.0       # how fast the character carousel slides to the chosen one (higher = snappier)
 
 # --- The guide ("How to play": Gemini and Claude teach the game, see logic/guide.py) ---
-GUIDE_TYPE_SPEED = 40       # letters per second the lines are typed
-GUIDE_LINE_PAUSE = 1.6      # seconds a typed line stays before the next one starts
-GUIDE_STEP_PAUSE = 1.0      # seconds after a task is done before the next step
-GUIDE_HOLD_TIME = 0.8       # seconds the player must hold a direction for a "look" task
+GUIDE_TYPE_SPEED = 65       # letters per second the lines are typed
+GUIDE_LINE_PAUSE = 0.9      # seconds a typed line stays before the next one starts
+GUIDE_STEP_PAUSE = 0.5      # seconds after a task is done before the next step
+GUIDE_HOLD_TIME = 0.5       # seconds the player must hold a direction for a "look" task
 GUIDE_BLIP_LETTERS = 2      # letters per talking blip while a line is typed
 
 # --- Disclaimer (the "official notice" when the game opens) ---
@@ -116,6 +121,15 @@ TEACHER_APPROACH_TIME = 0.8 # seconds of that scene the teacher takes to walk up
 CAUGHT_SCENE_TIME = 4.0     # seconds of the "caught" scene: the "!", then the teacher tears up your exam
 CAUGHT_EXCLAIM_TIME = 1.2   # seconds of that scene the "!" is shown before he tears the paper
 GAME_OVER_TIME = 8.0        # seconds of the game over screen (the two logos talking); Space skips it
+# The mugshot after losing (before game over): your taped-up exam with your
+# webcam photo clipped on; the teacher writes "GOT CAUGHT!" on it.
+# Silent, no music: the paper slowly fades in out of the black.
+MUGSHOT_SCENE_TIME = 5.5    # seconds the mugshot stays; Space skips it
+MUGSHOT_FADE_TIME = 1.5     # seconds the paper takes to fade in from black
+MUGSHOT_WRITE_DELAY = 2.5   # seconds after it starts that the teacher starts writing (a pen sound)
+MUGSHOT_WRITE_TIME = 1.2    # seconds "GOT CAUGHT!" takes to write
+MUGSHOT_FACE_ZOOM = 1.9     # the photo is this many times as tall as the face (room for hair and chin)
+MUGSHOT_FACE_LOWER = 0.08   # the photo's middle is this share of the face height below the face's middle (more chin, like an ID photo)
 EXAM_TIME = 200             # seconds of one exam when no quiz says otherwise; at 0 the paper is collected
 
 # --- Grading the exam paper (exam points per question; any letter can be written, even unread) ---
@@ -135,6 +149,13 @@ CLOSE_CALL_MIN = 100        # points for getting away with an almost empty bar
 CLOSE_CALL_PER_BAR = 400    # extra points for a full bar (half full = half of it)
 CLOSE_CALL_EDGE = 0.8       # 0..1; getting away above this much of the bar is a "razor close" call ...
 CLOSE_CALL_EDGE_BONUS = 300 # ... worth this many extra points
+# A razor close call also plays a heartbeat: hard and fast, and the music
+# sounds far away meanwhile (muffled, with a long echo), like in the movies.
+HEARTBEAT_BPM = 170         # beats per minute (a resting heart is ~70: this one is panicking)
+HEARTBEAT_TIME = 1.8        # seconds the heartbeat lasts
+HEARTBEAT_MUSIC_DUCK = 0.1  # 0..1, the normal music is multiplied by this meanwhile (the far one plays instead)
+FAR_MUSIC_CUTOFF = 600      # Hz; the far-away music loses the notes above this (muffled)
+FAR_MUSIC_ECHO = 1.6        # seconds the far-away music's echo takes to die away
 SCORE_PER_WARNING = 300     # points taken off for each warning
 # Bonuses of a graded exam.
 SCORE_NINJA = 1500          # every answer right and no warning: a perfect, silent ninja
@@ -168,6 +189,17 @@ GRADES = [
 GRADE_CURVE_MIN = 5          # earlier runs needed before grading on the curve
 GRADE_HISTORY_KEPT = 200     # how many past runs (and past scores of each exam) are kept, the newest
 GRADE_STAMP_DELAY = 0.5      # seconds after the score count ends before the grade is stamped on
+# The grade roast after the final (logic/verdict.py; can be turned off in the settings).
+VERDICT_DELAY = 1.2          # seconds after the grade is stamped (and the name typed) before it starts
+VERDICT_TYPE_SPEED = 45      # letters per second the lines are typed
+VERDICT_LINE_PAUSE = 0.7     # seconds between one line being typed and the next one starting
+VERDICT_HOLD = 3.0           # seconds it stays once all typed, then the results come back
+VERDICT_FADE = 0.3           # seconds the dark overlay takes to fade in
+# The better the grade, the bigger the show (0 = none, below BB): BB a little
+# confetti, BA light rays and a fanfare, AA everything (a flash, a shake, fireworks).
+VERDICT_HYPE = {"AA": 3, "BA": 2, "BB": 1}
+VERDICT_REVEAL = {1: 0.8, 2: 1.5, 3: 2.8}   # seconds the big letter shows alone before the chat, per hype
+VERDICT_FIREWORK_EVERY = 0.4  # seconds between two fireworks for an AA (half as often once they talk)
 TALLY_START = 0.8           # seconds after the end screen opens before the score tally starts
 TALLY_STEP_TIME = 0.45      # seconds between two parts of the tally (each question, then the bonuses)
 TALLY_COUNT_TIME = 0.3      # seconds the score takes to count up after a part appears
@@ -373,6 +405,7 @@ MOODS = {
 #                    counts from that line (0 there, full with all the time left)
 #   busy_times, watching_times   x how long the teacher is busy / watches
 #   both_know        True = both neighbours know every answer (and no sharp-eye bonus)
+#   greek            True = the neighbours' answers show up as Greek letters (A-D = α β γ δ)
 #   energy           True = a coin toss every exam: a sugar rush or a crash:
 #   rush_chance      0..1, the chance of a sugar rush in the first exam ...
 #   rush_chance_drop ... and how much lower it is for each rush already had in this run
@@ -415,12 +448,31 @@ CHARACTERS = {
         "minus": ["Crash (50%): naps at random moments and reads like a sloth"],
         "energy": True, "rush_chance": 0.5, "rush_chance_drop": 0.15, "rush_speed": 0.85, "crash_every": (8.0, 14.0), "crash_time": 3.5,
         "crash_focus": 0.4},
-    "buddy": {
-        "name": "THE TEACHER'S BUDDY",
-        "tagline": "They go fishing on Sundays. Calls him \"hocam\" with a wink.",
-        "plus": ["Why check on your fishing buddy? He looks up less often"],
-        "minus": ["But when he does, it's a long, disappointed dad stare"],
+    "frontrow": {
+        "name": "THE FRONT-ROW STUDENT",
+        "tagline": "Front row, nods at every slide, says \"great lecture, hocam\" after every class.",
+        "plus": ["The teacher trusts him, poor man: he looks up less often"],
+        "minus": ["But when he does, it's a long, betrayed \"et tu, Brute?\" stare"],
         "busy_times": 1.35, "watching_times": 1.35},
+    "veteran": {
+        "name": "THE 7TH-YEAR LEGEND",
+        "tagline": "Older than the professor. Was here when they built the building.",
+        "plus": ["Has seen it all: the teacher's stares are shorter"],
+        "minus": ["The teacher has seen him all too: the bar fills faster when he's seen"],
+        "watching_times": 0.75, "seen_speed": 1.3},
+    "notme": {
+        "name": "NOT A ME STUDENT",
+        "tagline": "Took ME461 as an elective. \"How hard can it be?\" Very, it turns out.",
+        "plus": ["The teacher thinks he's just lost: staring at the teacher barely fills the bar"],
+        "minus": ["It's all Greek to him: the neighbours' answers show up as α, β, γ and δ"],
+        "stare_speed": 0.45, "greek": True},
+    "asker": {
+        "name": "THE \"QUICK QUESTION\" GUY",
+        "tagline": "\"Hocam, is question 3 asking what it's asking?\" Has asked 14 times today.",
+        "plus": ["Keeps the teacher explaining at the board: he is busy for longer"],
+        "minus": ["Now the teacher keeps an eye on him: the bar creeps up whenever "
+                  "you're not looking at your paper"],
+        "busy_times": 1.3, "creep_time": 40.0},
     "lazy": {
         "name": "LAZY BUT FUNNY",
         "tagline": "Never opened the book. Has a joke for every question instead.",
@@ -430,3 +482,8 @@ CHARACTERS = {
         "both_know": True, "seen_speed": 1.4, "stare_speed": 1.3},
 }
 DEFAULT_CHARACTER = "npc"   # the first choice, and the one in the practice exam
+
+# --- The debug panel (F3): what the head tracking sees, for showing how it works ---
+DEBUG_HISTORY_TIME = 4.0    # seconds of yaw and pitch shown in the graph
+DEBUG_ANGLE_RANGE = 45      # degrees from the middle to the edge of the angle charts
+DEBUG_LOG_FILE = "debug_log.csv"   # while the panel is on, every frame's tracking numbers are written here

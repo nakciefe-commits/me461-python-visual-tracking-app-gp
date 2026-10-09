@@ -8,7 +8,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from logic.character import rules, names, screen_clarity, Energy, RUSH, CRASH, DEFAULTS, rush_chance
+from logic.character import neighbour_letter, rules, names, screen_clarity, Energy, RUSH, CRASH, DEFAULTS, rush_chance
 from logic.run import Run
 from logic.exam_paper import UNKNOWN
 from logic.game import Game, WON
@@ -215,15 +215,67 @@ class PracticeEaseTests(unittest.TestCase):
         self.assertAlmostEqual(practice.suspicion.level, plain.suspicion.level * ease)
 
 
-class BuddyTests(unittest.TestCase):
+def teacher_as(character):
+    """A teacher with the character's busy and watching times (as main.py sets them)."""
+    character_rules = rules(character)
+    teacher = Teacher(random.Random(1))
+    teacher.set_mood(None, character_rules["busy_times"], character_rules["watching_times"])
+    return teacher
+
+
+class FrontRowTests(unittest.TestCase):
     def test_teacher_checks_less_often_but_longer(self):
-        buddy = rules("buddy")
-        teacher = Teacher(random.Random(1))
-        teacher.set_mood(None, buddy["busy_times"], buddy["watching_times"])
+        frontrow = rules("frontrow")
+        teacher = teacher_as("frontrow")
         self.assertEqual(teacher.durations[BUSY],
-                         tuple(t * buddy["busy_times"] for t in TEACHER_DURATIONS[BUSY]))
+                         tuple(t * frontrow["busy_times"] for t in TEACHER_DURATIONS[BUSY]))
         self.assertEqual(teacher.durations[WATCHING],
-                         tuple(t * buddy["watching_times"] for t in TEACHER_DURATIONS[WATCHING]))
+                         tuple(t * frontrow["watching_times"] for t in TEACHER_DURATIONS[WATCHING]))
+
+
+class VeteranTests(unittest.TestCase):
+    def test_shorter_stares(self):
+        veteran = rules("veteran")
+        self.assertLess(veteran["watching_times"], 1)
+        self.assertEqual(teacher_as("veteran").durations[WATCHING],
+                         tuple(t * veteran["watching_times"] for t in TEACHER_DURATIONS[WATCHING]))
+
+    def test_seen_faster(self):
+        plain, veteran = game_as("npc"), game_as("veteran")
+        for game in (plain, veteran):
+            run(game, LEFT, CAUGHT_TIME / 2, AlwaysWatching())
+        self.assertGreater(veteran.suspicion.level, plain.suspicion.level)
+
+
+class NotMeTests(unittest.TestCase):
+    def test_staring_fills_slower(self):
+        plain, notme = game_as("npc"), game_as("notme")
+        for game in (plain, notme):
+            run(game, SCREEN, 2, AlwaysWatching())
+        self.assertGreater(plain.suspicion.level, 0)
+        self.assertLess(notme.suspicion.level, plain.suspicion.level)
+
+    def test_answers_are_greek(self):
+        notme = rules("notme")
+        self.assertEqual([neighbour_letter(notme, letter) for letter in "ABCD"], ["α", "β", "γ", "δ"])
+        self.assertEqual(neighbour_letter(notme, UNKNOWN), UNKNOWN)   # "?" is "?" in every language
+        self.assertEqual(neighbour_letter(rules("npc"), "B"), "B")
+
+    def test_reads_at_the_normal_speed(self):
+        self.assertIn("read", run(game_as("notme"), LEFT, PAPER_FOCUS_TIME + DT))
+
+
+class AskerTests(unittest.TestCase):
+    def test_teacher_busy_longer(self):
+        asker = rules("asker")
+        self.assertGreater(asker["busy_times"], 1)
+        self.assertEqual(teacher_as("asker").durations[BUSY],
+                         tuple(t * asker["busy_times"] for t in TEACHER_DURATIONS[BUSY]))
+
+    def test_bar_creeps_up_when_not_looking_at_the_paper(self):
+        game = game_as("asker")
+        run(game, SCREEN, 4, AlwaysBusy())
+        self.assertAlmostEqual(game.suspicion.level, 4 / CHARACTERS["asker"]["creep_time"])
 
 
 class LazyTests(unittest.TestCase):

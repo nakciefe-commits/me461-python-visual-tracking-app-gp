@@ -23,7 +23,7 @@ import pygame
 from logic.exam_paper import UNKNOWN, BLANK, CORRECT, WRONG, EMPTY
 from tracking.head_tracker import DOWN, LEFT, RIGHT
 from settings import MAX_WARNINGS, CHARACTERS, DEFAULT_CHARACTER
-from logic.character import RUSH
+from logic.character import RUSH, neighbour_letter
 from ui.style import (BLACK, WHITE, GREY, NEON_PINK, NEON_CYAN, NEON_YELLOW, NEON_GREEN, NEON_RED,
                    SHADOW, HUD_PURPLE,
                    HUD_ALPHA, HUD_LINE, TEXT_WOBBLE)
@@ -43,9 +43,11 @@ LOOK_AWAY_IMAGES = {
 }
 # The neighbour's paper once you have read it: the letter (or "?") written
 # on it. "left_B" = the left neighbour with B circled on their paper.
+# "left_greek_B" = the same with β instead, for not a ME student.
 SIDE_NAMES = {LEFT: "left", RIGHT: "right"}
-PAPER_IMAGES = [f"{SIDE_NAMES[side]}_{shown}" for side in (LEFT, RIGHT)
-                for shown in ["A", "B", "C", "D", "unknown"]]
+PAPER_IMAGES = ([f"{SIDE_NAMES[side]}_{shown}" for side in (LEFT, RIGHT)
+                 for shown in ["A", "B", "C", "D", "unknown"]]
+                + [f"{SIDE_NAMES[side]}_greek_{letter}" for side in (LEFT, RIGHT) for letter in "ABCD"])
 # Blurring the neighbour's view until it is sharp (neighbours.clarity()): the
 # picture is shrunk, softened and stretched back. At clarity 0 it is shrunk to
 # this part of its size, which makes it very blurry; at 1 it is not shrunk.
@@ -104,7 +106,12 @@ class GameDrawing:
         says = game.paper.says(side)
         if says is None:
             return LOOK_AWAY_IMAGES[side]   # after the last question
-        name = f"{SIDE_NAMES[side]}_{'unknown' if says == UNKNOWN else says}"
+        if says == UNKNOWN:
+            name = f"{SIDE_NAMES[side]}_unknown"
+        elif game.rules["greek"]:
+            name = f"{SIDE_NAMES[side]}_greek_{says}"   # not a ME student: β instead of B
+        else:
+            name = f"{SIDE_NAMES[side]}_{says}"
         return name if name in self.classroom else None
 
     def blurred(self, picture, clarity):
@@ -152,6 +159,8 @@ class GameDrawing:
             first = f"Reading answer {q} {LOOK_AWAY[direction]} - keep looking"
         elif shown == UNKNOWN:
             first = "They don't know this one - try the other side"
+        elif game.rules["greek"]:
+            first = "It's all Greek to you. Work out the letter, then write it"
         else:
             first = "Remember it, then look at your paper and write it"
         return first, "You can't see the teacher - listen!"
@@ -191,8 +200,9 @@ class GameDrawing:
                     # No picture with that letter: the plain one, and a note once read.
                     plain = self.picture(LOOK_AWAY_IMAGES[direction])
                     self.screen.blit(self.blurred(plain, clarity), (0, 0))
-                    if game.paper_shows(direction) is not None:
-                        self.neighbour_note(direction, game.paper_shows(direction))
+                    shown = game.paper_shows(direction)
+                    if shown is not None:
+                        self.neighbour_note(direction, neighbour_letter(game.rules, shown))
                 # Just above the bars, so it does not cover the neighbour's paper.
                 strip_top = self.height - BOTTOM_BAR - LOOK_AWAY_STRIP
                 text_x = cx

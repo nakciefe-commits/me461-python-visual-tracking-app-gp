@@ -19,6 +19,7 @@ The program is one loop that repeats about 30 times a second:
     4. play sounds for what happened, draw the screen
 """
 
+import csv
 import os
 import random
 import time
@@ -35,6 +36,7 @@ from logic import run_intro
 from logic.highscore import load_top, add_score, save_top, set_name, load_history, remember
 from logic.grade import semester_grade, class_average, curve
 from logic.name_entry import NameEntry
+from logic.verdict import Verdict, VERDICTS
 from logic.game import Game, PLAYING, GAME_OVER_SCENE
 from logic.run import Run
 from logic.slot import reel_position, has_stopped, passed
@@ -45,10 +47,12 @@ from ui.draw_menus import BIG_PREVIEW_SIZE
 from ui.draw_scenes import GAME_OVER_CHAT, CHAT_BLIP_LETTERS, typed_letters
 from ui.draw_notice import DISCLAIMER_LETTERS
 from ui.render import Renderer, camera_to_surface
+from ui.draw_debug import DEBUG_CAMERA_SIZE
 from settings import (CAMERA_INDEX, WINDOW_WIDTH, WINDOW_HEIGHT, FPS, FADE_TIME,
                       FULLSCREEN, MAXIMIZED, LOADING_TIME, SMOOTH_SCALING, SCREEN_FADE_TIME,
                       HIGH_SCORE_FILE, GAME_OVER_TIME, GRADE_STAMP_DELAY, CHARACTERS,
-                      DEFAULT_CHARACTER, GAME_VERSION, CAROUSEL_SPEED, EXAM_TITLE_TIME, EXAM_TAGLINE_DELAY)
+                      DEFAULT_CHARACTER, GAME_VERSION, CAROUSEL_SPEED, EXAM_TITLE_TIME, EXAM_TAGLINE_DELAY,
+                      VERDICT_DELAY, DEBUG_LOG_FILE)
 from ui.sounds import Sounds, tally_sound, talk_sound, TALK_PITCHES
 from logic.tally import parts_shown, is_done, done_time, jackpot
 from logic.teacher import Teacher
@@ -86,6 +90,7 @@ SILENT_SCREENS = (DISCLAIMER, LOADING)
 TITLES = {MENU: "DON'T GET CAUGHT", SETTINGS: "SETTINGS"}
 # Colour of the face drawing on the start screen, (Blue, Green, Red) for OpenCV.
 WHITE_BGR = (240, 240, 240)
+MESH_BGR = (255, 230, 40)    # the face mesh on the debug panel: neon cyan (Blue, Green, Red)
 
 
 def open_window(fullscreen):
@@ -149,7 +154,7 @@ class App:
         self.teacher = Teacher()
         self.menus = {
             MENU: Menu(["PLAY", "HOW TO PLAY", "SETTINGS", "QUIT"]),
-            SETTINGS: Menu(["SOUND", "FULLSCREEN", "RECALIBRATE", "BACK"]),
+            SETTINGS: Menu(["SOUND", "FULLSCREEN", "GRADE ROAST", "RECALIBRATE", "BACK"]),
             CHARACTER: Menu(character_names()),   # the keys of CHARACTERS in settings.py
             BRIEFING: Menu(["SPIN"]),   # then "I'M READY", see start_spin()
             END: Menu(["NEXT EXAM", "MAIN MENU"]),   # changed after each exam, see go_to()
@@ -176,6 +181,13 @@ class App:
         self.new_place = None                   # where the last run got in the top scores (0 = first), or None
         self.name_entry = None                  # typing the new top score's name (NameEntry), or None
         self.last_name = ""                     # the last name typed: the next entry starts with it
+        # The grade roast after the final (logic/verdict.py): a Bag per letter,
+        # so the same joke does not come back too soon.
+        self.roast_on = True                    # the "GRADE ROAST" setting
+        self.verdict_bags = {letter: Bag(range(len(chats))) for letter, chats in VERDICTS.items()}
+        self.verdict = None                     # the roast playing now (Verdict), or None
+        self.verdict_wait = 0.0                 # seconds waited since the grade was stamped
+        self.verdict_done = False               # True once this run's roast has played (or was off)
         self.screen_name = DISCLAIMER
         self.after_calibration = MENU   # where calibrating leads to
         self.direction = SCREEN   # last known direction, kept while paused
@@ -190,6 +202,11 @@ class App:
         # not come back until all the others were told (see logic/bag.py).
         self.chat_bags = {reason: Bag(range(len(chats))) for reason, chats in GAME_OVER_CHAT.items()}
         self.chat = []            # the conversation of the last failed exam
+        self.frame = None         # the newest webcam picture (BGR, unmirrored), for the mugshot
+        self.debug = False        # F3: the debug panel (what the head tracking sees), on every screen
+        self.track_ms = 0.0       # milliseconds MediaPipe took on the last frame (for the debug panel)
+        self.debug_log = None     # the open DEBUG_LOG_FILE while the panel is on, else None
+        self.debug_writer = None  # writes its rows (csv)
         self.spin_time = None     # seconds since the gossip slot machine started; None = not yet
         # Changing screens: the last picture of the old screen is laid over the
         # new one and fades out over SCREEN_FADE_TIME (a "crossfade").
@@ -233,6 +250,7 @@ class App:
         if name == RUN_END:
             self.menus[RUN_END].selected = 0   # "PLAY AGAIN"
             self.stamped = False
+            self.verdict, self.verdict_wait, self.verdict_done = None, 0.0, False
             self.end_time = 0.0
             self.record_run()
 
@@ -419,7 +437,8 @@ class App:
     def begin_playing(self):
         """The loading screen is over: a fresh exam, today's teacher, start the clock."""
         self.game = self.current_run.new_game()
-        # The teacher's buddy stretches his busy and watching times.
+        # Some characters (the front-row student, the 7th-year legend, the "quick question" guy)
+        # stretch or shorten his busy and watching times.
         # The practice exam's ease shortens his looks too.
         self.teacher.set_mood(self.current_run.mood(), self.game.rules["busy_times"],
                               self.game.rules["watching_times"] * self.game.ease)
@@ -443,6 +462,7 @@ class App:
         on_off = {True: "ON", False: "OFF"}
         return [f"SOUND   {on_off[not self.sounds.muted]}",
                 f"FULLSCREEN   {on_off[self.fullscreen]}",
+                f"GRADE ROAST   {on_off[self.roast_on]}",
                 "RECALIBRATE",
                 "BACK"]
 
@@ -451,6 +471,10 @@ class App:
         menu = self.menus[self.screen_name]
         if self.screen_name == BRIEFING and self.spinning():
             return   # nothing to choose while the slot machine turns
+        if self.verdict is not None:
+            if action in (SELECT, BACK):
+                self.verdict.skip()   # the head hurries the roast, or closes it
+            return
         if self.naming():
             self.name_action(action)
             return
@@ -518,6 +542,8 @@ class App:
             self.sounds.muted = not self.sounds.muted
         elif item == "FULLSCREEN":
             self.toggle_fullscreen()
+        elif item == "GRADE ROAST":
+            self.roast_on = not self.roast_on
         elif item == "RECALIBRATE":
             self.calibrate_then(SETTINGS)
 
@@ -546,8 +572,12 @@ class App:
 
     def handle_key(self, key):
         name = self.screen_name
-        if self.naming():
+        if key == pygame.K_F3:
+            self.toggle_debug()   # first: it works everywhere, even while typing a name
+        elif self.naming():
             self.name_key(key)   # before everything: r, m, t and k are letters here
+        elif self.verdict is not None:
+            self.verdict.skip()  # any key hurries the grade roast, or closes it
         elif key == pygame.K_F11:
             self.toggle_fullscreen()
         elif key == pygame.K_t:
@@ -636,7 +666,9 @@ class App:
 
     def handle_click(self, pos):
         name = self.screen_name
-        if name == DISCLAIMER:
+        if self.verdict is not None:
+            self.verdict.skip()                      # like a key
+        elif name == DISCLAIMER:
             self.press_notice()                      # a click anywhere does what Space does
         elif name == HELP:
             self.play_guide_sounds(self.guide.skip())   # a click does what Space does
@@ -750,6 +782,9 @@ class App:
                                        self.menu_labels(), selected, select_progress,
                                        back_progress, head_pause, self.end_time, self.name_entry,
                                        self.semester)
+            self.update_verdict(dt)
+            if self.verdict is not None:
+                self.renderer.draw_verdict(self.verdict)
         else:
             self.renderer.draw_menu(TITLES[name], self.menu_labels(), selected,
                                     select_progress, back_progress,
@@ -775,7 +810,7 @@ class App:
         self.renderer.draw_guide(self.guide, self.guide_direction)
 
     def play_guide_sounds(self, events):
-        """The guide's events are sound names; "talk:GEMINI" is a talking blip in that voice."""
+        """The guide's (and the grade roast's) events are sound names; "talk:GEMINI" is a talking blip in that voice."""
         for name in events:
             if name.startswith("talk:"):
                 who = name.split(":")[1]
@@ -837,6 +872,27 @@ class App:
         if self.screen_name == RUN_END and not self.stamped and self.end_time >= stamp_at:
             self.stamped = True
             self.sounds.play("stamp")
+
+    def update_verdict(self, dt):
+        """
+        The grade roast: it starts VERDICT_DELAY after the grade is stamped
+        (and the new top score's name typed), once per run, if it is on.
+        """
+        if self.verdict is None:
+            naming_done = self.name_entry is None or self.name_entry.done
+            if self.verdict_done or not self.stamped or not naming_done:
+                return
+            self.verdict_wait += dt
+            if self.verdict_wait < VERDICT_DELAY:
+                return
+            self.verdict_done = True
+            if not self.roast_on:
+                return
+            letter = self.semester["letter"]
+            self.verdict = Verdict(letter, VERDICTS[letter][self.verdict_bags[letter].draw()])
+        self.play_guide_sounds(self.verdict.update(dt))   # the same kind of events as the guide's
+        if self.verdict.finished():
+            self.verdict = None
 
     def typed_chat(self):
         """Letters typed of each game over chat line, or None when the chat is not playing."""
@@ -915,6 +971,8 @@ class App:
                 self.sounds.play(name)
                 if name == "lost":
                     self.pick_chat()
+                    # The mugshot: your face right now, as the teacher catches you.
+                    self.renderer.take_mugshot(self.frame, self.tracker.face_box())
             self.chat_blips(typed_before)
 
         # The classroom is always shown at the end: if you were caught, you
@@ -937,6 +995,40 @@ class App:
         # After the last warning, the scene plays out before the end screen.
         if self.game.state != PLAYING and not self.game.in_scene():
             self.go_to(END)
+
+    def toggle_debug(self):
+        """F3: the debug panel on or off. While it is on, every frame is also written to DEBUG_LOG_FILE."""
+        self.debug = not self.debug
+        if self.debug:
+            # A new file each time: it holds only what happened while the panel was on.
+            self.debug_log = open(DEBUG_LOG_FILE, "w", newline="")
+            self.debug_writer = csv.writer(self.debug_log)
+            self.debug_writer.writerow(["time", "screen", "face_found", "raw_yaw", "raw_pitch", "yaw", "pitch",
+                                        "pitch_speed", "raw_direction", "direction", "status", "track_ms"])
+        elif self.debug_log is not None:
+            self.debug_log.close()
+            self.debug_log = None
+
+    def log_debug(self, now, face_found):
+        """One row of DEBUG_LOG_FILE: this frame's tracking numbers (angles from the calibrated neutral)."""
+        tracker = self.tracker
+        yaw, pitch = tracker.relative_angles()
+        used = self.direction if self.screen_name == GAME else tracker.direction
+        self.debug_writer.writerow([
+            f"{now - self.start_time:.3f}", self.screen_name, int(face_found),
+            f"{tracker.raw_yaw - tracker.neutral_yaw:.1f}", f"{tracker.raw_pitch - tracker.neutral_pitch:.1f}",
+            f"{yaw:.1f}", f"{pitch:.1f}", f"{tracker.pitch_speed():.0f}",
+            tracker.raw_direction(), used, tracker.status, f"{self.track_ms:.1f}"])
+
+    def draw_debug(self, now):
+        """The debug panel (F3) over whatever screen is shown: the webcam with the face mesh, the angles..."""
+        picture = self.frame.copy()   # drawn on a copy: the mugshot must get a clean picture
+        self.tracker.draw_face(picture, MESH_BGR, box_colour=WHITE_BGR)
+        in_exam = self.screen_name == GAME
+        self.renderer.draw_debug(self.tracker, now, camera_to_surface(picture, DEBUG_CAMERA_SIZE),
+                                 self.track_ms, self.clock.get_fps(),
+                                 self.game if in_exam else None, self.teacher if in_exam else None,
+                                 self.direction if in_exam else None)
 
     # ------------------------------------------------------------------
     # The main loop
@@ -979,7 +1071,10 @@ class App:
                 now = time.time()
                 dt = min(now - previous_time, MAX_DT)
                 previous_time = now
+                track_start = time.perf_counter()
                 face_found = self.tracker.read(frame, now)
+                self.track_ms = 1000 * (time.perf_counter() - track_start)
+                self.frame = frame   # the newest webcam picture (for the mugshot photo)
                 # Seconds since the program started: the renderer animates with it.
                 self.renderer.t = now - self.start_time
 
@@ -1012,12 +1107,17 @@ class App:
                     self.game_screen(face_found, now, dt)
 
                 self.crossfade(dt)
+                if self.debug:
+                    self.log_debug(now, face_found)
+                    self.draw_debug(now)
                 pygame.display.flip()
                 self.clock.tick(FPS)
         except KeyboardInterrupt:
             pass   # Ctrl+C in the terminal: close everything properly below
 
         # Give the webcam back to the system and close everything.
+        if self.debug_log is not None:
+            self.debug_log.close()
         self.camera.release()
         self.tracker.close()
         pygame.quit()

@@ -15,6 +15,11 @@ the new one fades in from its beginning. The run intro is timed to its
 music, so it does not wait for a fade: cut_to() starts it at once, and
 music_position() says where in the song it is.
 
+Under some sounds (the heartbeat of a razor close call) the music sounds
+far away for a moment: the part of the song playing right now is made
+muffled and echoing (far_away()) and played instead, while the real music
+goes almost silent and then comes back.
+
 A few sounds loop while something lasts (the chalk while the teacher
 erases the board): main.py turns them on and off every frame with loop().
 
@@ -28,7 +33,8 @@ import numpy as np
 import pygame
 
 from settings import (MUSIC_VOLUME, EXAM_MUSIC_VOLUME, MUSIC_FADE_TIME, CHALK_VOLUME, LOOP_FADE_TIME,
-                      EXAM_TITLE_TIME)
+                      EXAM_TITLE_TIME, HEARTBEAT_BPM, HEARTBEAT_TIME, HEARTBEAT_MUSIC_DUCK,
+                      FAR_MUSIC_CUTOFF, FAR_MUSIC_ECHO, MUGSHOT_WRITE_TIME)
 
 SAMPLE_RATE = 44100   # numbers per second of sound
 VOLUME = 0.4          # 0.0-1.0
@@ -43,6 +49,8 @@ SOUND_FILES = {
     "chalk": "Erasing Chalk On Chalkboard Sound Effect.mp3",   # loops while he erases the board
     "footsteps": "footsteps.mp3",             # he walks to your desk / to the other place (optional file)
     "rip": "paper-rip.mp3",                   # he tears up your exam (optional file)
+    "heartbeat": "heartbeat.mp3",             # a razor close call (optional file)
+    "pen": "marker.mp3",                      # "GOT CAUGHT!" written on the mugshot (optional file)
     # The school bell on the title card before each exam.
     "bell": "School Bell Sound Effect (Download) - Soundspace Sound Effects (128k).mp3",
 }
@@ -50,8 +58,12 @@ SOUND_FILES = {
 SOUND_VOLUMES = {"chalk": CHALK_VOLUME}
 # Sounds cut to a fixed length (seconds), fading out at the end, so they
 # end with what they go with: the bell lasts exactly as long as the title card.
-SOUND_LENGTHS = {"bell": EXAM_TITLE_TIME}
+SOUND_LENGTHS = {"bell": EXAM_TITLE_TIME, "heartbeat": HEARTBEAT_TIME, "pen": MUGSHOT_WRITE_TIME}
+# Sounds under which the music sounds far away, for this many seconds.
+SOUND_DUCKS = {"heartbeat": HEARTBEAT_TIME}
+FAR_TRACKS = ("exam",)   # music tracks loaded whole too, so they can be made far away (short loops only)
 CUT_FADE_TIME = 0.35   # seconds over which a cut sound fades out
+MARKER_STROKES = 12    # strokes of the marker writing "GOT CAUGHT!" (about one per letter, and the underline)
 # Music track -> file in SOUND_FOLDER (optional), looped while it plays.
 MUSIC_FILES = {"menu": "theme.mp3", "exam": "thrilling.mp3",
                "character": "character_[cut_180sec].mp3"}   # the run intro and the character screen
@@ -85,6 +97,32 @@ def scribble(seconds):
     """A short scratchy noise, like a pencil: random numbers instead of a sine wave."""
     noise = np.random.default_rng(0).uniform(-1.0, 1.0, int(SAMPLE_RATE * seconds))
     return 0.5 * noise * np.linspace(1.0, 0.0, len(noise))
+
+
+def marker(seconds, strokes):
+    """
+    A whiteboard marker writing fast: `strokes` quick strokes with short
+    gaps. Each stroke is a soft hiss (the felt tip rubbing) plus the
+    marker's squeak: a high note whose pitch wobbles as the hand moves.
+    The last stroke is long (the angry underline).
+    """
+    rng = np.random.default_rng(2)
+    # How long each stroke is: random, the last one three times as long.
+    lengths = rng.uniform(0.6, 1.4, strokes)
+    lengths[-1] *= 3
+    lengths *= 0.75 * seconds / lengths.sum()   # strokes fill 3/4 of the time, gaps the rest
+    gap = np.zeros(int(SAMPLE_RATE * 0.25 * seconds / strokes))
+    parts = []
+    for length in lengths:
+        t = np.arange(int(SAMPLE_RATE * length)) / SAMPLE_RATE
+        hiss = np.diff(rng.uniform(-1.0, 1.0, len(t) + 1))   # bright noise (high part only)
+        pitch = rng.uniform(1700, 2600) + 300 * np.sin(2 * np.pi * rng.uniform(5, 9) * t)
+        squeak = np.sin(2 * np.pi * np.cumsum(pitch) / SAMPLE_RATE)   # cumsum: the pitch can change
+        # Pressed down quickly, lifted at the end; the squeak comes and goes.
+        shape = np.minimum(1.0, t / 0.01) * np.minimum(1.0, (length - t) / 0.02)
+        squeak_level = 0.25 * (0.5 + 0.5 * np.sin(2 * np.pi * rng.uniform(2, 4) * t)) ** 2
+        parts += [(0.35 * hiss + squeak_level * squeak) * shape, gap]
+    return np.clip(np.concatenate(parts), -1.0, 1.0)
 
 
 def tear(seconds, rng):
@@ -121,6 +159,84 @@ def step(seconds, rng):
     thud = np.sin(2 * np.pi * (90 - 300 * t) * t) * np.exp(-t / 0.03)   # heel on the floor
     scuff = rng.uniform(-1.0, 1.0, len(t)) * np.exp(-t / 0.015) * 0.3     # the shoe's sole
     return thud + scuff
+
+
+def heart_thump(seconds, pitch):
+    """
+    One thump of a heart: a low note that falls fast and dies away. Pushed
+    through tanh ("overdriven"), so it is hard and punchy, and the extra
+    overtones make it heard on laptop speakers too, which play no deep bass.
+    """
+    t = np.arange(int(SAMPLE_RATE * seconds)) / SAMPLE_RATE
+    note = np.sin(2 * np.pi * (pitch - 250 * t) * t) * np.exp(-t / 0.05)
+    return np.tanh(4 * note)
+
+
+def heartbeat(bpm, seconds):
+    """A pounding heart: "lub-DUB" at `bpm` beats per minute for `seconds`, a little louder each beat."""
+    wave = np.zeros(int(SAMPLE_RATE * seconds))
+    gap = int(SAMPLE_RATE * 60 / bpm)
+    lub, dub = heart_thump(0.16, 75), 0.8 * heart_thump(0.12, 95)
+    dub_at = int(gap * 0.3)   # the second, shorter thump comes soon after the first
+    for start in range(0, len(wave) - dub_at - len(dub), gap):
+        loud = 0.7 + 0.3 * start / len(wave)
+        wave[start:start + len(lub)] += loud * lub
+        wave[start + dub_at:start + dub_at + len(dub)] += loud * dub
+    return np.clip(wave, -1.0, 1.0)
+
+
+def boom(seconds):
+    """
+    A big explosion (the AA's show): a deep thump that falls and rings on,
+    a burst of noise (the blast, darker as it dies away), overdriven so it hits.
+    """
+    rng = np.random.default_rng(4)
+    t = np.arange(int(SAMPLE_RATE * seconds)) / SAMPLE_RATE
+    thump = np.sin(2 * np.pi * (60 - 40 * t) * t) * np.exp(-t / 0.35)
+    noise = rng.uniform(-1.0, 1.0, len(t))
+    # Averaging the noise with itself shifted takes the hiss away: a darker rumble.
+    rumble = np.convolve(noise, np.ones(30) / 30, mode="same") * 4
+    blast = (0.6 * noise * np.exp(-t / 0.06) + rumble * np.exp(-t / 0.5))
+    return np.tanh(2.5 * (thump + blast)) * 0.95
+
+
+def firework(seconds, seed):
+    """
+    One firework going off: a sharp pop, then a crackle of tiny snaps
+    (random clicks that thin out). `seed` makes each one a little different.
+    """
+    rng = np.random.default_rng(seed)
+    t = np.arange(int(SAMPLE_RATE * seconds)) / SAMPLE_RATE
+    pop = rng.uniform(-1.0, 1.0, len(t)) * np.exp(-t / 0.025) + np.sin(2 * np.pi * 110 * t) * np.exp(-t / 0.05)
+    clicks = (rng.random(len(t)) < 0.003 * np.exp(-t / (seconds / 3))) * rng.uniform(0.3, 0.8, len(t))
+    crackle = np.convolve(clicks, rng.uniform(-1.0, 1.0, 60), mode="same")   # each click a tiny snap
+    return np.clip(0.9 * pop + 0.6 * crackle * (t > 0.08), -1.0, 1.0)
+
+
+def far_away(samples, rate):
+    """
+    Music as if heard from far away, through a wall: the high notes cut
+    (above FAR_MUSIC_CUTOFF) and a long echo added (FAR_MUSIC_ECHO). The
+    echo is the music mixed with itself delayed by every amount at once,
+    each a bit quieter (random noise that dies away = a big hall's echo).
+    Done with the FFT, which makes this mixing fast. `samples`: floats,
+    one column per speaker; the result is longer by the echo.
+    """
+    rng = np.random.default_rng(3)
+    echo_count = int(rate * FAR_MUSIC_ECHO)
+    t = np.arange(echo_count) / rate
+    echo = rng.uniform(-1.0, 1.0, echo_count) * np.exp(-t / (FAR_MUSIC_ECHO / 7))   # 1/1000 at the end
+    echo[0] = 1.0   # a little of the music itself too
+    size = len(samples) + echo_count
+    fft_size = 1 << (size - 1).bit_length()   # a power of two: the FFT is much faster then
+    freqs = np.fft.rfftfreq(fft_size, 1 / rate)
+    muffle = 1 / (1 + (freqs / FAR_MUSIC_CUTOFF) ** 4)   # lets the low notes through, not the high
+    columns = samples.reshape(len(samples), -1)
+    wet = np.fft.irfft(np.fft.rfft(columns, fft_size, axis=0) * (np.fft.rfft(echo, fft_size) * muffle)[:, None],
+                       fft_size, axis=0)[:size]
+    # As loud as the music was, at most.
+    wet *= np.abs(columns).max() / max(np.abs(wet).max(), 1e-9)
+    return wet.reshape((size,) + samples.shape[1:])
 
 
 def footsteps(count, every):
@@ -221,6 +337,10 @@ def make_waves():
         "warning": tone(150, 0.4, fade=False),                            # low buzz
         "won": np.concatenate([tone(f, 0.15) for f in (523, 659, 784)]),  # rising notes
         "close_call": np.concatenate([tone(f, 0.08) for f in (660, 990)]),  # phew: got away
+        "heartbeat": heartbeat(HEARTBEAT_BPM, HEARTBEAT_TIME),           # ... but only just
+        # An AA's show (logic/verdict.py): an explosion, then fireworks.
+        "boom": boom(1.4),
+        "firework": firework(0.9, 5),
         "time_up": np.concatenate([tone(f, 0.25) for f in (400, 300, 200)]),  # falling notes: the paper is collected
         # Seen copying: a fast rising alarm, "look away now!"
         "spotted": np.concatenate([tone(f, 0.07, fade=False) for f in (600, 900, 1200, 1500)]),
@@ -247,6 +367,7 @@ def make_waves():
         "sharp_eye": np.concatenate([synth(f, 0.06) for f in (1319, 1568, 2093)]),
         # Scenes: the teacher tears up your exam; the game over screen.
         "rip": rip(0.9),
+        "pen": marker(MUGSHOT_WRITE_TIME, MARKER_STROKES),   # "GOT CAUGHT!" on the mugshot
         "footsteps": footsteps(4, 0.2),     # he walks to your desk (about TEACHER_APPROACH_TIME)
         "chalk": chalk(2.0),                # replaced by the chalk file, if it loads
         # The disclaimer notice: typewriter keys, the signature, the stamp.
@@ -276,6 +397,8 @@ class Sounds:
         self.track = None        # the music track loaded right now ("menu", "exam" or None)
         self.loops = {}          # looping sound name -> the channel it plays on
         self.music_volume = 0.0   # 0..1, the music's volume right now (it fades)
+        self.duck_left = 0.0      # seconds the music stays quieter for (SOUND_DUCKS)
+        self.track_samples = {}   # FAR_TRACKS track -> the whole song as numbers (for far_away())
         try:
             pygame.mixer.init(SAMPLE_RATE, -16, 1)
         except pygame.error as error:
@@ -317,6 +440,30 @@ class Sounds:
         """Play a sound once. Unknown names, no sound device or muted: nothing."""
         if name in self.sounds and not self.muted:
             self.sounds[name].play()
+            if name in SOUND_DUCKS:
+                self.far_music(SOUND_DUCKS[name])
+
+    def far_music(self, seconds):
+        """
+        For `seconds`, the music sounds far away: the next `seconds` of the
+        song, made muffled and echoing, play as a sound, and the real music
+        drops almost silent at once (music() brings it back slowly after).
+        """
+        samples = self.track_samples.get(self.track)
+        position = self.music_position(self.track)
+        if samples is None or position is None or self.music_volume == 0:
+            return
+        rate = pygame.mixer.get_init()[0]
+        # The song loops, so the position may be past its end: wrap around.
+        start = int(position * rate) % len(samples)
+        part = np.take(samples, range(start, start + int(seconds * rate)), axis=0, mode="wrap")
+        far = far_away(part.astype(float), rate)
+        sound = pygame.sndarray.make_sound(np.clip(far, -32768, 32767).astype(samples.dtype))
+        sound.set_volume(self.music_volume)
+        sound.play()
+        self.duck_left = seconds
+        self.music_volume *= HEARTBEAT_MUSIC_DUCK
+        pygame.mixer.music.set_volume(self.music_volume)
 
     def loop(self, name, on):
         """
@@ -354,6 +501,10 @@ class Sounds:
             self.load_track(track)
         playing_it = track is not None and track == self.track
         target = MUSIC_VOLUMES[track] if playing_it and not self.muted else 0.0
+        # While the far-away music plays (far_music()) the real one stays quiet.
+        self.duck_left = max(0.0, self.duck_left - dt)
+        if self.duck_left > 0:
+            target *= HEARTBEAT_MUSIC_DUCK
         step = MUSIC_VOLUME * dt / MUSIC_FADE_TIME   # how far the volume may move this frame
         self.music_volume = min(target, self.music_volume + step) if target > self.music_volume \
             else max(target, self.music_volume - step)
@@ -384,3 +535,13 @@ class Sounds:
             pygame.mixer.music.stop()
         # Remembered even if it failed, so a broken file is not retried every frame.
         self.track = track
+        if track in FAR_TRACKS and track not in self.track_samples:
+            self.track_samples[track] = self.load_samples(MUSIC_FILES[track])
+
+    @staticmethod
+    def load_samples(file_name):
+        """The whole song as numbers (for far_away()), or None if it cannot be loaded."""
+        try:
+            return pygame.sndarray.array(pygame.mixer.Sound(os.path.join(SOUND_FOLDER, file_name)))
+        except (pygame.error, FileNotFoundError):
+            return None   # then the music just stays as it is

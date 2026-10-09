@@ -19,10 +19,10 @@ INK = (35, 35, 50)
 FADED_INK = (110, 110, 125)
 BLUE_INK = (30, 60, 160)
 DISCLAIMER_LINES = [
-    ("This game does not represent any real-life situation.", INK),
-    ("Any resemblance to real exams, classrooms or professors", INK),
-    ("is purely coincidental (and slightly suspicious).", INK),
-    ("It is purely for entertainment purposes.", INK),
+    ("This game is a work of fiction, made only for entertainment.", INK),
+    ("All characters in it are imaginary. Any resemblance to real", INK),
+    ("students, professors or classrooms is purely coincidental.", INK),
+    ("(Yes, even the teacher. He is imaginary too. Probably.)", FADED_INK),
     ("No neighbours' answers were harmed in the making of this game.", FADED_INK),
     ("We love our professor and we respect academic honesty.", BLUE_INK),
 ]

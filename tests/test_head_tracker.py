@@ -9,7 +9,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from tracking.head_tracker import (HeadTracker, Calibration, pose_threshold, DOWN, SCREEN, LEFT,
                                    RIGHT)
 from settings import (PITCH_DOWN_THRESHOLD, YAW_THRESHOLD, HOLD_TIME, CALIBRATION_SHARE,
-                      CALIBRATION_MIN_ANGLE, CALIBRATION_MAX_ANGLE)
+                      CALIBRATION_MIN_ANGLE, CALIBRATION_MAX_ANGLE, LOST_DOWN_PITCH, LOST_DOWN_SPEED,
+                      PITCH_TREND_TIME)
 
 # Clearly past the "down" threshold, whatever it is set to in settings.py.
 LOOKING_DOWN = -(PITCH_DOWN_THRESHOLD + 5)
@@ -106,6 +107,36 @@ class LostFaceTests(unittest.TestCase):
         tracker = self.lost_after(-15)
         tracker.calibrate(0, -10)   # only 5 degrees below this player's neutral
         self.assertIsNone(tracker.current_direction(2.0, False))
+
+    def nodding(self, speed):
+        """Lost just after nodding at `speed` degrees per second, still above LOST_DOWN_PITCH."""
+        tracker = self.lost_after(-(LOST_DOWN_PITCH - 2))
+        step = 0.033   # one frame
+        for i in range(5):
+            tracker.remember_pitch(1.0 - (4 - i) * step, -(LOST_DOWN_PITCH - 2) + speed * (4 - i) * step)
+        return tracker
+
+    def test_lost_while_nodding_down_fast_is_down(self):
+        # The face vanished before it was LOST_DOWN_PITCH down, but on its way there.
+        tracker = self.nodding(LOST_DOWN_SPEED * 1.5)
+        self.assertEqual(tracker.current_direction(1.1, False), DOWN)
+        self.assertEqual(tracker.status, "head down")
+        self.assertEqual(tracker.current_direction(5.0, False), DOWN)   # and stays so
+
+    def test_lost_while_moving_slowly_is_not_down(self):
+        tracker = self.nodding(LOST_DOWN_SPEED * 0.3)
+        self.assertEqual(tracker.current_direction(1.1, False), SCREEN)
+        self.assertEqual(tracker.status, "face lost...")
+
+    def test_lost_while_nodding_up_is_not_down(self):
+        self.assertIsNone(self.nodding(-LOST_DOWN_SPEED * 2).current_direction(2.0, False))
+
+    def test_pitch_history_keeps_only_the_trend_time(self):
+        tracker = tracker_at(0, 0)
+        for i in range(30):
+            tracker.remember_pitch(i * 0.033, 0)
+        times = [t for t, _ in tracker.pitch_history]
+        self.assertLessEqual(times[-1] - times[0], PITCH_TREND_TIME)
 
     def test_camera_gap_clears_old_down_guess_but_preserves_calibration_and_timestamp(self):
         tracker = self.lost_after(-15)

@@ -48,6 +48,7 @@ The code is in **three folders**, and every file has **one job**:
 | | `bag.py` | Random order, every item once before any repeats | nothing! |
 | | `menu.py` | Menus: which item is selected; head angles → menu actions | nothing! |
 | | `disclaimer.py` | The opening notice: typed, signed, stamped | nothing! |
+| | `verdict.py` | The grade roast after the final | nothing! |
 | `ui/` | `render.py` | The `Renderer`: loads fonts and pictures | pygame, OpenCV |
 | | `style.py`, `draw_*.py` | The drawing, one file per kind of screen | pygame |
 | | `sounds.py` | Makes the beeps, loads the sound files, plays them | pygame, NumPy |
@@ -109,7 +110,7 @@ DISCLAIMER ──signed + stamped──► START ──Space/click──► CALI
                                                                          │
     HELP (the guide) ◄── "How to play" ── MENU ── "Settings" ──► SETTINGS ──"Recalibrate"──► CALIBRATING
                                 │                                                      (back to SETTINGS)
-                              "Play" ──► RUN_INTRO ──drop──► CHARACTER ── pick ──► a new run
+                              "Play" ──► RUN_INTRO ──end───► CHARACTER ── pick ──► a new run
                                                                           ▼
          ┌──────────────► BRIEFING ──"I'm ready"──► LOADING ──3 s──► GAME ──handed in / collected / failed──► END
          │   (next exam)                    ▲  k: CALIBRATING                         │
@@ -202,9 +203,17 @@ The face often vanishes from MediaPipe's view. The rules, in order:
 | Situation | Result | `status` (shown at the top right of the game) |
 |---|---|---|
 | Face found | the tracked direction | `""` |
-| Face vanished while the head was tilting down | `DOWN` (looking at the paper hides the face) | `"head down"` |
+| Face vanished while the head was tilted down (`LOST_DOWN_PITCH`) **or moving down fast** (`LOST_DOWN_SPEED`) | `DOWN` (looking at the paper hides the face) | `"head down"` |
 | Face vanished less than 0.6 s ago | the last direction (mid-turn gap) | `"face lost..."` |
 | Otherwise | `None` → the game pauses | `"face not found"` |
+
+The "moving down fast" part (`went_down()`): a quick nod often loses the
+face before the head is 8° down, so the tracker also looks at which way it
+was going. `remember_pitch()` keeps the raw pitch of the last
+`PITCH_TREND_TIME` seconds with a face, and `pitch_speed()` is how many
+degrees per second it changed from the oldest to the newest of them. If
+the face vanished while that was below `-LOST_DOWN_SPEED`, it went down to
+the paper.
 
 `draw_face()` draws the face outline, eyes, lips and the nose arrow onto the
 frame, so you can see what the tracker sees.
@@ -252,7 +261,7 @@ warning, the bar starts over, 3 warnings → `LOST`. A close call gets a popup
 
 **Scenes:** short moments where the game is frozen and something is
 shown. `game.scene` says which (`WARNING_SCENE`, `CAUGHT_SCENE`,
-`GAME_OVER_SCENE`) and `scene_time` how long it still lasts. While
+`MUGSHOT_SCENE`, `GAME_OVER_SCENE`) and `scene_time` how long it still lasts. While
 `in_scene()` is True, `update()` only runs `update_scene()` (counting
 `scene_time` down) and returns: the clock, the bar and copying stop, and
 `main.py` stops the teacher too. This check comes *before* the game-over
@@ -260,10 +269,12 @@ check, so scenes still play after losing.
 - `warn()` starts the warning scene.
 - `lose()` starts the caught scene (if caught). After the last warning the
   warning scene is already playing.
-- When a scene ends and the game is lost, `update_scene()` starts the game
-  over scene; when that ends, `main.py` shows the end menu.
+- When the warning or caught scene ends and the game is lost,
+  `update_scene()` starts the mugshot scene; when that ends, the game over
+  scene; when that ends, `main.py` shows the end menu.
 - The caught scene sends a `"rip"` event at the moment the paper is torn;
-  the game over scene starts with `"nooo"`.
+  the mugshot sends `"pen"` when the teacher starts writing
+  (`MUGSHOT_WRITE_DELAY`); the game over scene starts with `"nooo"`.
 - `skip_scene()` (Space) only works after losing.
 
 **Losing** emits `"lost"` and `"lost_<reason>"` (`lost_caught`,
@@ -467,6 +478,28 @@ classroom, your paper with what you wrote, a neighbour's paper blurred by
 the screen, and only the newest line, higher up, while you look away, so
 the papers are not covered.
 
+### `logic/verdict.py` — the grade roast
+`VERDICTS` gives each letter (AA … FF) a few conversations; main.py picks
+one with a `Bag` per letter. `Verdict(letter, lines)` is like a small
+`Guide` without tasks: `starts` says when each line begins (after the one
+before is typed and `VERDICT_LINE_PAUSE`), `letters()` how much of each is
+typed at `time`, `update(dt)` returns the talking blips, `skip()` types
+everything, then closes, and `finished()` is true `VERDICT_HOLD` seconds
+after the end. `hype` comes from `VERDICT_HYPE` (BB 1, BA 2, AA 3; others
+0): the lines then start only after `reveal` seconds, the show, and
+`update()` also returns the show's sounds (`HYPE_SOUNDS`) and a
+`"firework"` for each of `firework_times()` during it. The drawing
+(`draw_verdict()` in `ui/draw_scenes.py`) uses the same `firework_times()`,
+so every bang you hear has a firework you see. main.py's
+`update_verdict()` starts it `VERDICT_DELAY` after the grade stamp (and
+the top score's name), once per run, unless `roast_on` is off (Settings).
+The effects: the letter `slam`s from 3× its size (like a stamp), a
+smoothstep `rise` takes it to the top when the chat starts, `light_rays()`
+are thin triangles turning on a see-through layer, `firework_burst()` is
+sparks flying out with air drag (`1 - e^(-kt)`: fast, then slower) and
+gravity (`g t² / 2`), and the shake draws the finished screen again a few
+random pixels off.
+
 ### `logic/character.py` — who you are
 The characters are data: `CHARACTERS` in `settings.py` lists for each one
 only the rules it changes (and its texts); `rules(name)` adds `DEFAULTS`
@@ -477,10 +510,13 @@ code. `Game(character=...)` reads them:
   and the lazy guy; with `creep_time` the bar creeps up while you look
   anywhere but your paper, `update(..., away=True)`);
 - `both_know` goes to `ExamPaper` (`says()` gives the letter on both sides);
+- `greek` only changes what is drawn: `neighbour_letter()` turns B into β,
+  and `draw_game` shows `left_greek_B` instead of `left_B` (or a note);
 - `jokers` is `game.jokers`; `use_joker()` writes `paper.right_answer()`;
 - `hand_in_share` gives `deadline()`: handing in with less time left adds a
   "NERD WAS LATE" row of `-late_penalty` to `score_parts()`;
-- `busy_times` / `watching_times` stretch the teacher (`set_mood()`).
+- `busy_times` / `watching_times` stretch the teacher (`set_mood()`; the
+  front-row student, the 7th-year legend, the "quick question" guy).
 `screen_clarity(rules, look_time)` is how sharp the classroom is after
 looking up (glasses: from `screen_blur_start` to 1 in
 `screen_focus_time`). `Energy` is the energy drink addict's day: a coin
@@ -494,13 +530,18 @@ The character music was measured once (with numpy, from the file): 147
 beats per minute (`CHARACTER_MUSIC_BPM`), a strong hit on the first beat of
 every bar from `INTRO_FIRST_HIT` (0.81 s), and the drop at `INTRO_DROP`
 (11.84 s), where it gets twice as loud. `BEAT` and `BAR` (4 beats) follow
-from the tempo. `INTRO_LINES` are the sarcastic lines, one per bar:
-`line_time(i)`, `current_line(t)` and `since_line(t)` say which one is on
-screen and since when; `is_over(t)` is true from the drop. `since_beat(t)`
+from the tempo. `INTRO_LINES` are the sarcastic lines, one per bar, ending
+on "DON'T GET CAUGHT.", which stays `INTRO_TITLE_BEATS` (8) instead of 4;
+`INTRO_END` is when it is gone. `intensity(line)` goes from 0 (first line)
+to 1 (last) and the drawing uses it to go from soft to hard. `line_time(i)`, `current_line(t)` and `since_line(t)` say which one is on
+screen and since when; `is_over(t)` is true from `INTRO_END`. `since_beat(t)`
 and `since_bar(t)` let the drawing thump on the beat (also on the character
 screen). `draw_run_intro()` (`ui/draw_run_intro.py`) draws it: rushing
 diagonal stripes, the line slamming down from 260 % with a white flash and
-a shake (only the newest line is on screen). A different song needs the three
+a shake (only the newest line is on screen). `grow()` turns `intensity()`
+into how strong the shake, slam, flash, thump and stripe speed are (a
+`BUILD_*` pair: soft on the first line, hard on the last); the title fills
+the width and swaps red/white on every beat. A different song needs the three
 numbers measured again.
 
 The character screen (`ui/draw_characters.py`) is a sliding row
@@ -623,7 +664,18 @@ voice (`TALK_PITCHES`: Gemini higher, Claude lower, a random one of three
 pitches each time).
 The buttons use `synth()`: a sine plus some of its 3rd and 5th harmonics,
 which sounds brighter, like an old synthesizer (`menu_move`, `menu_select`,
-`menu_back`). The score count's ticks (`tally0`, `tally1`, …) go up a semitone each:
+`menu_back`).
+**The heartbeat:** a razor close call (game.py adds a `"heartbeat"` event)
+plays `heartbeat()`: two thumps per beat ("lub-DUB") at `HEARTBEAT_BPM`,
+each a falling low note pushed through `tanh` so it sounds hard (and the
+extra overtones are heard on laptop speakers). Meanwhile the music sounds
+far away: `far_music()` takes the next `HEARTBEAT_TIME` seconds of the
+song (the exam track is also loaded whole, `track_samples`, only for this),
+runs `far_away()` on it and plays that, while the real music drops to
+`HEARTBEAT_MUSIC_DUCK` and then fades back. `far_away()` uses the FFT: in
+the "frequency world" cutting the high notes is multiplying by a curve
+(`muffle`), and adding an echo is multiplying by the echo's own FFT (the
+echo is noise that dies away, like a big hall). The score count's ticks (`tally0`, `tally1`, …) go up a semitone each:
 the frequency times `2 ** (i / 12)`, which is how musical notes work.
 
 ### `ui/` — drawing
@@ -641,7 +693,9 @@ most of its drawing methods are in other files, one per kind of screen:
 | `draw_menus.py` | `MenuDrawing` | start, loading, camera wait, the menus |
 | `draw_briefing.py` | `BriefingDrawing` | the hallway gossip with the slot machine |
 | `draw_game.py` | `GameDrawing` | the game screen, popup, pause |
-| `draw_scenes.py` | `SceneDrawing` | warning, caught and game over scenes |
+| `draw_scenes.py` | `SceneDrawing` | warning, caught and game over scenes; the grade roast |
+| `draw_mugshot.py` | `MugshotDrawing` | the mugshot after losing: your webcam photo on the taped-up exam |
+| `draw_debug.py` | `DebugDrawing` | the debug panel (F3) over any screen: webcam with the face mesh, rotation matrix, yaw/pitch chart and graph, the direction decision, the exam's state |
 | `draw_results.py` | `ResultsDrawing` | the score count after an exam, the run's results, the top scores |
 | `draw_guide.py` | `GuideDrawing` | the "How to play" guide |
 | `draw_characters.py` | `CharacterDrawing` | the character screen: the list, the card, portraits drawn in code (`portrait()` draws a head and shoulders, then `portrait_<key>()` adds the cap, the glasses, the can...) |
@@ -691,6 +745,17 @@ blank), warnings and the clock at the top, the suspicion bar at the bottom.
   red one on top), then a white flash and `classroom_caught.jpeg`.
   `scene_texts()` (shared with the warning scene) draws the red light, the
   two strips of text and the flash.
+- The mugshot (`draw_mugshot.py`): when `main.py` hears the `"lost"`
+  event it calls `take_mugshot(frame, tracker.face_box())`. `face_box()`
+  is the smallest box around the 478 face points; `crop_box()`
+  (`logic/mugshot.py`, tested) turns it into the part of the picture to cut
+  out: `MUGSHOT_FACE_ZOOM` times as tall as the face, the photo's shape,
+  always inside the picture. The cut-out is mirrored and laid on both paper
+  pictures, but only on their pure green pixels (`green_mask()`), so the
+  paperclip stays on top. `draw_mugshot()` fades the plain paper in, then
+  shows the written paper from left to right (only between the columns
+  where the two pictures differ, `writing_columns()`): that looks like the
+  writing. No pictures: the photo and red words on black.
 - `draw_game_over`: black, "GAME OVER", then the two logos chat
   (`GAME_OVER_CHAT`, one conversation per way of failing). The logos are
   drawn in code, once, as pictures: Claude's burst is thick lines with
@@ -805,8 +870,8 @@ desktop, not a real video-mode change. F11 just calls `open_window()` again.)
      (`tracker.current_direction()`, the last one kept if the face is lost)
      goes to `guide.update()`; its events are played (`play_guide_sounds()`);
      `draw_guide`. When the guide is finished → the practice exam. Keys go to `guide_key()`.
-   - RUN_INTRO: `intro_screen()`: `music_time()` → `draw_run_intro`; at
-     the drop (or Space / turning right) → CHARACTER.
+   - RUN_INTRO: `intro_screen()`: `music_time()` → `draw_run_intro`; after
+     the title (or Space / turning right) → CHARACTER.
    - "ARE YOU SURE?": choosing QUIT or MAIN MENU (or Esc on the main menu)
      sets `self.confirming` (`ask_confirm()`); while it is set every menu
      action goes to `answer_confirm()` (SELECT = yes, BACK = no) and
@@ -818,7 +883,7 @@ desktop, not a real video-mode change. F11 just calls `open_window()` again.)
      the row slides (`self.carousel`); choosing one sets `self.character`
      and starts the run; `draw_characters`.
    - GAME (characters): the teacher gets `dt * game.world_speed()` (the
-     sugar rush), `set_mood()` gets the buddy's `busy_times` /
+     sugar rush), `set_mood()` gets the character's `busy_times` /
      `watching_times`, J calls `game.use_joker()`, and `screen_clarity()`
      tells `draw_game` how blurry the classroom is (glasses).
    - MENU / SETTINGS: `head_input.update(yaw, pitch, dt, ...)` may
@@ -843,6 +908,12 @@ desktop, not a real video-mode change. F11 just calls `open_window()` again.)
 4. `crossfade(dt)`: for SCREEN_FADE_TIME after `go_to()` the old screen's
    last picture (copied in `go_to()`) is laid over the new one, more and
    more see-through, so screens blend into each other instead of jumping.
+   Then, if F3 turned it on, `draw_debug(now)` lays the debug panel over
+   it: the face mesh is drawn on a *copy* of the webcam picture (the
+   mugshot must get a clean one), and `renderer.draw_debug()` draws the
+   rest from the tracker's numbers (`rotation`, `raw_yaw`/`raw_pitch`
+   before smoothing, the thresholds, `candidate`/`candidate_since` for the
+   HOLD_TIME bar). `track_ms` is how long `tracker.read()` (MediaPipe) took.
    `pygame.display.flip()` shows the frame; `clock.tick(FPS)` waits so we don't
    run faster than 30 fps.
 

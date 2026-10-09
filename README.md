@@ -84,7 +84,7 @@ On Windows, double-click `run.bat` (or type `run.bat` in a terminal in the
 project folder).
 
 The game opens with our team's "Glitch Please" intro (any key skips it), then
-a (satirical) official notice on a desk: it is typed out (Space shows it all
+a (satirical) official notice on a desk ("all characters are imaginary"): it is typed out (Space shows it all
 at once), press Space to sign it (the "signature" is someone trying to draw a
 helicopter), an "APPROVED" stamp comes down and the
 game goes on. Sit at the desk with the webcam on top of the monitor. The start screen shows
@@ -103,7 +103,7 @@ work too; after a key press or a click the head is ignored for 1 s, so the
 two do not fight (the box at the bottom right shows "KEYBOARD", then "HEAD
 CONTROL" again). **Quit** and **Main menu** ask "ARE YOU SURE?" first:
 turn right again (or Enter) for yes, left (or Esc) for no. In **Settings** you can turn the sound off, switch
-fullscreen, or calibrate again. The main menu also shows the **top scores**
+fullscreen, turn the **grade roast** off, or calibrate again. The main menu also shows the **top scores**
 (the 5 best runs).
 
 **How to play** is a hands-on guide: Gemini and Claude take turns talking
@@ -112,7 +112,8 @@ they explain it: look down at your paper and write a letter, turn right
 (the neighbour shows "?"), turn left and keep looking until the paper is
 sharp (B), write B, look at the screen to see the teacher. Then they
 explain the "hmm", being caught, close calls, warnings, the bonuses and the
-three-exam run. A banner says what to do, with a bar while you hold it.
+three-exam run, with a few tips, all very sarcastic and quick (about
+45 seconds of talking). A banner says what to do, with a bar while you hold it.
 Space hurries a line (or does the task for you), Esc goes back. When they
 are done, a **practice exam** starts: two questions, 60 seconds, a sleepy
 teacher with long busy times, and everything at 75 % of its danger (the
@@ -123,8 +124,10 @@ Choose **Play**: the character music starts and a short, sarcastic
 **briefing** plays to it, Hotline Miami style: on every strong hit of the
 music a new line slams onto the screen ("3 EXAMS." "1 SEMESTER." "0 HOURS
 OF STUDYING." ... "YOUR FAMILY EXPECTS... ...THE MAXIMUM SCORE." "NO
-PRESSURE." "(A LOT OF PRESSURE.)"), with a flash and a shake. Space, Enter
-or turning your head right skips it. When the music drops, the characters
+PRESSURE." "(A LOT OF PRESSURE.)"), with a flash and a shake, soft at
+first and harder with every line; it ends on a huge red-and-white
+**"DON'T GET CAUGHT."** that stays a little longer. Space, Enter
+or turning your head right skips it. Then the characters
 slide in: they stand in a row, the chosen one big in the middle, thumping
 to the beat; **turn left/right** to slide the row, **look down** (hold) to
 pick, look up (hold) to go back. Choose
@@ -139,7 +142,10 @@ an advantage and a price (the numbers are in `CHARACTERS` in
 | Glasses | reads a neighbour's paper faster | the classroom is blurry for a moment each time you look at the teacher |
 | The nerd | one **joker** per exam: `j` while looking at your paper writes the right answer | his early bonus only starts at 30 % of the time left (0 there, the full bonus with all the time left); later than that, −1000 points |
 | Energy drink addict | a coin toss each exam (50 %, 15 % less after every rush in the run): **sugar rush**, the world (teacher, clock, bar) runs slower for you | or a **crash**: now and then you get sleepy (eyelids close) and read slowly |
-| The teacher's buddy | the teacher checks less often | but when he looks, he looks longer |
+| The front-row student ("great lecture, hocam") | the teacher checks less often | but when he looks, he looks longer |
+| The 7th-year legend (older than the professor) | the teacher's looks are shorter | the bar fills faster when he sees you copying |
+| Not a ME student (took ME461 as an elective) | staring at the teacher barely fills the bar | it's all Greek to him: the neighbours' answers show up as α β γ δ (= A B C D) |
+| The "quick question" guy (hand always up) | the teacher is busy at the board longer | while you are not looking at your paper the bar creeps up (full in 40 s) |
 | Lazy but funny | both neighbours show you the answer | the teacher is alarmed faster; no sharp-eye bonus |
 
 A badge at the top left of the game shows your character (and the nerd's
@@ -194,7 +200,11 @@ party hat and balloons; the dean's visit: a suit): a file like
 unanswered questions count as blank) and it is graded: falling notes play.
 **Failing** an exam means being caught or getting 3 warnings (the Metal Gear
 alert plays). When you are caught, a red Metal Gear "!" pops up over the
-teacher, then he tears up your exam. After failing comes a GAME OVER screen
+teacher, then he tears up your exam. Then, on a black and silent screen,
+the **mugshot** fades in: your exam, torn in half and taped back together,
+with a photo of your face (taken by the webcam the moment you lost)
+clipped on it, and the teacher writes **"GOT CAUGHT!"** over it with a red
+marker. The photo is never saved. After that comes a GAME OVER screen
 where the Gemini and Claude logos make fun of you, with a different joke
 each time, typed out with little talking blips (Space skips it). A failed
 exam scores 0, and the run goes on with the next exam.
@@ -208,6 +218,19 @@ its beginning. The briefing and the character screen have their own
 track (`assets/sounds/character_[cut_180sec].mp3`), which starts at once
 (the briefing is timed to it). Sound OFF in the settings turns them all off. Every screen
 change is a short crossfade.
+
+All three tracks were made by the team with Suno, each from a sample:
+
+| Track | Sampled from |
+|---|---|
+| `theme.mp3` (menus) | "Bastır" by Murda and EGE! |
+| `character_[cut_180sec].mp3` (briefing, character screen) | "Blizzard" from the Hotline Miami 2 soundtrack |
+| `thrilling.mp3` (exam) | the opening of "Endo's Game" from the film *Marty Supreme* |
+
+Why Hotline Miami for choosing a character: it is an action crime game in
+an 80s Vice City world, which the author loves; and if copying in an exam
+counts as a "crime", that world fits the game's satire very well. The
+neon look of the menus and the briefing comes from the same place.
 
 **Grading:** every question is worth one point: right **+1**, wrong
 **−0.5**, blank **0**. So a blind guess is a gamble (right only one time in
@@ -225,7 +248,8 @@ turn: what you wrote, the answer key, right / wrong / blank and the points
 bonuses come one row each: the **early bonus** (up to +1000, the share of the exam time you did
 not use), the **close calls** (the teacher saw you copying and you looked
 away in time: 100 to 500 points, the fuller the suspicion bar was the more;
-above 80 % it is a "razor close" call, +300 more), **sharp eyes** (+100
+above 80 % it is a "razor close" call, +300 more, and your heart pounds
+while the music sounds far away for a moment), **sharp eyes** (+100
 each time the first paper you read for a question is the one that knows),
 **NINJA!** (+1500: every answer right, no warning; **almost ninja** +500
 with one warning) and −300 per warning.
@@ -252,12 +276,25 @@ up/down to change the letter, turn right for the next one, turn left to go
 back (or just type the letters and press Enter). The top scores
 ("1. EFE 12808 7 OCT") are kept in `highscore.json` (each computer has its own).
 
+Then the **grade roast**: Gemini and Claude come back and comment on your
+letter in two or three sarcastic lines ("CC. Wow, I thought you were
+special." "NAAHHH. Average. Always was."). A good grade gets a show first,
+bigger the better: BB a little confetti, BA light rays and a fanfare, AA an
+explosion, a white flash, a shaking screen, fireworks and "LEGENDARY
+CHEATER" in gold. Any key, a click or the head (select / back) hurries it,
+then closes it. It can be turned off in Settings ("GRADE ROAST").
+
 Keys: Space calibrate (once per pose), `a`/`b`/`c`/`d` write an answer, `s` leave it blank,
 `j` the nerd's joker (all while looking at your paper), Esc quits in the game, asks
 "Are you sure?" on the main menu (and goes back in the other menus; the window's X button and
 `q` do nothing, Ctrl+C in the terminal still stops it), `r` restart the run, `m`
 main menu, `k` recalibrate, F11
-fullscreen on/off, `t` always show the classroom and the teacher's state (for testing). The game opens as a maximized window (title bar and taskbar stay
+fullscreen on/off, `t` always show the classroom and the teacher's state (for testing),
+**F3 the debug panel** (on every screen: the webcam with MediaPipe's face
+mesh, the head rotation matrix, the yaw/pitch chart with your calibrated
+thresholds, the angles over the last 4 s, how the direction is decided,
+and during an exam the suspicion, the teacher and the reading; for showing
+how the game works). The game opens as a maximized window (title bar and taskbar stay
 visible); F11 makes it borderless fullscreen. In `settings.py`, set
 `FULLSCREEN = True` to start fullscreen or `MAXIMIZED = False` to start as a
 small 960×600 window. If no face
@@ -269,8 +306,11 @@ to track.
 
 To tune the head tracking, watch the yaw/pitch numbers at the top right of
 the game and change the numbers in `settings.py`. Your own face (the
-webcam picture) is only shown on the start screen, while calibrating; the
-menus and the game do not show it.
+webcam picture) is only shown on the start screen, while calibrating, and
+on the debug panel (F3). While the panel is on, every frame's tracking
+numbers (angles, nod speed, direction, the tracker's note) are also written
+to `debug_log.csv` (a new file each time F3 turns it on), to find out
+afterwards why a look was missed.
 
 The old body tracker still runs with `.venv/bin/python old/tracker.py`
 (Windows: `.venv\Scripts\python old\tracker.py`).
@@ -351,6 +391,7 @@ you see and hear. `main.py` and `settings.py` stay at the top.
 | `logic/menu.py` | Menus: the selected item, and head tilts/turns → up/down/select/back; the loading bar's uneven fill. |
 | `logic/disclaimer.py` | The opening notice: typing, signing, the stamp (no drawing). |
 | `logic/guide.py` | The "How to play" guide: Gemini and Claude's lines and the tasks to try (no drawing). |
+| `logic/verdict.py` | The grade roast after the final: the lines per letter, the typing, the show's hype (no drawing). |
 | `logic/character.py` | The characters: their rules (from `CHARACTERS` in `settings.py`), the blur of glasses, the energy drink's rush or crash. |
 | **`tracking/`** | |
 | `tracking/camera.py` | Reads the webcam in the background. |
@@ -359,7 +400,10 @@ you see and hear. `main.py` and `settings.py` stay at the top.
 | `ui/render.py` | The `Renderer`: loads fonts and pictures; its drawing is in the files below. |
 | `ui/style.py` | The neon look: colours, fonts, text, bars, boxes. |
 | `ui/draw_game.py` | The game screen: the classroom, your paper, the neighbours, the strips. |
-| `ui/draw_scenes.py` | Warning, caught and game over scenes. |
+| `ui/draw_scenes.py` | Warning, caught and game over scenes; the grade roast and its show. |
+| `ui/draw_mugshot.py` | The mugshot after losing: your webcam photo on the taped-up exam. |
+| `ui/draw_debug.py` | The debug panel (F3): what the head tracking sees and decides. |
+| `logic/mugshot.py` | Which part of the webcam picture to cut out so the face is in the middle of the mugshot. |
 | `ui/draw_results.py` | The score count after an exam, the run's results, the top scores. |
 | `ui/draw_menus.py` | Start, loading, camera wait and the menus. |
 | `ui/draw_notice.py` | The opening notice on the desk. |
@@ -374,11 +418,11 @@ you see and hear. `main.py` and `settings.py` stay at the top.
 | `.gitattributes` | Keeps Windows line endings in `run.bat`. |
 | `face_landmarker.task` | Pre-trained MediaPipe face model. |
 | `pose_landmarker.task` | Pre-trained MediaPipe pose model, used by `old/tracker.py`. |
-| `assets/images/` | The four classroom pictures, plus the three look-away pictures (`classroom_desk_looking_down/left/right`) and each neighbour's paper with a letter (`left_A` … `left_D`, `left_unknown` = "?", same for `right_`), the teacher pointing at you after a warning (`classroom_warning`) (`original/`: as made by Gemini, before sharpening). |
+| `assets/images/` | The four classroom pictures, plus the three look-away pictures (`classroom_desk_looking_down/left/right`) and each neighbour's paper with a letter (`left_A` … `left_D`, `left_unknown` = "?", same for `right_`), the teacher pointing at you after a warning (`classroom_warning`), the mugshot's paper (`torn`, and `got_caught` with the writing) (`original/`: as made by Gemini, before sharpening). |
 | `assets/sounds/` | Sound files (Luigi "hmm", MGS alert, chalk erasing for later), `theme.mp3` (menu music), `thrilling.mp3` (exam music) and `character_[cut_180sec].mp3` (the briefing and the character screen). |
 | `LEARN.md` | **Start here to learn the code:** how it works, file by file. |
 | `PLAN.md` | Game design, open questions, what is done and what is next. |
-| `IMAGE_PROMPTS.md` | Ready-to-paste Gemini prompts for the teacher's mood pictures (which image to upload, what to save it as). |
+| `IMAGE_PROMPTS.md` | Ready-to-paste Gemini prompts for the teacher's mood pictures and the mugshot paper (which image to upload, what to save it as). |
 | `NOTES.md` | Update log: what changed in each commit and why. |
 | `CLAUDE.md` | Rules for changing the code (read automatically by Claude Code). |
 | `requirements.txt` | Libraries to install. |

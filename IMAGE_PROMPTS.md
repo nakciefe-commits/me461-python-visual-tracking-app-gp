@@ -315,3 +315,136 @@ NEW PHONE SET (draw these exactly the same way in every picture):
 
 He has just looked up at the class, still holding the new phone in one hand, reluctant to put it down.
 ```
+
+
+## Not a ME student: the answers in Greek (`left_greek_*`, `right_greek_*`)
+
+Not a ME student (a character, NOTES #58) sees the neighbours' answers as
+Greek letters: A = α, B = β, C = γ, D = δ. Each of these 8 pictures is a
+copy of the normal side view with only the circled letter changed. Until a
+picture exists, the game shows the Greek letter on a white note instead, so
+any subset works. Same steps as above: upload the one picture, paste the
+prompt, save under the name given. **Check** that only the letter changed
+(the paper is looked for at a fixed spot).
+
+### G1: `left_greek_A`
+
+- **Upload:** `left_A.jpeg`
+- **Save as:** `left_greek_A.jpeg`
+
+```
+Edit the attached image. Keep EXACTLY the same camera angle, framing, image size, art style, colours and lighting. Do not move, add or remove anything: the students, desks, chairs, door, board and every other text stay exactly as they are. Change ONLY one thing: on the student's exam paper, the big circled letter "A" becomes the Greek letter "α" (alpha), handwritten in the same pencil style, the same size, inside the same circle, in the same place. It must be sharp and easy to read. Nothing else on the paper changes.
+```
+
+### G2: `left_greek_B`
+
+- **Upload:** `left_B.jpeg`
+- **Save as:** `left_greek_B.jpeg`
+
+```
+Edit the attached image. Keep EXACTLY the same camera angle, framing, image size, art style, colours and lighting. Do not move, add or remove anything: the students, desks, chairs, door, board and every other text stay exactly as they are. Change ONLY one thing: on the student's exam paper, the big circled letter "B" becomes the Greek letter "β" (beta), handwritten in the same pencil style, the same size, inside the same circle, in the same place. It must be sharp and easy to read. Nothing else on the paper changes.
+```
+
+### G3: `left_greek_C`
+
+- **Upload:** `left_C.jpeg`
+- **Save as:** `left_greek_C.jpeg`
+
+```
+Edit the attached image. Keep EXACTLY the same camera angle, framing, image size, art style, colours and lighting. Do not move, add or remove anything: the students, desks, chairs, door, board and every other text stay exactly as they are. Change ONLY one thing: on the student's exam paper, the big circled letter "C" becomes the Greek letter "γ" (gamma), handwritten in the same pencil style, the same size, inside the same circle, in the same place. It must be sharp and easy to read. Nothing else on the paper changes.
+```
+
+### G4: `left_greek_D`
+
+- **Upload:** `left_D.jpeg`
+- **Save as:** `left_greek_D.jpeg`
+
+```
+Edit the attached image. Keep EXACTLY the same camera angle, framing, image size, art style, colours and lighting. Do not move, add or remove anything: the students, desks, chairs, door, board and every other text stay exactly as they are. Change ONLY one thing: on the student's exam paper, the big circled letter "D" becomes the Greek letter "δ" (delta), handwritten in the same pencil style, the same size, inside the same circle, in the same place. It must be sharp and easy to read. Nothing else on the paper changes.
+```
+
+### G5: `right_greek_A`
+
+- **Upload:** `right_A.jpeg`
+- **Save as:** `right_greek_A.jpeg`
+
+```
+Edit the attached image. Keep EXACTLY the same camera angle, framing, image size, art style, colours and lighting. Do not move, add or remove anything: the students, desks, chairs, door, board and every other text stay exactly as they are. Change ONLY one thing: on the student's exam paper, the big circled letter "A" becomes the Greek letter "α" (alpha), handwritten in the same pencil style, the same size, inside the same circle, in the same place. It must be sharp and easy to read. Nothing else on the paper changes.
+```
+
+### G6: `right_greek_B`
+
+- **Upload:** `right_B.jpeg`
+- **Save as:** `right_greek_B.jpeg`
+
+```
+Edit the attached image. Keep EXACTLY the same camera angle, framing, image size, art style, colours and lighting. Do not move, add or remove anything: the students, desks, chairs, door, board and every other text stay exactly as they are. Change ONLY one thing: on the student's exam paper, the big circled letter "B" becomes the Greek letter "β" (beta), handwritten in the same pencil style, the same size, inside the same circle, in the same place. It must be sharp and easy to read. Nothing else on the paper changes.
+```
+
+### G7: `right_greek_C`
+
+- **Upload:** `right_C.jpeg`
+- **Save as:** `right_greek_C.jpeg`
+
+```
+Edit the attached image. Keep EXACTLY the same camera angle, framing, image size, art style, colours and lighting. Do not move, add or remove anything: the students, desks, chairs, door, board and every other text stay exactly as they are. Change ONLY one thing: on the student's exam paper, the big circled letter "C" becomes the Greek letter "γ" (gamma), handwritten in the same pencil style, the same size, inside the same circle, in the same place. It must be sharp and easy to read. Nothing else on the paper changes.
+```
+
+### G8: `right_greek_D`
+
+- **Upload:** `right_D.jpeg`
+- **Save as:** `right_greek_D.jpeg`
+
+```
+Edit the attached image. Keep EXACTLY the same camera angle, framing, image size, art style, colours and lighting. Do not move, add or remove anything: the students, desks, chairs, door, board and every other text stay exactly as they are. Change ONLY one thing: on the student's exam paper, the big circled letter "D" becomes the Greek letter "δ" (delta), handwritten in the same pencil style, the same size, inside the same circle, in the same place. It must be sharp and easy to read. Nothing else on the paper changes.
+```
+
+## The mugshot: the torn exam paper (`torn`, `got_caught`)
+
+The background of the mugshot scene after losing (`ui/draw_mugshot.py`):
+the JAZZ QUIZ paper torn in half and taped back together, in a dark room
+under one lamp, with an empty photo clipped to it. The game finds the
+**pure green rectangle** by its colour and puts the webcam photo taken
+when you were caught there. M2 is the same picture with "GOT CAUGHT!"
+written on it in red marker: the game shows M2 over M1 from left to right,
+so it looks like it is being written. **Check:** the green box is one flat
+colour and straight, nothing lies on it but the clip's edge, the paper is
+seen straight from above, and M2 differs from M1 only in the writing.
+Both are made (NOTES #61).
+
+### M1
+
+- **Upload:** 1. `classroom_desk_looking_down.jpeg` (the game's style), 2. a photo of a torn paper (an example of the tear, any photo)
+- **Save as:** `torn.jpeg`
+
+```
+Create a new image in EXACTLY the art style of the first attached image: a hand-drawn digital illustration with clean dark outlines and soft flat shading. The second attached image is only a reference for how the torn paper and the tear look; copy its tear, not its style.
+
+Portrait image, 3:4 aspect ratio. A view straight from above (top-down, no perspective, no tilt). The exam paper FILLS ALMOST THE WHOLE IMAGE: it covers about 95% of the image height and about 90% of the width, perfectly straight with its edges parallel to the image edges. Only a thin strip of dark wooden desk is visible around it. No hands, no other objects.
+
+LIGHT: a dark room at night. One single spotlight shines down onto the middle of the paper, like an interrogation lamp: the centre of the paper is brightly lit, the light falls off towards the edges and corners of the paper, and the desk around it is almost black. Dramatic, moody, high contrast, but the text on the paper stays readable.
+
+THE PAPER: the SAME exam paper as in the first image, torn out of the spiral notebook.
+- It looks exactly like the paper in the first image: the same printed header "ME461 MECHATRONIC COMPONENTS AND INSTRUMENTATION -" with the line under it, the same title "JAZZ QUIZ", the same drawings (the robot arm, the ADC block, the chip with its pins) and the same text block, in the same places and the same font.
+- The left edge is the torn-out edge of a spiral notebook: a row of small torn holes, no blue cover and no spiral.
+- At the bottom, the numbered answer lines "1." to "5." as in the first image, with a single answer letter written in pencil after some of them (for example "1. B", "2. D", "4. A").
+- The paper was torn in half VERTICALLY, from the top edge straight down to the bottom edge, into a left half and a right half (a jagged, rough tear down the middle, like in the second image), and then taped back together: the two halves are slightly misaligned and a few millimetres apart, held by four pieces of slightly yellowed, transparent sticky tape across the tear, from top to bottom. Small wrinkles near the tear. The tear goes through the header, the drawings and the answer lines.
+
+THE PHOTO:
+- In the top-right part of the paper, on the right half (not on the tear), a rectangular photo print about a quarter of the paper's width, portrait orientation (3:4), like an ID photo, with a thin white border, perfectly straight (not rotated).
+- It is attached to the paper with one silver metal paperclip on its top edge. The paperclip touches only the white border, never the inside of the photo.
+- The inside of the photo (inside the white border) is EMPTY: one perfectly flat, solid, pure green colour (#00FF00), with no texture, no gradient, no shading, no outline inside it, no text and nothing on top of it. Sharp, straight edges. The spotlight and the shadows do NOT change this green: it stays exactly #00FF00 everywhere.
+
+NO other text, stamps, grades, signatures, stains or objects anywhere.
+```
+
+### M2
+
+- **Upload:** `torn.jpeg` (M1)
+- **Save as:** `got_caught.jpeg`
+
+```
+Edit the attached image. Keep EXACTLY the same art style, image size, framing, dark room, spotlight, desk, paper, tear, tape, paperclip and photo. The pure green inside of the photo must stay exactly the same flat pure green (#00FF00), untouched. Do not move or change anything. Add ONLY this:
+
+Across the answer lines "1." to "5." at the bottom of the paper (over them), the teacher has written "GOT CAUGHT!" by hand with a red ballpoint pen: big, angry, fast handwriting, slightly slanted, underlined twice with quick strokes, drawn in the same illustrated style as the rest of the picture. It must be easy to read. Nothing else is added.
+```

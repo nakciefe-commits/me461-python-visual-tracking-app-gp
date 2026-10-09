@@ -9,11 +9,12 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from logic.exam_paper import LETTERS, UNKNOWN, BLANK, CORRECT
-from logic.game import Game, PLAYING, WON, LOST, WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE
+from logic.game import Game, PLAYING, WON, LOST, WARNING_SCENE, CAUGHT_SCENE, GAME_OVER_SCENE, MUGSHOT_SCENE
 from logic.suspicion import WARNING_TIME
 from tracking.head_tracker import DOWN, SCREEN, LEFT, RIGHT
 from settings import (EXAM_TIME, ANSWERS_NEEDED, CAUGHT_TIME, PAPER_FOCUS_TIME, SUSPICION_DRAIN_TIME,
                       MAX_WARNINGS, WARNING_SCENE_TIME, CAUGHT_SCENE_TIME, CAUGHT_EXCLAIM_TIME,
+                      MUGSHOT_SCENE_TIME, MUGSHOT_WRITE_DELAY,
                       GAME_OVER_TIME, SCORE_PER_POINT, SCORE_TIME_BONUS, SCORE_PER_WARNING,
                       POINTS_WRONG, CLOSE_CALL_MIN, CLOSE_CALL_PER_BAR, CLOSE_CALL_EDGE_BONUS,
                       SCORE_NINJA, SCORE_ALMOST_NINJA, SCORE_SHARP_EYE, SUSPICIOUS_AT)
@@ -230,6 +231,8 @@ class StaringTests(unittest.TestCase):
         self.assertEqual(game.state, LOST)
         self.assertEqual(game.scene, WARNING_SCENE)   # main.py waits for it before the end screen
         events = run(game, SCREEN, WARNING_SCENE_TIME)
+        self.assertEqual(game.scene, MUGSHOT_SCENE)    # then the mugshot
+        events = run(game, SCREEN, MUGSHOT_SCENE_TIME)
         self.assertEqual(game.scene, GAME_OVER_SCENE)  # then the game over scene
         self.assertIn("nooo", events)
 
@@ -253,7 +256,8 @@ class GameOverTests(unittest.TestCase):
     def test_nothing_happens_after_game_over(self):
         game = Game()
         run(game, SCREEN, ALL_WARNINGS_TIME)
-        self.assertEqual(run(game, LEFT, 5.0), [])
+        # Only the scenes after losing go on (their sounds); nothing is read or written.
+        self.assertLessEqual(set(run(game, LEFT, 5.0)), {"pen", "nooo"})
         self.assertEqual(len(game.paper.written), 0)
 
     def test_reset(self):
@@ -338,10 +342,23 @@ class TeacherRuleTests(unittest.TestCase):
         self.assertNotIn("rip", run_with(game, LEFT, CAUGHT_EXCLAIM_TIME - DT, teacher))
         events = run_with(game, LEFT, CAUGHT_SCENE_TIME - CAUGHT_EXCLAIM_TIME + DT, teacher)
         self.assertEqual(events.count("rip"), 1)
+        self.assertEqual(game.scene, MUGSHOT_SCENE)
+        events = run_with(game, LEFT, MUGSHOT_SCENE_TIME, teacher)
         self.assertEqual(game.scene, GAME_OVER_SCENE)
         self.assertIn("nooo", events)
         run_with(game, LEFT, GAME_OVER_TIME, teacher)
         self.assertFalse(game.in_scene())   # now main.py shows the end menu
+
+    def test_mugshot_pen_sound_once(self):
+        # The teacher starts writing "GOT CAUGHT!" MUGSHOT_WRITE_DELAY into the mugshot.
+        game = Game()
+        teacher = FakeTeacher(watching=True, facing=True)
+        run_with(game, LEFT, CAUGHT_TIME, teacher)
+        run_with(game, LEFT, CAUGHT_SCENE_TIME, teacher)
+        self.assertEqual(game.scene, MUGSHOT_SCENE)
+        self.assertNotIn("pen", run_with(game, LEFT, MUGSHOT_WRITE_DELAY - 2 * DT, teacher))
+        events = run_with(game, LEFT, MUGSHOT_SCENE_TIME - MUGSHOT_WRITE_DELAY + 2 * DT, teacher)
+        self.assertEqual(events.count("pen"), 1)
 
     def test_time_up_collects_the_paper(self):
         # Not a loss: the unanswered questions are blank, and it is graded.
@@ -363,6 +380,9 @@ class TeacherRuleTests(unittest.TestCase):
         self.assertGreater(game.scene_time, DT)  # not skipped
         game = Game()
         run_with(game, LEFT, CAUGHT_TIME, FakeTeacher(watching=True))   # lost: caught scene
+        game.skip_scene()
+        run(game, DOWN, DT)
+        self.assertEqual(game.scene, MUGSHOT_SCENE)
         game.skip_scene()
         run(game, DOWN, DT)
         self.assertEqual(game.scene, GAME_OVER_SCENE)
@@ -540,6 +560,7 @@ class ScoreTests(unittest.TestCase):
         points = int(CLOSE_CALL_MIN + CLOSE_CALL_PER_BAR * level)
         self.assertEqual(game.suspicion.close_call_score, points)
         self.assertIn(str(points), game.popup_text)
+        self.assertNotIn("heartbeat", events)   # only a razor close one pounds
 
     def test_razor_close_call_is_worth_more(self):
         game = Game()
@@ -547,7 +568,8 @@ class ScoreTests(unittest.TestCase):
         almost_caught = (math.ceil(CAUGHT_TIME / DT) - 1) * DT   # last step before full
         run_with(game, LEFT, almost_caught, teacher)
         level = game.suspicion.level
-        run_with(game, DOWN, DT, teacher)
+        events = run_with(game, DOWN, DT, teacher)
+        self.assertIn("heartbeat", events)
         self.assertEqual(game.suspicion.close_call_score,
                          int(CLOSE_CALL_MIN + CLOSE_CALL_PER_BAR * level + CLOSE_CALL_EDGE_BONUS))
         self.assertIn("RAZOR", game.popup_text)

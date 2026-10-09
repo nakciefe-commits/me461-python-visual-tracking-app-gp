@@ -12,7 +12,8 @@ opens (on the music's drop) the row slides in from the right with a white
 flash. Under it: the name, a one-line story, and what he gets (+, green)
 and what it costs (-, red). The portraits are drawn in code: a head and
 shoulders, with what makes him him (a cap, glasses, a can, an apple for the
-teacher...). The numbers behind it are in CHARACTERS in settings.py;
+teacher, a grey beard, a wrench held the wrong way, a hand in the air...).
+The numbers behind it are in CHARACTERS in settings.py;
 logic/character.py uses them.
 """
 
@@ -50,6 +51,12 @@ SKIN = (60, 20, 80)                # the dark purple of the heads (they are draw
 GREY_BAG = (110, 115, 125)         # the edge of the laptop bag
 CAP_NAVY = (20, 25, 70)            # the New Era cap
 GOLD_STICKER = (230, 190, 60)      # the sticker on its brim
+MUG_BROWN = (120, 70, 40)          # the 7th-year legend's old coffee mug
+GREY_HAIR = (200, 200, 210)        # ... and his grey hair and beard
+WRENCH_STEEL = (170, 180, 195)     # the not-ME student's wrench
+SWEAT = (150, 210, 255)            # ... and the drop of sweat on his forehead
+QUIFF = (25, 8, 35)                # the funny guy's big quiff (almost black)
+JACKET = (20, 20, 30)              # ... and his leather jacket's popped collar
 
 
 class CharacterDrawing:
@@ -173,14 +180,14 @@ class CharacterDrawing:
         pygame.draw.circle(self.screen, SKIN, head, radius)
         pygame.draw.circle(self.screen, NEON_CYAN, head, radius, 3)
         drawer = getattr(self, f"portrait_{key}", None)
-        sleepy = key in ("lazy", "energy")
-        self.face(head, radius, sleepy=sleepy, grin=key == "lazy")
+        if key != "lazy":   # the funny guy draws his own face (shades and a smirk)
+            self.face(head, radius, sleepy=key in ("energy", "veteran"))
         if drawer is not None:
             drawer(head, radius, shoulders)
         self.screen.set_clip(None)
 
-    def face(self, head, radius, sleepy=False, grin=False):
-        """Eyes (half shut when sleepy) and a mouth (a big grin for the funny one)."""
+    def face(self, head, radius, sleepy=False):
+        """Eyes (half shut when sleepy) and a smiling mouth."""
         hx, hy = head
         for side in (-1, 1):
             eye = (hx + side * radius // 2.6, hy - radius // 6)
@@ -188,7 +195,7 @@ class CharacterDrawing:
                 pygame.draw.line(self.screen, WHITE, (eye[0] - 7, eye[1]), (eye[0] + 7, eye[1]), 3)
             else:
                 pygame.draw.circle(self.screen, WHITE, eye, 5)
-        mouth = pygame.Rect(0, 0, radius, radius // 2 if grin else radius // 3)
+        mouth = pygame.Rect(0, 0, radius, radius // 3)
         mouth.center = (hx, hy + radius // 2.4)
         pygame.draw.arc(self.screen, WHITE, mouth, math.pi, 2 * math.pi, 3)
 
@@ -268,7 +275,7 @@ class CharacterDrawing:
             pygame.draw.line(self.screen, NEON_YELLOW, (x, hy - 14), (x + side * 8, hy - 4), 2)
             pygame.draw.line(self.screen, NEON_YELLOW, (x, hy + 2), (x + side * 8, hy + 12), 2)
 
-    def portrait_buddy(self, head, radius, shoulders):
+    def portrait_frontrow(self, head, radius, shoulders):
         """An apple for the teacher, with a little heart above it."""
         apple = (int(shoulders.right - radius * 0.8), int(shoulders.centery))
         pygame.draw.circle(self.screen, NEON_RED, apple, radius // 2)
@@ -282,18 +289,148 @@ class CharacterDrawing:
         pygame.draw.polygon(self.screen, NEON_PINK, [(apple[0] - 11, heart_y + 2), (apple[0] + 11, heart_y + 2),
                                                      (apple[0], heart_y + 14)])
 
-    def portrait_lazy(self, head, radius, shoulders):
-        """Laughter ("HA") floating up, and a slice of pizza in his hand."""
+    def portrait_veteran(self, head, radius, shoulders):
+        """Grey hair at the sides (none on top any more), a grey beard, and a "#7" coffee mug, steaming."""
         hx, hy = head
-        rise = (self.t * 20) % 30
-        self.shadow_text("HA", self.hud_small, NEON_YELLOW, (hx + radius - 4, hy - radius - rise / 2))
-        self.shadow_text("HA", self.hud_small, NEON_YELLOW, (hx - radius - 26, hy - radius // 2 - rise / 3))
-        tip = (shoulders.x + radius * 0.6, shoulders.centery + 18)
-        slice_ = [(tip[0], tip[1]), (tip[0] - 16, tip[1] - 44), (tip[0] + 16, tip[1] - 44)]
-        pygame.draw.polygon(self.screen, NEON_YELLOW, slice_)
-        pygame.draw.line(self.screen, (230, 130, 40), slice_[1], slice_[2], 6)   # the crust
-        for dx, dy in ((-4, -30), (5, -22)):
-            pygame.draw.circle(self.screen, NEON_RED, (tip[0] + dx, tip[1] + dy), 4)   # pepperoni
+        for side in (-1, 1):   # tufts of grey hair over the ears
+            for k in range(3):
+                tuft = (hx + side * (radius - 2), hy - radius // 3 + k * 9)
+                pygame.draw.circle(self.screen, GREY_HAIR, tuft, 7)
+        pygame.draw.arc(self.screen, WHITE, (hx - radius // 2, hy - radius + 6, radius, radius // 2),
+                        math.pi * 0.2, math.pi * 0.8, 2)   # the shine of the bald top
+        # The beard: grey dots round the chin, under the mouth.
+        for k in range(14):
+            angle = math.pi * (0.2 + 0.6 * k / 13)   # along the bottom of the face
+            for depth in (0.72, 0.86):
+                dot = (hx + radius * depth * math.cos(angle), hy + radius * depth * math.sin(angle))
+                pygame.draw.circle(self.screen, GREY_HAIR, dot, 2)
+        mug = pygame.Rect(0, 0, int(radius * 0.8), int(radius * 0.9))
+        mug.midbottom = (shoulders.right - radius * 0.8, shoulders.centery + 14)
+        pygame.draw.circle(self.screen, WHITE, (mug.right, mug.centery), mug.height // 3, 3)   # the handle
+        pygame.draw.rect(self.screen, MUG_BROWN, mug, border_radius=5)
+        pygame.draw.rect(self.screen, WHITE, mug, 2, border_radius=5)
+        self.text("#7", self.small, NEON_YELLOW, mug.center, center=True)
+        # Steam: two wavy lines rising out of the mug.
+        for k, dx in enumerate((-6, 6)):
+            points = [(mug.centerx + dx + 4 * math.sin(self.t * 3 + y / 5 + k), mug.y - 4 - y)
+                      for y in range(0, 26, 4)]
+            pygame.draw.lines(self.screen, WHITE, False, points, 2)
+
+    def portrait_notme(self, head, radius, shoulders):
+        """A drop of sweat running down his forehead, and a wrench held by the wrong end."""
+        hx, hy = head
+        drop_y = hy - radius // 2 + (self.t * 12) % 14   # it slides down, again and again
+        drop = (hx + radius // 2 + 6, drop_y)
+        pygame.draw.circle(self.screen, SWEAT, drop, 5)
+        pygame.draw.polygon(self.screen, SWEAT, [(drop[0] - 5, drop[1] - 1), (drop[0] + 5, drop[1] - 1),
+                                                 (drop[0], drop[1] - 12)])
+        # The wrench, slanted, its open jaw down in his hand (the wrong way round).
+        top = (shoulders.x + radius * 1.6, shoulders.y + radius * 0.45)
+        jaw = (shoulders.x + radius * 0.45, shoulders.centery + 12)
+        pygame.draw.line(self.screen, WRENCH_STEEL, top, jaw, 10)
+        pygame.draw.circle(self.screen, WRENCH_STEEL, top, 9)                       # the closed ring end, up
+        pygame.draw.circle(self.screen, SKIN, top, 4)
+        pygame.draw.circle(self.screen, WRENCH_STEEL, jaw, 14)                      # the open jaw, down
+        pygame.draw.circle(self.screen, SKIN, (jaw[0] - 4, jaw[1] + 9), 7)          # the gap in the jaw
+        pygame.draw.circle(self.screen, SKIN, (int(jaw[0] + 4), int(jaw[1] - 6)), 9)  # his hand, round the jaw
+        pygame.draw.circle(self.screen, NEON_PINK, (int(jaw[0] + 4), int(jaw[1] - 6)), 9, 2)
+
+    def portrait_asker(self, head, radius, shoulders):
+        """A hand up in the air (again), waving a little, and a "?" bubble."""
+        hx, hy = head
+        wave = 4 * math.sin(self.t * 6)   # "hocam! hocam!"
+        shoulder = (shoulders.right - radius * 0.5, shoulders.y + radius * 0.4)
+        hand = (shoulders.right - radius * 0.65 + wave, hy - radius * 0.6)
+        # The arm: a thick band with a neon edge, like the shoulders.
+        pygame.draw.line(self.screen, NEON_PINK, shoulder, hand, 22)
+        pygame.draw.line(self.screen, SKIN, shoulder, hand, 16)
+        # The open hand: a palm and four fingers up, the thumb out to the side.
+        palm = pygame.Rect(0, 0, 26, 24)
+        palm.center = hand
+        for k in range(4):
+            finger = pygame.Rect(palm.x + 1 + k * 6, palm.y - 14, 6, 20)
+            pygame.draw.rect(self.screen, SKIN, finger, border_radius=3)
+            pygame.draw.rect(self.screen, NEON_PINK, finger, 2, border_radius=3)
+        pygame.draw.line(self.screen, NEON_PINK, (palm.x + 2, palm.centery), (palm.x - 10, palm.y + 2), 8)
+        pygame.draw.line(self.screen, SKIN, (palm.x + 2, palm.centery), (palm.x - 9, palm.y + 3), 4)
+        pygame.draw.ellipse(self.screen, SKIN, palm)
+        pygame.draw.ellipse(self.screen, NEON_PINK, palm, 2)
+        bubble = pygame.Rect(0, 0, 34, 30)
+        bubble.center = (hx - radius - 10, hy - radius + 3 * math.sin(self.t * 3))
+        pygame.draw.ellipse(self.screen, WHITE, bubble)
+        pygame.draw.polygon(self.screen, WHITE, [(bubble.right - 10, bubble.bottom - 6),
+                                                 (bubble.right + 2, bubble.bottom + 8),
+                                                 (bubble.right - 2, bubble.bottom - 10)])
+        self.text("?", self.hud, NEON_RED, bubble.center, center=True)
+
+    def portrait_lazy(self, head, radius, shoulders):
+        """
+        Charisma 100: a big pompadour, aviator shades with a glint sweeping
+        across, a one-sided smirk, a popped collar, a stand-up comedian's
+        microphone, and sparkles round him.
+        """
+        hx, hy = head
+        r = radius
+        # The popped collar: two thin points standing up beside the neck.
+        for side in (-1, 1):
+            collar = [(hx + side * r * 0.4, shoulders.y + 6), (hx + side * r * 0.95, shoulders.y - r * 0.3),
+                      (hx + side * r * 0.85, shoulders.y + r * 0.35)]
+            pygame.draw.polygon(self.screen, JACKET, collar)
+            pygame.draw.polygon(self.screen, NEON_CYAN, collar, 2)
+        # The pompadour: a few round shapes on top of the head, swept up and
+        # forward. Drawn twice: first all of them a bit bigger in pink (the
+        # outline of the whole), then all of them dark on top.
+        blobs = [((hx, hy - r * 0.55), r * 0.95, r * 0.55),            # the hair on top of the head
+                 ((hx + r * 0.1, hy - r * 1.05), r * 0.85, r * 0.5),    # the big wave
+                 ((hx + r * 0.65, hy - r * 1.1), r * 0.4, r * 0.38)]    # its curl at the front
+        for outline in (True, False):
+            for (bx, by), half_w, half_h in blobs:
+                grow = 3 if outline else 0
+                rect = pygame.Rect(0, 0, (half_w + grow) * 2, (half_h + grow) * 2)
+                rect.center = (int(bx), int(by))
+                pygame.draw.ellipse(self.screen, NEON_PINK if outline else QUIFF, rect)
+        pygame.draw.arc(self.screen, NEON_PINK, (hx - r * 0.6, hy - r * 1.4, r * 1.3, r * 0.7),
+                        math.pi * 0.25, math.pi * 0.9, 2)   # a shine on the wave
+        # Aviator shades: two drops of dark glass, a gold rim, a glint every two seconds.
+        eye_y = hy - r // 6
+        glint = (self.t % 2.0) / 0.5   # 0..1 while the glint crosses, then it waits
+        for side in (-1, 1):
+            cx = hx + side * r * 0.42
+            lens = [(cx - r * 0.33, eye_y - r * 0.18), (cx + r * 0.33, eye_y - r * 0.18),
+                    (cx + r * 0.28, eye_y + r * 0.12), (cx, eye_y + r * 0.3), (cx - r * 0.28, eye_y + r * 0.12)]
+            pygame.draw.polygon(self.screen, SHADOW, lens)
+            pygame.draw.polygon(self.screen, NEON_YELLOW, lens, 2)
+            if glint < 1:
+                gx = cx - r * 0.3 + glint * r * 0.6
+                pygame.draw.line(self.screen, WHITE, (gx, eye_y + r * 0.15), (gx + r * 0.15, eye_y - r * 0.15), 3)
+        pygame.draw.line(self.screen, NEON_YELLOW, (hx - r * 0.12, eye_y - r * 0.12), (hx + r * 0.12, eye_y - r * 0.12), 2)
+        # The smirk: flat on one side, up on the other.
+        pygame.draw.lines(self.screen, WHITE, False, [(hx - r * 0.35, hy + r * 0.42), (hx, hy + r * 0.47),
+                                                      (hx + r * 0.3, hy + r * 0.38), (hx + r * 0.42, hy + r * 0.26)], 3)
+        # The microphone: a black handle in his hand, a grey mesh ball on top.
+        hand = (int(shoulders.right - r * 0.75), int(shoulders.centery + 8))
+        ball = (hand[0] - int(r * 0.25), hand[1] - int(r * 0.85))
+        pygame.draw.line(self.screen, BLACK, hand, ball, 9)
+        pygame.draw.line(self.screen, NEON_CYAN, (hand[0] + 5, hand[1]), (ball[0] + 5, ball[1]), 1)
+        pygame.draw.circle(self.screen, GREY_BAG, ball, 11)
+        for k in (-5, 0, 5):   # the mesh
+            pygame.draw.line(self.screen, BLACK, (ball[0] + k, ball[1] - 9), (ball[0] + k, ball[1] + 9), 1)
+            pygame.draw.line(self.screen, BLACK, (ball[0] - 9, ball[1] + k), (ball[0] + 9, ball[1] + k), 1)
+        pygame.draw.circle(self.screen, WHITE, ball, 11, 2)
+        pygame.draw.circle(self.screen, SKIN, hand, 11)
+        pygame.draw.circle(self.screen, NEON_PINK, hand, 11, 2)
+        # Sparkles twinkling round him.
+        for k, (dx, dy) in enumerate(((-1.35, -1.1), (1.45, -0.45), (-1.5, 0.35))):
+            size = 7 * max(0.0, math.sin(self.t * 3 + k * 2.1))
+            if size > 1:
+                self.sparkle((hx + dx * r, hy + dy * r), size, WHITE)
+
+    def sparkle(self, centre, size, colour):
+        """A four-pointed star (a twinkle)."""
+        x, y = centre
+        thin = size / 4
+        pygame.draw.polygon(self.screen, colour, [(x, y - size), (x + thin, y - thin), (x + size, y), (x + thin, y + thin),
+                                                  (x, y + size), (x - thin, y + thin), (x - size, y), (x - thin, y - thin)])
 
     def round_glasses(self, head, radius, colour, square):
         """Two lenses and a bridge over the eyes; square=True for the nerd's frames."""
