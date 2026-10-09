@@ -3556,3 +3556,43 @@ Vice City world, which the author loves, and copying in an exam as a
 
 - Save the settings (sound, grade roast) between games.
 
+---
+
+## Commit #65 — The development report as PDF (Turkish and English)
+
+- **Date:** 9 Oct 2026
+
+### Summary
+
+The development report is in the repository as two PDFs, Turkish and
+English (49 A4 pages each): a cover, contents, the artistic design (the
+three visual worlds, Balatro and Hotline Miami as inspiration, the talking
+AIs, the curve and arcade names, sound and music), the architecture, a
+summary, then every change #1–#64 as a card with its technical,
+architecture and art sides, with screenshots from the game. No code
+changed.
+
+### Added
+
+| File | Purpose |
+|---|---|
+| `Dont_Get_Caught_Rapor_TR.pdf` | The report in Turkish. |
+| `Dont_Get_Caught_Report_EN.pdf` | The report in English. |
+
+### Changed
+
+| File | Change |
+|---|---|
+| `README.md` | The two PDFs in the files table. |
+
+### Details worth knowing
+
+- The PDFs were made from a Claude doc (two tabs) with WeasyPrint, outside
+  the project (nothing was added to `requirements.txt`). The screenshots
+  were drawn by the game's own code with sample data, without a camera.
+- About 4.8 MB each.
+
+### Next
+
+- Save the settings (sound, grade roast) between games.
+

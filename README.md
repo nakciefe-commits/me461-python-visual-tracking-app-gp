@@ -422,6 +422,7 @@ you see and hear. `main.py` and `settings.py` stay at the top.
 | `assets/sounds/` | Sound files (Luigi "hmm", MGS alert, chalk erasing for later), `theme.mp3` (menu music), `thrilling.mp3` (exam music) and `character_[cut_180sec].mp3` (the briefing and the character screen). |
 | `LEARN.md` | **Start here to learn the code:** how it works, file by file. |
 | `PLAN.md` | Game design, open questions, what is done and what is next. |
+| `Dont_Get_Caught_Rapor_TR.pdf`, `Dont_Get_Caught_Report_EN.pdf` | The development report (Turkish, English): the artistic design, the architecture and every change #1–#64, with screenshots. |
 | `IMAGE_PROMPTS.md` | Ready-to-paste Gemini prompts for the teacher's mood pictures and the mugshot paper (which image to upload, what to save it as). |
 | `NOTES.md` | Update log: what changed in each commit and why. |
 | `CLAUDE.md` | Rules for changing the code (read automatically by Claude Code). |
